@@ -65,28 +65,23 @@ const SceneManager = {
   },
 
   updateCamera(playerPosition, playerRotation) {
-    // Camera rotation driven by mouse yaw and pitch
     const cameraQuaternion = new THREE.Quaternion();
     cameraQuaternion.setFromEuler(new THREE.Euler(this.cameraPitch, this.cameraYaw, 0, 'YXZ'));
 
-    // Player’s rotation follows camera yaw (XZ plane only), offset by 180 degrees
-    const playerYaw = this.cameraYaw + Math.PI; // Add 180 degrees to face away from camera
+    const playerYaw = this.cameraYaw + Math.PI;
     const playerYawQuaternion = new THREE.Quaternion();
     playerYawQuaternion.setFromEuler(new THREE.Euler(0, playerYaw, 0, 'YXZ'));
-    playerRotation.copy(playerYawQuaternion); // Sync player rotation to adjusted yaw
+    playerRotation.slerp(playerYawQuaternion, 0.1); // Smooth rotation
 
-    // Calculate camera position: offset behind player, rotated by camera quaternion
-    const offset = this.cameraOffset.clone(); // (0, 12, 12) = behind and above
+    const offset = this.cameraOffset.clone();
     offset.applyQuaternion(cameraQuaternion);
-    const cameraPosition = playerPosition.clone().add(offset);
-    this.camera.position.copy(cameraPosition);
+    const targetPosition = playerPosition.clone().add(offset);
+    this.camera.position.lerp(targetPosition, 0.1); // Smooth position
 
-    // Camera looks at a point above the player
     const lookAtPosition = playerPosition.clone();
     lookAtPosition.y += 2.5;
     this.camera.lookAt(lookAtPosition);
 
-    // Return camera forward direction for movement
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuaternion);
     return forward;
   },
