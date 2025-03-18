@@ -19,15 +19,17 @@ const SceneManager = {
     // Initialize camera offset
     this.cameraOffset = this.defaultOffset.clone();
 
-    // Lighting (unchanged)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    this.scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 10, 7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2.0); // Increase to 1.0
+    SceneManager.scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0); // Increase to 2.0
+    directionalLight.position.set(10, 50, 20);
     directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 1024;
-    directionalLight.shadow.mapSize.height = 1024;
-    this.scene.add(directionalLight);
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 100;
+    SceneManager.scene.add(directionalLight);
 
     // Terrain (unchanged)
     const terrainGeometry = new THREE.PlaneGeometry(50, 50);
@@ -44,6 +46,19 @@ const SceneManager = {
     terrain.rotation.x = -Math.PI / 2;
     terrain.receiveShadow = true;
     this.scene.add(terrain);
+
+    // Add a test cube
+    const cubeGeometry = new THREE.BoxGeometry(2, 2, 2); // 2x2x2 cube
+    const cubeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ff00, // Bright green for visibility
+      roughness: 0.5,
+      metalness: 0.0
+    });
+    const testCube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+    testCube.position.set(5, 1, 5); // Place it on the terrain, slightly offset from origin
+    testCube.castShadow = true;
+    testCube.receiveShadow = true;
+    this.scene.add(testCube);
 
     // Initial camera setup
     this.camera.position.set(2, 32, 18);

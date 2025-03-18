@@ -9,9 +9,10 @@ const Game = {
 
   loadMechModel() {
     return new Promise((resolve) => {
-      const loader = new THREE.FBXLoader();
-      loader.load('assets/models/mech.fbx', (fbx) => {
-        fbx.scale.set(0.01, 0.01, 0.01);
+      const loader = new THREE.GLTFLoader();
+      loader.load('assets/models/mech.glb', (gltf) => {
+        const fbx = gltf.scene;
+        // Position adjustment
         fbx.position.y = 0.1;
 
         // Ensure the model faces -Z (Three.js forward)
@@ -19,25 +20,20 @@ const Game = {
 
         fbx.traverse((child) => {
           if (child.isMesh) {
+            // Shadow settings
             child.castShadow = true;
             child.receiveShadow = true;
-            if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach(material => {
-                  material.needsUpdate = true;
-                });
-              } else {
-                if (child.material.isMeshBasicMaterial) {
-                  const color = child.material.color;
-                  child.material = new THREE.MeshStandardMaterial({
-                    color: color,
-                    roughness: 0.7,
-                    metalness: 0.3
-                  });
-                }
-                child.material.needsUpdate = true;
-              }
-            }
+            
+            // if (child.material) {
+            //   // Handle material arrays
+            //   if (Array.isArray(child.material)) {
+            //     child.material.forEach(material => {
+            //       this.upgradeMaterial(material);
+            //     });
+            //   } else {
+            //     this.upgradeMaterial(child.material);
+            //   }
+            // }
           }
         });
 
@@ -45,6 +41,43 @@ const Game = {
         resolve(fbx);
       });
     });
+  },
+
+  // New helper method to standardize material upgrading
+  upgradeMaterial(material) {
+    // Convert MeshBasicMaterial to MeshStandardMaterial
+    if (material.isMeshBasicMaterial) {
+      const color = material.color.clone();
+      const newMaterial = new THREE.MeshStandardMaterial({
+        color: color,
+        roughness: 0.7,
+        metalness: 0.3
+      });
+      
+      // Copy relevant properties
+      if (material.map) newMaterial.map = material.map;
+      if (material.normalMap) newMaterial.normalMap = material.normalMap;
+      
+      return newMaterial;
+    }
+    
+    // Preserve emissive properties (e.g., for the green glow)
+    if (material.emissive) {
+      material.emissiveIntensity = material.emissiveIntensity || 1.0; // Ensure intensity isn’t zero
+    }
+    
+    // Fix transparency issues (only if needed)
+    if (material.transparent && material.opacity < 1.0) {
+      material.transparent = true; // Allow transparency if defined
+    } else {
+      material.transparent = false;
+      material.opacity = 1.0;
+    }
+    
+    // Ensure material is properly updated
+    material.needsUpdate = true;
+    
+    return material;
   },
 
   async init(socket) {
