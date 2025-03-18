@@ -25,11 +25,29 @@ io.on('connection', (socket) => {
   // Send existing players to the new player
   socket.emit('existingPlayers', players);
 
-  // Handle movement
+  // Handle movement with delta and validation
   socket.on('move', (data) => {
     if (players[socket.id]) {
-      players[socket.id].position = data.position;
-      socket.broadcast.emit('playerMoved', { id: socket.id, position: data.position });
+      const player = players[socket.id];
+      const delta = data.delta;
+      const maxSpeed = 0.1; // Matches client speed
+
+      // Basic validation: ensure delta doesn’t exceed max speed
+      if (Math.abs(delta.dx) <= maxSpeed &&
+          Math.abs(delta.dy) <= maxSpeed &&
+          Math.abs(delta.dz) <= maxSpeed) {
+        player.position.x += delta.dx;
+        player.position.y += delta.dy;
+        player.position.z += delta.dz;
+
+        // Broadcast the updated position to others
+        socket.broadcast.emit('playerMoved', { 
+          id: socket.id, 
+          position: player.position 
+        });
+      } else {
+        console.log(`Invalid move rejected for ${socket.id}:`, delta);
+      }
     }
   });
 
