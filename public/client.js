@@ -1,35 +1,51 @@
 const socket = io();
-let players = {};
+let players = {}; // Store other players' data
 
-socket.on('connect', () => {
-  console.log('Connected to server');
-});
-
+// Scene setup
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+// Local player cube
 const geometry = new THREE.BoxGeometry(1, 1, 1);
-const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Green for local player
 const cube = new THREE.Mesh(geometry, material);
 scene.add(cube);
 camera.position.z = 5;
 
+// Create other player meshes
 function createPlayerMesh(id) {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+  const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Red for others
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(0, 0, 0); // Default position
   scene.add(mesh);
-  return mesh;
+  return {
+    mesh: mesh,
+    targetPosition: new THREE.Vector3(0, 0, 0), // Where they’re headed
+    lastPosition: new THREE.Vector3(0, 0, 0)    // Where they were
+  };
 }
+
+// Socket events
+socket.on('connect', () => {
+  console.log('Connected to server');
+});
 
 socket.on('existingPlayers', (serverPlayers) => {
   for (let id in serverPlayers) {
     if (id !== socket.id) {
       players[id] = createPlayerMesh(id);
-      players[id].position.set(
+      players[id].targetPosition.set(
+        serverPlayers[id].position.x,
+        serverPlayers[id].position.y,
+        serverPlayers[id].position.z
+      );
+      players[id].lastPosition.copy(players[id].targetPosition);
+    } else {
+      cube.position.set(
         serverPlayers[id].position.x,
         serverPlayers[id].position.y,
         serverPlayers[id].position.z
@@ -39,17 +55,21 @@ socket.on('existingPlayers', (serverPlayers) => {
 });
 
 socket.on('newPlayer', (player) => {
-  players[player.id] = createPlayerMesh(player.id);
-  players[player.id].position.set(
-    player.position.x,
-    player.position.y,
-    player.position.z
-  );
+  if (player.id !== socket.id) {
+    players[player.id] = createPlayerMesh(player.id);
+    players[player.id].targetPosition.set(
+      player.position.x,
+      player.position.y,
+      player.position.z
+    );
+    players[player.id].lastPosition.copy(players[player.id].targetPosition);
+  }
 });
 
 socket.on('playerMoved', (data) => {
   if (players[data.id]) {
-    players[data.id].position.set(
+    players[data.id].lastPosition.copy(players[data.id].mesh.position);
+    players[data.id].targetPosition.set(
       data.position.x,
       data.position.y,
       data.position.z
@@ -59,7 +79,7 @@ socket.on('playerMoved', (data) => {
 
 socket.on('playerDisconnected', (id) => {
   if (players[id]) {
-    scene.remove(players[id]);
+    scene.remove(players[id].mesh);
     delete players[id];
   }
 });
@@ -88,17 +108,47 @@ document.addEventListener('keyup', (event) => {
   }
 });
 
+// Apply movement locally and send to server
+function processInput() {
+  const speed = 0.1;
+  let moved = false;
+
+  if (moveForward) {
+    cube.position.z -= speed;
+    moved = true;
+  }
+  if (moveBackward) {
+    cube.position.z += speed;
+    moved = true;
+  }
+  if (moveLeft) {
+    cube.position.x -= speed;
+    moved = true;
+  }
+  if (moveRight) {
+    cube.position.x += speed;
+    moved = true;
+  }
+
+  if (moved) {
+    socket.emit('move', { position: { x: cube.position.x, y: cube.position.y, z: cube.position.z } });
+  }
+}
+
+// Interpolate other players
+function interpolatePlayers() {
+  for (let id in players) {
+    const player = players[id];
+    player.mesh.position.lerp(player.targetPosition, 0.1); // Smoothly move toward target
+  }
+}
+
+// Animation loop
 function animate() {
   requestAnimationFrame(animate);
-
-  const speed = 0.1;
-  if (moveForward) cube.position.z -= speed;
-  if (moveBackward) cube.position.z += speed;
-  if (moveLeft) cube.position.x -= speed;
-  if (moveRight) cube.position.x += speed;
-
-  socket.emit('move', { position: cube.position });
-
+  processInput(); // Client-side prediction
+  interpolatePlayers(); // Basic interpolation
   renderer.render(scene, camera);
 }
+
 animate();
