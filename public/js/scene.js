@@ -5,6 +5,7 @@ const SceneManager = {
   cameraOffset: new THREE.Vector3(0, 12, 12), // Behind and above
   cameraYaw: 0, // Horizontal rotation (mouse X)
   cameraPitch: 0, // Vertical rotation (mouse Y)
+  freeLook: false,
 
   init() {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -43,6 +44,13 @@ const SceneManager = {
     // Mouse controls
     document.addEventListener('mousemove', (event) => this.onMouseMove(event));
     document.body.requestPointerLock(); // Lock mouse for smooth control
+
+    document.addEventListener('mousedown', (event) => {
+      if (event.button === 2) this.freeLook = true; // Right-click
+    });
+    document.addEventListener('mouseup', (event) => {
+      if (event.button === 2) this.freeLook = false;
+    });
   },
 
   onMouseMove(event) {
@@ -68,10 +76,12 @@ const SceneManager = {
     const cameraQuaternion = new THREE.Quaternion();
     cameraQuaternion.setFromEuler(new THREE.Euler(this.cameraPitch, this.cameraYaw, 0, 'YXZ'));
 
+    if (!this.freeLook) {
     const playerYaw = this.cameraYaw + Math.PI;
     const playerYawQuaternion = new THREE.Quaternion();
     playerYawQuaternion.setFromEuler(new THREE.Euler(0, playerYaw, 0, 'YXZ'));
     playerRotation.slerp(playerYawQuaternion, 0.1); // Smooth rotation
+    }
 
     const offset = this.cameraOffset.clone();
     offset.applyQuaternion(cameraQuaternion);
