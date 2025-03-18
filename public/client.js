@@ -3,6 +3,7 @@ let players = {};
 
 // Scene setup
 const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -10,7 +11,7 @@ document.body.appendChild(renderer.domElement);
 
 // Local player cube
 const geometry = new THREE.BoxGeometry(1, 1, 1);
-const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Green for local player
+const material = new THREE.MeshLambertMaterial({ color: 0x00ff00 }); // Green for local player (uses lighting)
 const cube = new THREE.Mesh(geometry, material);
 scene.add(cube);
 camera.position.z = 5;
@@ -18,7 +19,7 @@ camera.position.z = 5;
 // Create other player meshes
 function createPlayerMesh(id) {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Red for others
+  const material = new THREE.MeshLambertMaterial({ color: 0xff0000 }); // Red for others (uses lighting)
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(0, 0, 0);
   scene.add(mesh);
@@ -147,6 +148,24 @@ function interpolatePlayers() {
     player.mesh.position.lerp(player.targetPosition, 0.1);
   }
 }
+
+const groundGeometry = new THREE.PlaneGeometry(100, 100);
+const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+ground.rotation.x = -Math.PI / 2; // Lay it flat
+ground.position.y = -0.5;
+ground.receiveShadow = true; // Receive shadows
+scene.add(ground);
+
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+sunLight.position.set(10, 10, 10);
+sunLight.castShadow = true;
+sunLight.shadow.camera.far = 100;
+sunLight.shadow.mapSize.set(1024, 1024);
+scene.add(sunLight);
+
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 // Animation loop
 function animate() {
