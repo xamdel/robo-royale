@@ -1,7 +1,9 @@
-function init() {
+async function init() {
   SceneManager.init();
   Network.init();
-  Game.init(Network.socket);
+  
+  // Wait for the game to initialize (including model loading)
+  await Game.init(Network.socket);
 
   function animate() {
     requestAnimationFrame(animate);

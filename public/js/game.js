@@ -5,12 +5,63 @@ const Game = {
   moveBackward: false,
   moveLeft: false,
   moveRight: false,
+  mechModel: null,
 
-  init(socket) {
-    // Local player (cylinder as robot placeholder)
-    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 16);
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    this.player = new THREE.Mesh(geometry, material);
+  loadMechModel() {
+    return new Promise((resolve) => {
+      const loader = new THREE.FBXLoader();
+      loader.load('assets/models/mech.fbx', (fbx) => {
+        // Scale down the model to appropriate size
+        fbx.scale.set(0.005, 0.005, 0.005);
+        
+        // Center the model and raise it slightly above the ground
+        fbx.position.y = 0.1;
+        
+        // Enable shadows for all meshes in the model
+        fbx.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            
+            // Ensure materials are set to properly interact with lighting
+            if (child.material) {
+              // If the material is an array, process each one
+              if (Array.isArray(child.material)) {
+                child.material.forEach(material => {
+                  material.needsUpdate = true;
+                });
+              } else {
+                // Convert BasicMaterial to StandardMaterial if needed
+                if (child.material.isMeshBasicMaterial) {
+                  const color = child.material.color;
+                  child.material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    roughness: 0.7,
+                    metalness: 0.3
+                  });
+                }
+                child.material.needsUpdate = true;
+              }
+            }
+          }
+        });
+        
+        // Store the model for cloning
+        this.mechModel = fbx;
+        resolve(fbx);
+      });
+    });
+  },
+
+  async init(socket) {
+    // Load the mech model first
+    const playerModel = await this.loadMechModel();
+    this.player = playerModel.clone();
+    
+    // Set initial position
+    this.player.position.set(0, 0, 0);
+    
+    // Add to scene
     SceneManager.add(this.player);
 
     // Input handling
@@ -33,14 +84,47 @@ const Game = {
   },
 
   createPlayerMesh(id) {
-    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 16);
-    const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(0, 1, 0); // Raise slightly above terrain
+    // Clone the mech model for other players
+    if (!this.mechModel) {
+      console.error("Mech model not loaded yet");
+      return null;
+    }
+    
+    const mesh = this.mechModel.clone();
+    mesh.position.set(0, 0, 0);
+    
+    // Use a different color material to distinguish from the player
+    mesh.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        
+        if (child.material) {
+          child.material = child.material.clone();
+          
+          // If it's a MeshStandardMaterial, just change the color
+          if (child.material.isMeshStandardMaterial) {
+            child.material.color.setHex(0xff0000); // Red color for other players
+          } 
+          // Otherwise, convert to MeshStandardMaterial
+          else {
+            const color = child.material.color ? child.material.color : new THREE.Color(0xff0000);
+            child.material = new THREE.MeshStandardMaterial({
+              color: color,
+              roughness: 0.7,
+              metalness: 0.3
+            });
+          }
+          
+          child.material.needsUpdate = true;
+        }
+      }
+    });
+    
     return {
       mesh: mesh,
-      targetPosition: new THREE.Vector3(0, 1, 0),
-      lastPosition: new THREE.Vector3(0, 1, 0)
+      targetPosition: new THREE.Vector3(0, 0, 0),
+      lastPosition: new THREE.Vector3(0, 0, 0)
     };
   },
 
