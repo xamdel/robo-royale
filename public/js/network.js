@@ -34,6 +34,19 @@ const Network = {
           data.position.y,
           data.position.z
         );
+        
+        // Update rotation if provided
+        if (data.rotation !== undefined) {
+          // Apply the rotation to the player model
+          Game.otherPlayers[data.id].mesh.rotation.y = data.rotation;
+          
+          // Create a quaternion for the rotation around the Y axis
+          const targetQuaternion = new THREE.Quaternion();
+          targetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), data.rotation);
+          
+          // Apply the quaternion to the player mesh
+          Game.otherPlayers[data.id].mesh.quaternion.copy(targetQuaternion);
+        }
       }
     });
 

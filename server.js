@@ -16,7 +16,8 @@ io.on('connection', (socket) => {
   // Add new player
   players[socket.id] = {
     id: socket.id,
-    position: { x: 0, y: 0, z: 0 }
+    position: { x: 0, y: 0, z: 0 },
+    rotation: 0
   };
 
   // Tell others about the new player
@@ -32,21 +33,27 @@ io.on('connection', (socket) => {
       const delta = data.delta;
       const maxSpeed = 0.1; // Matches client speed
 
-      // Basic validation: ensure delta doesn’t exceed max speed
+      // Basic validation: ensure delta doesn't exceed max speed
       if (Math.abs(delta.dx) <= maxSpeed &&
           Math.abs(delta.dy) <= maxSpeed &&
           Math.abs(delta.dz) <= maxSpeed) {
         player.position.x += delta.dx;
         player.position.y += delta.dy;
         player.position.z += delta.dz;
+        
+        // Update rotation if provided
+        if (delta.rotation !== undefined) {
+          player.rotation = delta.rotation;
+        }
 
-        // Broadcast the updated position to others
+        // Broadcast the updated position and rotation to others
         socket.broadcast.emit('playerMoved', { 
           id: socket.id, 
-          position: player.position 
+          position: player.position,
+          rotation: player.rotation
         });
       } else {
-        console.log(`Invalid move rejected for ${socket.id}:`, delta);
+        // console.log(`Invalid move rejected for ${socket.id}:`, delta);s
       }
     }
   });
