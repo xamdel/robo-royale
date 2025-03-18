@@ -11,7 +11,7 @@ const Game = {
     return new Promise((resolve) => {
       const loader = new THREE.FBXLoader();
       loader.load('assets/models/mech.fbx', (fbx) => {
-        fbx.scale.set(0.005, 0.005, 0.005);
+        fbx.scale.set(0.01, 0.01, 0.01);
         fbx.position.y = 0.1;
 
         // Ensure the model faces -Z (Three.js forward)

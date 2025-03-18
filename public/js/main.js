@@ -14,7 +14,9 @@ async function init() {
 
     const delta = Game.processInput(cameraForward);
     if (delta) {
-      delta.rotation = SceneManager.cameraYaw + Math.PI; // Send adjusted yaw to server
+      // Use the player’s current yaw (smoothed) for network sync
+      const euler = new THREE.Euler().setFromQuaternion(Game.player.quaternion, 'YXZ');
+      delta.rotation = euler.y;
       Network.sendMove(delta);
     }
 
