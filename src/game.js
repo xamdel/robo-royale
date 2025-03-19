@@ -10,6 +10,8 @@ export const Game = {
   moveLeft: false,
   moveRight: false,
   mechModel: null,
+  targetPosition: null,
+  lastPosition: null,
 
   loadMechModel() {
     return new Promise((resolve) => {
@@ -67,7 +69,7 @@ export const Game = {
     
     // Preserve emissive properties (e.g., for the green glow)
     if (material.emissive) {
-      material.emissiveIntensity = material.emissiveIntensity || 1.0; // Ensure intensity isn’t zero
+      material.emissiveIntensity = material.emissiveIntensity || 1.0; // Ensure intensity isn't zero
     }
     
     // Fix transparency issues (only if needed)
@@ -88,6 +90,8 @@ export const Game = {
     const playerModel = await this.loadMechModel();
     this.player = playerModel.clone();
     this.player.position.set(0, 0, 0);
+    this.targetPosition = new THREE.Vector3(0, 0, 0);
+    this.lastPosition = new THREE.Vector3(0, 0, 0);
     SceneManager.add(this.player);
 
     // Input handling
@@ -148,7 +152,7 @@ export const Game = {
     let delta = { dx: 0, dy: 0, dz: 0, rotation: 0 }; // Rotation will be set in updateCamera
     let moved = false;
 
-    // Use camera’s forward direction (XZ plane only)
+    // Use camera's forward direction (XZ plane only)
     const forward = cameraForward.clone();
     forward.y = 0;
     forward.normalize();
@@ -156,37 +160,46 @@ export const Game = {
     // Right vector (perpendicular to forward)
     const right = new THREE.Vector3();
     right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+    
+    // Store current position before updates
+    this.lastPosition.copy(this.targetPosition);
 
     if (this.moveForward) {
-      this.player.position.add(forward.clone().multiplyScalar(speed));
+      this.targetPosition.add(forward.clone().multiplyScalar(speed));
       delta.dx += forward.x * speed;
       delta.dz += forward.z * speed;
       moved = true;
     }
     if (this.moveBackward) {
-      this.player.position.sub(forward.clone().multiplyScalar(speed));
+      this.targetPosition.sub(forward.clone().multiplyScalar(speed));
       delta.dx -= forward.x * speed;
       delta.dz -= forward.z * speed;
       moved = true;
     }
     if (this.moveLeft) {
-      this.player.position.add(right.clone().multiplyScalar(speed)); // Left = positive right
+      this.targetPosition.add(right.clone().multiplyScalar(speed)); // Left = positive right
       delta.dx += right.x * speed;
       delta.dz += right.z * speed;
       moved = true;
     }
     if (this.moveRight) {
-      this.player.position.add(right.clone().multiplyScalar(-speed)); // Right = negative right
+      this.targetPosition.add(right.clone().multiplyScalar(-speed)); // Right = negative right
       delta.dx += right.x * -speed;
       delta.dz += right.z * -speed;
       moved = true;
     }
 
-    // No need to set player.rotation.y here; it’s handled in updateCamera
+    // No need to set player.rotation.y here; it's handled in updateCamera
     return moved ? delta : null;
   },
 
   interpolatePlayers() {
+    // Interpolate local player
+    if (this.player && this.targetPosition) {
+      this.player.position.lerp(this.targetPosition, 0.1);
+    }
+    
+    // Interpolate other players
     for (let id in this.otherPlayers) {
       const player = this.otherPlayers[id];
       player.mesh.position.lerp(player.targetPosition, 0.1);
