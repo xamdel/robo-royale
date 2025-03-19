@@ -5,8 +5,8 @@ export const SceneManager = {
   scene: new THREE.Scene(),
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
-  defaultOffset: new THREE.Vector3(2, 30, 18),
-  aimOffset: new THREE.Vector3(2, 50, 0),
+  defaultOffset: new THREE.Vector3(2, 2, 2),
+  aimOffset: new THREE.Vector3(2, 12, 0),
   cameraOffset: null,
   cameraYaw: 0,
   cameraPitch: 0,
@@ -133,7 +133,7 @@ export const SceneManager = {
     this.camera.quaternion.slerp(targetCameraQuaternion, 0.1);
 
     if (!this.freeLook) {
-      const playerYaw = this.cameraYaw + Math.PI;
+      const playerYaw = this.cameraYaw;
       const targetPlayerQuaternion = new THREE.Quaternion();
       targetPlayerQuaternion.setFromEuler(new THREE.Euler(0, playerYaw, 0, 'YXZ'));
       playerRotation.slerp(targetPlayerQuaternion, 0.1);

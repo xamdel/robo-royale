@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { SceneManager } from './scene.js';
 
 export const Game = {
@@ -17,14 +17,14 @@ export const Game = {
 
   loadMechModel() {
     return new Promise((resolve) => {
-      const loader = new GLTFLoader();
-      loader.load('assets/models/mech.glb', (gltf) => {
-        const fbx = gltf.scene;
-        // Position adjustment
+      const loader = new FBXLoader();
+      loader.load('assets/models/gemini-mech.fbx', (fbx) => {
+        fbx.scale.set(5, 5, 5)
         fbx.position.y = 0.1;
 
         // Ensure the model faces -Z (Three.js forward)
-        fbx.rotation.y = Math.PI; // Rotate 180 if front is +Z in the FBX
+        // fbx.rotation.y = Math.PI; 
+        // Rotate 180 if front is +Z in the FBX
 
         fbx.traverse((child) => {
           if (child.isMesh) {
@@ -34,8 +34,21 @@ export const Game = {
           }
         });
 
+        // Initialize animation mixer
+        this.mixer = new THREE.AnimationMixer(fbx);
         this.mechModel = fbx;
         resolve(fbx);
+      });
+    });
+  },
+
+  loadAnimation(animationPath, name) {
+    return new Promise((resolve) => {
+      const loader = new FBXLoader();
+      loader.load(animationPath, (anim) => {
+        const action = this.mixer.clipAction(anim.animations[0]);
+        this.actions[name] = action;
+        resolve(action);
       });
     });
   },
@@ -48,6 +61,16 @@ export const Game = {
     this.lastPosition = new THREE.Vector3(0, 0, 0);
     SceneManager.add(this.player);
 
+    // Initialize actions
+    this.actions = {};
+
+    // Load walking animation (adjust path as needed)
+    await this.loadAnimation('assets/animations/Walk.fbx', 'walk');
+    
+    // Set up initial state
+    this.actions.walk.setLoop(THREE.LoopRepeat);
+    this.currentAction = this.actions.walk;
+
     // Input handling
     document.addEventListener('keydown', (event) => {
       switch (event.key) {
@@ -55,6 +78,7 @@ export const Game = {
         case 's': this.moveBackward = true; break;
         case 'a': this.moveLeft = true; break;
         case 'd': this.moveRight = true; break;
+        this.updateAnimation();
       }
     });
     document.addEventListener('keyup', (event) => {
@@ -63,8 +87,20 @@ export const Game = {
         case 's': this.moveBackward = false; break;
         case 'a': this.moveLeft = false; break;
         case 'd': this.moveRight = false; break;
+        this.updateAnimation();
       }
     });
+  },
+
+  updateAnimation(isMoving) {
+    if (isMoving && this.currentAction !== this.actions.walk) {
+      if (this.currentAction) this.currentAction.fadeOut(0.2);
+      this.actions.walk.reset().fadeIn(0.2).play();
+      this.currentAction = this.actions.walk;
+    } else if (!isMoving && this.currentAction === this.actions.walk) {
+      this.actions.walk.fadeOut(0.2);
+      this.currentAction = null;
+    }
   },
 
   createPlayerMesh(id) {
@@ -94,19 +130,36 @@ export const Game = {
         }
       }
     });
+    const mixer = new THREE.AnimationMixer(mesh);
     return {
       mesh: mesh,
+      mixer: mixer,
       targetPosition: new THREE.Vector3(0, 0, 0),
-      lastPosition: new THREE.Vector3(0, 0, 0)
+      lastPosition: new THREE.Vector3(0, 0, 0),
+      actions: {},
+      currentAction: null
     };
   },
 
+  // Add update method to handle animation timing
+  update(deltaTime) {
+    if (this.mixer) {
+      this.mixer.update(deltaTime);
+    }
+    
+    // Update other players' animations
+    for (let id in this.otherPlayers) {
+      const player = this.otherPlayers[id];
+      if (player.mixer) {
+        player.mixer.update(deltaTime);
+      }
+    }
+  },
+
   processInput(cameraForward, deltaTime) {
-    // Base speed value - will be multiplied by deltaTime for time-based movement
-    const baseSpeed = 5.0; // Units per second
+    const baseSpeed = 5.0;
     const speed = baseSpeed * deltaTime;
     
-    // Create an input packet that includes current state
     const input = {
       sequence: this.inputSequence++,
       timestamp: performance.now(),
@@ -118,23 +171,31 @@ export const Game = {
       cameraForward: cameraForward.clone()
     };
 
-    // Calculate movement based on current input state
     const delta = this.calculateMovementDelta(input, speed);
     
     if (delta.moved) {
-      // Store last position for reconciliation if needed
       this.lastPosition.copy(this.player.position);
       
-      // Store the input and calculated delta for possible reconciliation
       this.inputHistory.push({
         input: input,
         delta: delta
       });
       
-      // Trim history to avoid memory issues (keep last 60 inputs - about 1 second)
       if (this.inputHistory.length > 60) {
         this.inputHistory.shift();
       }
+
+      // Update animation state
+      this.updateAnimation(delta.moved);
+      
+      // Calculate facing direction
+      const movementDirection = new THREE.Vector3(delta.dx, 0, delta.dz).normalize();
+      if (movementDirection.length() > 0) {
+        const angle = Math.atan2(movementDirection.x, movementDirection.z);
+        this.player.rotation.y = angle;
+      }
+    } else {
+      this.updateAnimation(false);
     }
     
     return delta.moved ? delta : null;
