@@ -69,19 +69,19 @@ export const Game = {
 
     // Input handling
     document.addEventListener('keydown', (event) => {
-      switch (event.key) {
-        case 'w': this.moveForward = true; break;
-        case 's': this.moveBackward = true; break;
-        case 'a': this.moveLeft = true; break;
-        case 'd': this.moveRight = true; break;
+      switch (event.code) {
+        case 'KeyW': this.moveForward = true; break;
+        case 'KeyS': this.moveBackward = true; break;
+        case 'KeyA': this.moveLeft = true; break;
+        case 'KeyD': this.moveRight = true; break;
       }
     });
     document.addEventListener('keyup', (event) => {
-      switch (event.key) {
-        case 'w': this.moveForward = false; break;
-        case 's': this.moveBackward = false; break;
-        case 'a': this.moveLeft = false; break;
-        case 'd': this.moveRight = false; break;
+      switch (event.code) {
+        case 'KeyW': this.moveForward = false; break;
+        case 'KeyS': this.moveBackward = false; break;
+        case 'KeyA': this.moveLeft = false; break;
+        case 'KeyD': this.moveRight = false; break;
       }
     });
   },
