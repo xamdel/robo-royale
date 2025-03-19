@@ -52,8 +52,9 @@ export const Game = {
 
   async init(socket) {
     const playerModel = await this.loadMechModel();
-    this.player = playerModel.clone();
-    this.player.position.set(0, 0, 0);
+    this.player = playerModel;
+    // Maintain loaded model's Y position
+    this.player.position.set(0, playerModel.position.y, 0);
     SceneManager.add(this.player);
 
     // Initialize actions
@@ -128,11 +129,16 @@ export const Game = {
     };
   },
 
-  update(deltaTime) {
+update(deltaTime) {
     // Update animations
     if (this.mixer) {
       this.mixer.update(deltaTime);
     }
+
+    // Get camera direction and process input
+    const camera = SceneManager.camera;
+    const cameraForward = camera.getWorldDirection(new THREE.Vector3());
+    this.processInput(cameraForward, deltaTime);
   },
 
   processInput(cameraForward, deltaTime) {
@@ -149,7 +155,7 @@ export const Game = {
     
     // Apply movement based on keys pressed
     if (this.moveForward) {
-      this.player.position.add(forward.clone().multiplyScalar(speed));
+      this.player.position.add(forward.clone().multiplyScalar(speed)).setY(this.player.position.y);
       moved = true;
     }
     if (this.moveBackward) {
