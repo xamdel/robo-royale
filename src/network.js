@@ -2,6 +2,7 @@ import { io } from 'socket.io-client';
 
 export const Network = {
   socket: io(),
+  lastMoveSent: 0,
 
   init() {
     this.socket.on('connect', () => {
@@ -68,6 +69,11 @@ export const Network = {
   },
 
   sendMove(delta) {
-    this.socket.emit('move', { delta: delta });
+    const now = performance.now();
+    // Throttle movement packets to a maximum of 20 per second (50ms minimum gap)
+    if (now - this.lastMoveSent > 50) {
+      this.socket.emit('move', { delta: delta });
+      this.lastMoveSent = now;
+    }
   }
 };

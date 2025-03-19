@@ -20,6 +20,8 @@ async function init() {
     if (delta) {
       const euler = new THREE.Euler().setFromQuaternion(Game.player.quaternion, 'YXZ');
       delta.rotation = euler.y;
+      // Process movement locally for responsiveness
+      Game.player.position.lerp(Game.targetPosition, 0.25); // Apply movement locally at higher rate
       Network.sendMove(delta);
     }
 
