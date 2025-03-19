@@ -9,6 +9,7 @@ export const Game = {
   moveBackward: false,
   moveLeft: false,
   moveRight: false,
+  isRunning: false,
   mechModel: null,
   mixer: null,
   actions: {},
@@ -62,9 +63,12 @@ export const Game = {
 
     // Load walking animation
     await this.loadAnimation('assets/animations/Walk.fbx', 'walk');
-    
+    // Load running animation
+    await this.loadAnimation('assets/animations/Run Forward.fbx', 'run');
+
     // Set up initial state
     this.actions.walk.setLoop(THREE.LoopRepeat);
+    this.actions.run.setLoop(THREE.LoopRepeat);
     this.currentAction = null;
 
     // Input handling
@@ -74,6 +78,8 @@ export const Game = {
         case 'KeyS': this.moveBackward = true; break;
         case 'KeyA': this.moveLeft = true; break;
         case 'KeyD': this.moveRight = true; break;
+        case 'ShiftLeft':
+        case 'ShiftRight': this.isRunning = true; break;
       }
     });
     document.addEventListener('keyup', (event) => {
@@ -82,22 +88,32 @@ export const Game = {
         case 'KeyS': this.moveBackward = false; break;
         case 'KeyA': this.moveLeft = false; break;
         case 'KeyD': this.moveRight = false; break;
+        case 'ShiftLeft':
+        case 'ShiftRight': this.isRunning = false; break;
       }
     });
   },
 
   updateAnimation(isMoving) {
-    if (isMoving && this.currentAction !== this.actions.walk) {
-      if (this.currentAction) this.currentAction.fadeOut(0.2);
-      this.actions.walk.reset().fadeIn(0.2).play();
-      this.currentAction = this.actions.walk;
-    } else if (!isMoving && this.currentAction === this.actions.walk) {
-      this.actions.walk.fadeOut(0.2);
+    let targetAction = null;
+
+    if (isMoving) {
+      targetAction = this.isRunning ? this.actions.run : this.actions.walk;
+    }
+
+    if (targetAction != null && this.currentAction !== targetAction) {
+        if (this.currentAction) {
+            this.currentAction.fadeOut(0.2);
+        }
+        targetAction.reset().fadeIn(0.2).play();
+        this.currentAction = targetAction;
+    } else if (!isMoving && this.currentAction) {
+      this.currentAction.fadeOut(0.2);
       this.currentAction = null;
     }
   },
 
-  createPlayerMesh(id) {
+    createPlayerMesh(id) {
     if (!this.mechModel) {
       console.error("Mech model not loaded yet");
       return null;
@@ -142,9 +158,12 @@ update(deltaTime) {
   },
 
   processInput(cameraForward, deltaTime) {
-    const speed = 5.0 * deltaTime;
+    let speed = 5.0 * deltaTime;
+    if (this.isRunning) {
+      speed *= 2; // Double speed when running
+    }
     let moved = false;
-    
+
     // Calculate movement direction based on camera orientation
     const forward = cameraForward.clone();
     forward.y = 0;
