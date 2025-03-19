@@ -12,6 +12,8 @@ export const Game = {
   mechModel: null,
   targetPosition: null,
   lastPosition: null,
+  inputSequence: 0,
+  inputHistory: [],
 
   loadMechModel() {
     return new Promise((resolve) => {
@@ -29,17 +31,6 @@ export const Game = {
             // Shadow settings
             child.castShadow = true;
             child.receiveShadow = true;
-            
-            // if (child.material) {
-            //   // Handle material arrays
-            //   if (Array.isArray(child.material)) {
-            //     child.material.forEach(material => {
-            //       this.upgradeMaterial(material);
-            //     });
-            //   } else {
-            //     this.upgradeMaterial(child.material);
-            //   }
-            // }
           }
         });
 
@@ -47,43 +38,6 @@ export const Game = {
         resolve(fbx);
       });
     });
-  },
-
-  // New helper method to standardize material upgrading
-  upgradeMaterial(material) {
-    // Convert MeshBasicMaterial to MeshStandardMaterial
-    if (material.isMeshBasicMaterial) {
-      const color = material.color.clone();
-      const newMaterial = new THREE.MeshStandardMaterial({
-        color: color,
-        roughness: 0.7,
-        metalness: 0.3
-      });
-      
-      // Copy relevant properties
-      if (material.map) newMaterial.map = material.map;
-      if (material.normalMap) newMaterial.normalMap = material.normalMap;
-      
-      return newMaterial;
-    }
-    
-    // Preserve emissive properties (e.g., for the green glow)
-    if (material.emissive) {
-      material.emissiveIntensity = material.emissiveIntensity || 1.0; // Ensure intensity isn't zero
-    }
-    
-    // Fix transparency issues (only if needed)
-    if (material.transparent && material.opacity < 1.0) {
-      material.transparent = true; // Allow transparency if defined
-    } else {
-      material.transparent = false;
-      material.opacity = 1.0;
-    }
-    
-    // Ensure material is properly updated
-    material.needsUpdate = true;
-    
-    return material;
   },
 
   async init(socket) {
@@ -147,58 +101,125 @@ export const Game = {
     };
   },
 
-  processInput(cameraForward) {
-    const speed = 0.1;
-    let delta = { dx: 0, dy: 0, dz: 0, rotation: 0 }; // Rotation will be set in updateCamera
-    let moved = false;
+  processInput(cameraForward, deltaTime) {
+    // Base speed value - will be multiplied by deltaTime for time-based movement
+    const baseSpeed = 5.0; // Units per second
+    const speed = baseSpeed * deltaTime;
+    
+    // Create an input packet that includes current state
+    const input = {
+      sequence: this.inputSequence++,
+      timestamp: performance.now(),
+      moveForward: this.moveForward,
+      moveBackward: this.moveBackward,
+      moveLeft: this.moveLeft,
+      moveRight: this.moveRight,
+      deltaTime: deltaTime,
+      cameraForward: cameraForward.clone()
+    };
 
+    // Calculate movement based on current input state
+    const delta = this.calculateMovementDelta(input, speed);
+    
+    if (delta.moved) {
+      // Store last position for reconciliation if needed
+      this.lastPosition.copy(this.player.position);
+      
+      // Store the input and calculated delta for possible reconciliation
+      this.inputHistory.push({
+        input: input,
+        delta: delta
+      });
+      
+      // Trim history to avoid memory issues (keep last 60 inputs - about 1 second)
+      if (this.inputHistory.length > 60) {
+        this.inputHistory.shift();
+      }
+    }
+    
+    return delta.moved ? delta : null;
+  },
+  
+  calculateMovementDelta(input, speed) {
+    const delta = { 
+      dx: 0, 
+      dy: 0, 
+      dz: 0, 
+      rotation: 0,
+      moved: false 
+    };
+    
     // Use camera's forward direction (XZ plane only)
-    const forward = cameraForward.clone();
+    const forward = input.cameraForward.clone();
     forward.y = 0;
     forward.normalize();
 
     // Right vector (perpendicular to forward)
     const right = new THREE.Vector3();
     right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
-    
-    // Store current position before updates
-    this.lastPosition.copy(this.targetPosition);
 
-    if (this.moveForward) {
-      this.targetPosition.add(forward.clone().multiplyScalar(speed));
+    if (input.moveForward) {
       delta.dx += forward.x * speed;
       delta.dz += forward.z * speed;
-      moved = true;
+      delta.moved = true;
     }
-    if (this.moveBackward) {
-      this.targetPosition.sub(forward.clone().multiplyScalar(speed));
+    if (input.moveBackward) {
       delta.dx -= forward.x * speed;
       delta.dz -= forward.z * speed;
-      moved = true;
+      delta.moved = true;
     }
-    if (this.moveLeft) {
-      this.targetPosition.add(right.clone().multiplyScalar(speed)); // Left = positive right
+    if (input.moveLeft) {
       delta.dx += right.x * speed;
       delta.dz += right.z * speed;
-      moved = true;
+      delta.moved = true;
     }
-    if (this.moveRight) {
-      this.targetPosition.add(right.clone().multiplyScalar(-speed)); // Right = negative right
-      delta.dx += right.x * -speed;
-      delta.dz += right.z * -speed;
-      moved = true;
+    if (input.moveRight) {
+      delta.dx -= right.x * speed;
+      delta.dz -= right.z * speed;
+      delta.moved = true;
     }
+    
+    return delta;
+  },
 
-    // No need to set player.rotation.y here; it's handled in updateCamera
-    return moved ? delta : null;
+  applyMovement(delta) {
+    if (!delta || !delta.moved) return;
+    
+    // Apply the movement directly to the player
+    this.player.position.x += delta.dx;
+    this.player.position.y += delta.dy;
+    this.player.position.z += delta.dz;
+    
+    // Update the target position to match the new position
+    this.targetPosition.copy(this.player.position);
+  },
+  
+  // Handle server correction
+  handleServerCorrection(serverState) {
+    // Find the index of the last acknowledged input
+    const lastProcessedIndex = this.inputHistory.findIndex(
+      item => item.input.sequence === serverState.lastProcessedInput
+    );
+    
+    if (lastProcessedIndex !== -1) {
+      // Remove all processed inputs
+      this.inputHistory = this.inputHistory.slice(lastProcessedIndex + 1);
+      
+      // Apply the server correction
+      this.player.position.set(
+        serverState.position.x,
+        serverState.position.y,
+        serverState.position.z
+      );
+      
+      // Reapply all inputs that haven't been processed by the server yet
+      this.inputHistory.forEach(item => {
+        this.applyMovement(item.delta);
+      });
+    }
   },
 
   interpolatePlayers() {
-    // Interpolate local player
-    if (this.player && this.targetPosition) {
-      this.player.position.lerp(this.targetPosition, 0.1);
-    }
-    
     // Interpolate other players
     for (let id in this.otherPlayers) {
       const player = this.otherPlayers[id];
