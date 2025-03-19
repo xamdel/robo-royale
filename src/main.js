@@ -3,59 +3,47 @@ import { Game } from './game.js';
 import { Network } from './network.js';
 import * as THREE from 'three';
 
-const TICK_RATE = 60;
-const MS_PER_TICK = 1000 / TICK_RATE;
-let lastTickTime = 0;
-let accumulator = 0;
-
 async function init() {
   SceneManager.init();
   Network.init();
   
   await Game.init(Network.socket);
-  lastTickTime = performance.now();
+  
+  // Start the game loop
+  lastTime = performance.now();
   requestAnimationFrame(gameLoop);
 }
+
+let lastTime = 0;
+let lastNetworkUpdate = 0;
+const NETWORK_UPDATE_RATE = 100; // ms between network updates
 
 function gameLoop(timestamp) {
-  const deltaTime = timestamp - lastTickTime;
-  lastTickTime = timestamp;
+  const deltaTime = (timestamp - lastTime) / 1000; // Convert to seconds
+  lastTime = timestamp;
   
-  accumulator += deltaTime;
-  
-  while (accumulator >= MS_PER_TICK) {
-    fixedUpdate(MS_PER_TICK / 1000);
-    accumulator -= MS_PER_TICK;
+  // Update camera position based on player
+  if (Game.player) {
+    const cameraForward = SceneManager.updateCamera(Game.player.position);
+    
+    // Process player input and get movement data
+    const moveData = Game.processInput(cameraForward, deltaTime);
+    
+    // Send position to server at a controlled rate
+    if (moveData && timestamp - lastNetworkUpdate > NETWORK_UPDATE_RATE) {
+      Network.sendMove(moveData);
+      lastNetworkUpdate = timestamp;
+    }
   }
   
-  // Update animations with the full frame time for smooth playback
-  Game.update(deltaTime / 1000); // Convert to seconds
+  // Update animations
+  Game.update(deltaTime);
+  
+  // Render the scene
   SceneManager.render();
   
+  // Continue the game loop
   requestAnimationFrame(gameLoop);
-}
-
-function fixedUpdate(deltaTime) {
-  let cameraForward = null;
-  
-  if (Game.player) {
-    cameraForward = SceneManager.updateCamera(
-      Game.player.position, 
-      Game.player.quaternion
-    );
-    
-    const delta = Game.processInput(cameraForward, deltaTime);
-    
-    if (delta) {
-      const euler = new THREE.Euler().setFromQuaternion(Game.player.quaternion, 'YXZ');
-      delta.rotation = euler.y;
-      
-      Game.applyMovement(delta);
-      Network.sendMove(delta);
-    }
-    
-    Game.interpolatePlayers();
-  }
 }
 
 window.onload = init;

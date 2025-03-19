@@ -5,8 +5,6 @@ import * as THREE from 'three';
 
 export const Network = {
   socket: null,
-  lastMoveSent: 0,
-  sendRate: 50, // Send rate limit in ms (20 updates per second)
 
   init() {
     this.socket = io();
@@ -20,14 +18,6 @@ export const Network = {
       for (let id in serverPlayers) {
         if (id !== this.socket.id) {
           this.addOtherPlayer(id, serverPlayers[id].position);
-        } else {
-          // Set our own position from the server
-          Game.player.position.set(
-            serverPlayers[id].position.x,
-            serverPlayers[id].position.y,
-            serverPlayers[id].position.z
-          );
-          Game.targetPosition.copy(Game.player.position);
         }
       }
     });
@@ -41,25 +31,15 @@ export const Network = {
 
     this.socket.on('playerMoved', (data) => {
       if (Game.otherPlayers[data.id]) {
-        // Store the last position for interpolation
-        Game.otherPlayers[data.id].lastPosition.copy(Game.otherPlayers[data.id].mesh.position);
-        
-        // Set the target position for smooth movement
-        Game.otherPlayers[data.id].targetPosition.set(
+        // Update other player position directly
+        Game.otherPlayers[data.id].mesh.position.set(
           data.position.x,
           data.position.y,
           data.position.z
         );
         
-        // Update rotation if provided
-        if (data.rotation !== undefined) {
-          // Create a quaternion for the rotation around the Y axis
-          const targetQuaternion = new THREE.Quaternion();
-          targetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), data.rotation);
-          
-          // Apply the quaternion to the player mesh
-          Game.otherPlayers[data.id].mesh.quaternion.copy(targetQuaternion);
-        }
+        // Update rotation
+        Game.otherPlayers[data.id].mesh.rotation.y = data.rotation;
       }
     });
 
@@ -70,12 +50,6 @@ export const Network = {
         delete Game.otherPlayers[id];
       }
     });
-    
-    // Add handler for server corrections
-    this.socket.on('serverCorrection', (data) => {
-      console.log('Received server correction:', data);
-      Game.handleServerCorrection(data);
-    });
   },
 
   addOtherPlayer(id, position) {
@@ -83,26 +57,15 @@ export const Network = {
     
     if (Game.otherPlayers[id]) {
       SceneManager.add(Game.otherPlayers[id].mesh);
-      Game.otherPlayers[id].targetPosition.set(position.x, position.y, position.z);
-      Game.otherPlayers[id].lastPosition.copy(Game.otherPlayers[id].targetPosition);
-      Game.otherPlayers[id].mesh.position.copy(Game.otherPlayers[id].targetPosition);
+      Game.otherPlayers[id].mesh.position.set(
+        position.x, 
+        position.y, 
+        position.z
+      );
     }
   },
 
-  sendMove(delta) {
-    const now = performance.now();
-    
-    // Throttle network updates to reduce bandwidth
-    if (now - this.lastMoveSent > this.sendRate) {
-      // Include input sequence number for reconciliation
-      const moveData = {
-        delta: delta,
-        sequence: Game.inputSequence - 1, // Send the sequence of the processed input
-        timestamp: now
-      };
-      
-      this.socket.emit('move', moveData);
-      this.lastMoveSent = now;
-    }
+  sendMove(moveData) {
+    this.socket.emit('move', moveData);
   }
 };

@@ -10,31 +10,28 @@ export const Game = {
   moveLeft: false,
   moveRight: false,
   mechModel: null,
-  targetPosition: null,
-  lastPosition: null,
-  inputSequence: 0,
-  inputHistory: [],
+  mixer: null,
+  actions: {},
+  currentAction: null,
 
   loadMechModel() {
     return new Promise((resolve) => {
       const loader = new FBXLoader();
-      loader.load('assets/models/gemini-mech.fbx', (fbx) => {
+      loader.load('assets/models/gemini-mech-rigged.fbx', (fbx) => {
+        console.log(fbx);
+        fbx.traverse((child) => {
+          console.log(child.name, child.type); // Log all children (bones, meshes, etc.)
+        });
         fbx.scale.set(5, 5, 5)
         fbx.position.y = 0.1;
 
-        // Ensure the model faces -Z (Three.js forward)
-        // fbx.rotation.y = Math.PI; 
-        // Rotate 180 if front is +Z in the FBX
-
         fbx.traverse((child) => {
           if (child.isMesh) {
-            // Shadow settings
             child.castShadow = true;
             child.receiveShadow = true;
           }
         });
 
-        // Initialize animation mixer
         this.mixer = new THREE.AnimationMixer(fbx);
         this.mechModel = fbx;
         resolve(fbx);
@@ -57,19 +54,17 @@ export const Game = {
     const playerModel = await this.loadMechModel();
     this.player = playerModel.clone();
     this.player.position.set(0, 0, 0);
-    this.targetPosition = new THREE.Vector3(0, 0, 0);
-    this.lastPosition = new THREE.Vector3(0, 0, 0);
     SceneManager.add(this.player);
 
     // Initialize actions
     this.actions = {};
 
-    // Load walking animation (adjust path as needed)
+    // Load walking animation
     await this.loadAnimation('assets/animations/Walk.fbx', 'walk');
     
     // Set up initial state
     this.actions.walk.setLoop(THREE.LoopRepeat);
-    this.currentAction = this.actions.walk;
+    this.currentAction = null;
 
     // Input handling
     document.addEventListener('keydown', (event) => {
@@ -78,7 +73,6 @@ export const Game = {
         case 's': this.moveBackward = true; break;
         case 'a': this.moveLeft = true; break;
         case 'd': this.moveRight = true; break;
-        this.updateAnimation();
       }
     });
     document.addEventListener('keyup', (event) => {
@@ -87,7 +81,6 @@ export const Game = {
         case 's': this.moveBackward = false; break;
         case 'a': this.moveLeft = false; break;
         case 'd': this.moveRight = false; break;
-        this.updateAnimation();
       }
     });
   },
@@ -130,161 +123,71 @@ export const Game = {
         }
       }
     });
-    const mixer = new THREE.AnimationMixer(mesh);
     return {
-      mesh: mesh,
-      mixer: mixer,
-      targetPosition: new THREE.Vector3(0, 0, 0),
-      lastPosition: new THREE.Vector3(0, 0, 0),
-      actions: {},
-      currentAction: null
+      mesh: mesh
     };
   },
 
-  // Add update method to handle animation timing
   update(deltaTime) {
+    // Update animations
     if (this.mixer) {
       this.mixer.update(deltaTime);
-    }
-    
-    // Update other players' animations
-    for (let id in this.otherPlayers) {
-      const player = this.otherPlayers[id];
-      if (player.mixer) {
-        player.mixer.update(deltaTime);
-      }
     }
   },
 
   processInput(cameraForward, deltaTime) {
-    const baseSpeed = 5.0;
-    const speed = baseSpeed * deltaTime;
+    const speed = 5.0 * deltaTime;
+    let moved = false;
     
-    const input = {
-      sequence: this.inputSequence++,
-      timestamp: performance.now(),
-      moveForward: this.moveForward,
-      moveBackward: this.moveBackward,
-      moveLeft: this.moveLeft,
-      moveRight: this.moveRight,
-      deltaTime: deltaTime,
-      cameraForward: cameraForward.clone()
-    };
-
-    const delta = this.calculateMovementDelta(input, speed);
-    
-    if (delta.moved) {
-      this.lastPosition.copy(this.player.position);
-      
-      this.inputHistory.push({
-        input: input,
-        delta: delta
-      });
-      
-      if (this.inputHistory.length > 60) {
-        this.inputHistory.shift();
-      }
-
-      // Update animation state
-      this.updateAnimation(delta.moved);
-      
-      // Calculate facing direction
-      const movementDirection = new THREE.Vector3(delta.dx, 0, delta.dz).normalize();
-      if (movementDirection.length() > 0) {
-        const angle = Math.atan2(movementDirection.x, movementDirection.z);
-        this.player.rotation.y = angle;
-      }
-    } else {
-      this.updateAnimation(false);
-    }
-    
-    return delta.moved ? delta : null;
-  },
-  
-  calculateMovementDelta(input, speed) {
-    const delta = { 
-      dx: 0, 
-      dy: 0, 
-      dz: 0, 
-      rotation: 0,
-      moved: false 
-    };
-    
-    // Use camera's forward direction (XZ plane only)
-    const forward = input.cameraForward.clone();
+    // Calculate movement direction based on camera orientation
+    const forward = cameraForward.clone();
     forward.y = 0;
     forward.normalize();
-
-    // Right vector (perpendicular to forward)
+    
     const right = new THREE.Vector3();
     right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
-
-    if (input.moveForward) {
-      delta.dx += forward.x * speed;
-      delta.dz += forward.z * speed;
-      delta.moved = true;
+    
+    // Apply movement based on keys pressed
+    if (this.moveForward) {
+      this.player.position.add(forward.clone().multiplyScalar(speed));
+      moved = true;
     }
-    if (input.moveBackward) {
-      delta.dx -= forward.x * speed;
-      delta.dz -= forward.z * speed;
-      delta.moved = true;
+    if (this.moveBackward) {
+      this.player.position.add(forward.clone().multiplyScalar(-speed));
+      moved = true;
     }
-    if (input.moveLeft) {
-      delta.dx += right.x * speed;
-      delta.dz += right.z * speed;
-      delta.moved = true;
+    if (this.moveLeft) {
+      this.player.position.add(right.clone().multiplyScalar(speed));
+      moved = true;
     }
-    if (input.moveRight) {
-      delta.dx -= right.x * speed;
-      delta.dz -= right.z * speed;
-      delta.moved = true;
+    if (this.moveRight) {
+      this.player.position.add(right.clone().multiplyScalar(-speed));
+      moved = true;
     }
     
-    return delta;
-  },
-
-  applyMovement(delta) {
-    if (!delta || !delta.moved) return;
+    // Update animation state
+    this.updateAnimation(moved);
     
-    // Apply the movement directly to the player
-    this.player.position.x += delta.dx;
-    this.player.position.y += delta.dy;
-    this.player.position.z += delta.dz;
-    
-    // Update the target position to match the new position
-    this.targetPosition.copy(this.player.position);
-  },
-  
-  // Handle server correction
-  handleServerCorrection(serverState) {
-    // Find the index of the last acknowledged input
-    const lastProcessedIndex = this.inputHistory.findIndex(
-      item => item.input.sequence === serverState.lastProcessedInput
-    );
-    
-    if (lastProcessedIndex !== -1) {
-      // Remove all processed inputs
-      this.inputHistory = this.inputHistory.slice(lastProcessedIndex + 1);
+    // Update player rotation to face movement direction
+    if (moved) {
+      // Calculate movement direction
+      const movementDirection = new THREE.Vector3();
       
-      // Apply the server correction
-      this.player.position.set(
-        serverState.position.x,
-        serverState.position.y,
-        serverState.position.z
-      );
+      if (this.moveForward) movementDirection.add(forward);
+      if (this.moveBackward) movementDirection.sub(forward);
+      if (this.moveLeft) movementDirection.add(right);
+      if (this.moveRight) movementDirection.sub(right);
       
-      // Reapply all inputs that haven't been processed by the server yet
-      this.inputHistory.forEach(item => {
-        this.applyMovement(item.delta);
-      });
+      if (movementDirection.length() > 0.1) {
+        movementDirection.normalize();
+        const targetAngle = Math.atan2(movementDirection.x, movementDirection.z);
+        this.player.rotation.y = targetAngle;
+      }
     }
-  },
-
-  interpolatePlayers() {
-    // Interpolate other players
-    for (let id in this.otherPlayers) {
-      const player = this.otherPlayers[id];
-      player.mesh.position.lerp(player.targetPosition, 0.1);
-    }
+    
+    return moved ? {
+      position: this.player.position.clone(),
+      rotation: this.player.rotation.y
+    } : null;
   }
 };
