@@ -1,9 +1,12 @@
-const SceneManager = {
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+
+export const SceneManager = {
   scene: new THREE.Scene(),
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
-  defaultOffset: new THREE.Vector3(2, 30, 18), // Right shoulder, default
-  aimOffset: new THREE.Vector3(2, 50, 0),      // Right shoulder, aiming
+  defaultOffset: new THREE.Vector3(2, 30, 18),
+  aimOffset: new THREE.Vector3(2, 50, 0),
   cameraOffset: null,
   cameraYaw: 0,
   cameraPitch: 0,
@@ -14,27 +17,35 @@ const SceneManager = {
   init() {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.5;
     document.body.appendChild(this.renderer.domElement);
 
-    // Initialize camera offset
     this.cameraOffset = this.defaultOffset.clone();
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 2.0); // Increase to 1.0
-    SceneManager.scene.add(ambientLight);
+    const environment = new RoomEnvironment();
+    const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    pmremGenerator.compileEquirectangularShader();
+    this.scene.environment = pmremGenerator.fromScene(environment).texture;
+    environment.dispose();
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0); // Increase to 2.0
-    directionalLight.position.set(10, 50, 20);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+    this.scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 2048;
     directionalLight.shadow.mapSize.height = 2048;
     directionalLight.shadow.camera.near = 0.5;
     directionalLight.shadow.camera.far = 100;
-    SceneManager.scene.add(directionalLight);
+    this.scene.add(directionalLight);
 
-    // Terrain (unchanged)
+    const lightHelper = new THREE.DirectionalLightHelper(directionalLight, 5);
+    this.scene.add(lightHelper);
+
     const terrainGeometry = new THREE.PlaneGeometry(50, 50);
     const textureLoader = new THREE.TextureLoader();
-    const terrainTexture = textureLoader.load('assets/grid.png');
+    const terrainTexture = textureLoader.load('/assets/grid.png');
     terrainTexture.wrapS = terrainTexture.wrapT = THREE.RepeatWrapping;
     terrainTexture.repeat.set(10, 10);
     const terrainMaterial = new THREE.MeshStandardMaterial({ 
@@ -47,29 +58,26 @@ const SceneManager = {
     terrain.receiveShadow = true;
     this.scene.add(terrain);
 
-    // Add a test cube
-    const cubeGeometry = new THREE.BoxGeometry(2, 2, 2); // 2x2x2 cube
+    const cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
     const cubeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x00ff00, // Bright green for visibility
+      color: 0x00ff00,
       roughness: 0.5,
       metalness: 0.0
     });
     const testCube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-    testCube.position.set(5, 1, 5); // Place it on the terrain, slightly offset from origin
+    testCube.position.set(5, 1, 5);
     testCube.castShadow = true;
     testCube.receiveShadow = true;
     this.scene.add(testCube);
 
-    // Initial camera setup
     this.camera.position.set(2, 32, 18);
 
-    // Mouse and input controls
     document.addEventListener('mousemove', (event) => this.onMouseMove(event));
     document.addEventListener('mousedown', (event) => {
-      if (event.button === 1) { // Middle mouse for free-look
+      if (event.button === 1) {
         this.freeLook = true;
-      } else if (event.button === 2) { // Right-click for zoom/aim
-        event.preventDefault(); // Stop context menu
+      } else if (event.button === 2) {
+        event.preventDefault();
         this.isAiming = true;
         this.cameraOffset.copy(this.aimOffset);
         this.camera.fov = 50;
@@ -77,9 +85,9 @@ const SceneManager = {
       }
     });
     document.addEventListener('mouseup', (event) => {
-      if (event.button === 1) { // Middle mouse release
+      if (event.button === 1) {
         this.freeLook = false;
-      } else if (event.button === 2) { // Right-click release
+      } else if (event.button === 2) {
         event.preventDefault();
         this.isAiming = false;
         this.cameraOffset.copy(this.defaultOffset);
@@ -96,7 +104,6 @@ const SceneManager = {
         if (!this.isAiming) this.cameraOffset.x = xOffset;
       }
     });
-    // Prevent context menu globally on canvas
     this.renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
     document.body.requestPointerLock();
   },
@@ -121,12 +128,10 @@ const SceneManager = {
   },
 
   updateCamera(playerPosition, playerRotation) {
-    // Camera rotation
     const targetCameraQuaternion = new THREE.Quaternion();
     targetCameraQuaternion.setFromEuler(new THREE.Euler(this.cameraPitch, this.cameraYaw, 0, 'YXZ'));
     this.camera.quaternion.slerp(targetCameraQuaternion, 0.1);
 
-    // Player rotation (adjusted for reverse-oriented .fbx)
     if (!this.freeLook) {
       const playerYaw = this.cameraYaw + Math.PI;
       const targetPlayerQuaternion = new THREE.Quaternion();
@@ -134,12 +139,10 @@ const SceneManager = {
       playerRotation.slerp(targetPlayerQuaternion, 0.1);
     }
 
-    // Calculate ideal camera position
     const offset = this.cameraOffset.clone();
     offset.applyQuaternion(targetCameraQuaternion);
     let targetCameraPosition = playerPosition.clone().add(offset);
 
-    // Collision detection
     const raycaster = new THREE.Raycaster(playerPosition, offset.clone().normalize(), 0, offset.length());
     const intersects = raycaster.intersectObjects(this.scene.children, true);
     if (intersects.length > 0 && intersects[0].distance < offset.length()) {
@@ -148,18 +151,15 @@ const SceneManager = {
       );
     }
 
-    // Smoothly move camera with height clamp
     this.camera.position.lerp(targetCameraPosition, 0.1);
     if (this.camera.position.y < playerPosition.y + 2) {
       this.camera.position.y = playerPosition.y + 2;
     }
 
-    // Look at a point above the player
     const lookAtPosition = playerPosition.clone();
     lookAtPosition.y += 2.5;
     this.camera.lookAt(lookAtPosition);
 
-    // Return forward direction
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
     return forward;
   }

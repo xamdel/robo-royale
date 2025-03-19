@@ -1,4 +1,6 @@
-const Network = {
+import { io } from 'socket.io-client';
+
+export const Network = {
   socket: io(),
 
   init() {

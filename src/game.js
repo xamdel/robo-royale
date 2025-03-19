@@ -1,4 +1,8 @@
-const Game = {
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { SceneManager } from './scene.js';
+
+export const Game = {
   player: null,
   otherPlayers: {},
   moveForward: false,
@@ -9,7 +13,7 @@ const Game = {
 
   loadMechModel() {
     return new Promise((resolve) => {
-      const loader = new THREE.GLTFLoader();
+      const loader = new GLTFLoader();
       loader.load('assets/models/mech.glb', (gltf) => {
         const fbx = gltf.scene;
         // Position adjustment

@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "repository": {
     "type": "git",
@@ -19,7 +21,14 @@
   },
   "homepage": "https://github.com/xamdel/robo-royale#readme",
   "dependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.36.0",
     "express": "^4.21.2",
-    "socket.io": "^4.8.1"
+    "path": "^0.12.7",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "vite": "^6.2.2"
   }
 }

@@ -1,12 +1,32 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
-app.use(express.static('public'));
+// Serve static files from the dist directory when in production
+// In development, Vite's dev server will handle this
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, 'dist')));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  });
+} else {
+  // For development, just serve the socket.io endpoint
+  app.get('/', (req, res) => {
+    res.send('Socket.io server running. Connect via Vite dev server at http://localhost:5173');
+  });
+}
 
 let players = {};
 
@@ -53,7 +73,7 @@ io.on('connection', (socket) => {
           rotation: player.rotation
         });
       } else {
-        // console.log(`Invalid move rejected for ${socket.id}:`, delta);s
+        // console.log(`Invalid move rejected for ${socket.id}:`, delta);
       }
     }
   });
@@ -66,7 +86,8 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.NODE_ENV === 'production' ? (process.env.PORT || 3000) : 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Node environment: ${process.env.NODE_ENV || 'development'}`);
 });
