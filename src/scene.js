@@ -25,10 +25,20 @@ export const SceneManager = {
     directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    directionalLight.shadow.camera.near = 0.5;
-    directionalLight.shadow.camera.far = 100;
+    directionalLight.shadow.mapSize.height = 4096; // Increased resolution
+    directionalLight.shadow.camera.near = 1; // Adjusted near plane
+    directionalLight.shadow.camera.far = 200; // Adjusted far plane
+    directionalLight.shadow.camera.left = -100; // Added left plane
+    directionalLight.shadow.camera.right = 100; // Added right plane
+    directionalLight.shadow.camera.top = 100; // Added top plane
+    directionalLight.shadow.camera.bottom = -100; // Added bottom plane
+    directionalLight.shadow.bias = -0.001; // Reduce shadow acne
     this.scene.add(directionalLight);
+
+    // Add shadow camera helper for debugging
+    this.debugHelpers.shadowCamera = new THREE.CameraHelper(directionalLight.shadow.camera);
+    this.scene.add(this.debugHelpers.shadowCamera);
+    this.debugHelpers.shadowCamera.visible = false;
 
     // Add a simple terrain
     const terrainGeometry = new THREE.PlaneGeometry(200, 200);
