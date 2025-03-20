@@ -65,7 +65,7 @@ export const Game = {
     // Load walking animation
     await this.loadAnimation('assets/animations/Walk.fbx', 'walk');
     // Load running animation
-    await this.loadAnimation('assets/animations/Run Forward.fbx', 'run');
+    await this.loadAnimation('assets/animations/Standing Run Forward.fbx', 'run');
 
     // Set up initial state
     this.actions.walk.setLoop(THREE.LoopRepeat);

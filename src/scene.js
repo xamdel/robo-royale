@@ -15,12 +15,8 @@ export const SceneManager = {
     this.renderer.toneMappingExposure = 1.5;
     document.body.appendChild(this.renderer.domElement);
 
-    // Set up environment
-    const environment = new RoomEnvironment();
-    const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
-    pmremGenerator.compileEquirectangularShader();
-    this.scene.environment = pmremGenerator.fromScene(environment).texture;
-    environment.dispose();
+    // Set scene background color to sky blue
+    this.scene.background = new THREE.Color('#87CEEB');
 
     // Add lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
@@ -35,15 +31,13 @@ export const SceneManager = {
     this.scene.add(directionalLight);
 
     // Add a simple terrain
-    const terrainGeometry = new THREE.PlaneGeometry(50, 50);
+    const terrainGeometry = new THREE.PlaneGeometry(200, 200);
     const textureLoader = new THREE.TextureLoader();
-    const terrainTexture = textureLoader.load('/assets/grid.png');
-    terrainTexture.wrapS = terrainTexture.wrapT = THREE.RepeatWrapping;
-    terrainTexture.repeat.set(10, 10);
-    const terrainMaterial = new THREE.MeshStandardMaterial({ 
-      map: terrainTexture,
-      roughness: 0.8,
-      metalness: 0.2
+    // const terrainTexture = textureLoader.load('/assets/grid.png');
+    // terrainTexture.wrapS = terrainTexture.wrapT = THREE.RepeatWrapping;
+    // terrainTexture.repeat.set(10, 10);
+    const terrainMaterial = new THREE.MeshPhongMaterial({
+      color: '#008000', // Green color
     });
     const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
     terrain.rotation.x = -Math.PI / 2;
