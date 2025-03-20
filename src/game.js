@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { SceneManager } from './scene.js';
+import { Debug } from './main.js';
 
 export const Game = {
   player: null,
@@ -113,13 +114,55 @@ export const Game = {
     }
   },
 
-    createPlayerMesh(id) {
+  updateOtherPlayerAnimation(player) {
+    if (!player.targetPosition || !player.previousPosition) {
+      player.previousPosition = player.mesh.position.clone();
+      return;
+    }
+    
+    // Check if player is moving
+    const distance = player.mesh.position.distanceTo(player.previousPosition);
+    const isMoving = distance > 0.01;
+    player.previousPosition = player.mesh.position.clone();
+    
+    let targetAction = null;
+    
+    if (isMoving) {
+      targetAction = player.isRunning ? player.actions.run : player.actions.walk;
+    }
+    
+    if (targetAction != null && player.currentAction !== targetAction) {
+      if (player.currentAction) {
+        player.currentAction.fadeOut(0.2);
+      }
+      targetAction.reset().fadeIn(0.2).play();
+      player.currentAction = targetAction;
+    } else if (!isMoving && player.currentAction) {
+      player.currentAction.fadeOut(0.2);
+      player.currentAction = null;
+    }
+  },
+
+  createPlayerMesh(id) {
     if (!this.mechModel) {
       console.error("Mech model not loaded yet");
       return null;
     }
     const mesh = this.mechModel.clone();
     mesh.position.set(0, 0, 0);
+    
+    // Create animation mixer for this player
+    const mixer = new THREE.AnimationMixer(mesh);
+    
+    // Clone animation actions
+    const walkAction = this.actions.walk ? 
+      mixer.clipAction(this.actions.walk._clip) : null;
+    const runAction = this.actions.run ? 
+      mixer.clipAction(this.actions.run._clip) : null;
+    
+    if (walkAction) walkAction.setLoop(THREE.LoopRepeat);
+    if (runAction) runAction.setLoop(THREE.LoopRepeat);
+    
     mesh.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true;
@@ -140,21 +183,49 @@ export const Game = {
         }
       }
     });
+    
     return {
-      mesh: mesh
+      mesh: mesh,
+      mixer: mixer,
+      actions: {
+        walk: walkAction,
+        run: runAction
+      },
+      currentAction: null,
+      isRunning: false,
+      targetPosition: null,
+      targetRotation: 0,
+      previousPosition: null
     };
   },
 
-update(deltaTime) {
-    // Update animations
+  update(deltaTime) {
+    // Update main player animation mixer
     if (this.mixer) {
       this.mixer.update(deltaTime);
     }
-
+    
+    // Update other player animations
+    for (const id in this.otherPlayers) {
+      const player = this.otherPlayers[id];
+      if (player.mixer) {
+        player.mixer.update(deltaTime);
+        
+        // Update other player animations based on movement and running state
+        this.updateOtherPlayerAnimation(player);
+      }
+    }
+    
     // Get camera direction and process input
     const camera = SceneManager.camera;
     const cameraForward = camera.getWorldDirection(new THREE.Vector3());
     this.processInput(cameraForward, deltaTime);
+  },
+
+  // Debug properties
+  debugInfo: {
+    lastSentPosition: null,
+    positionHistory: []
   },
 
   processInput(cameraForward, deltaTime) {
@@ -172,6 +243,9 @@ update(deltaTime) {
     const right = new THREE.Vector3();
     right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
     
+    // Store previous position for debug visualization
+    const previousPosition = this.player.position.clone();
+    
     // Apply movement based on keys pressed
     if (this.moveForward) {
       this.player.position.add(forward.clone().multiplyScalar(speed)).setY(this.player.position.y);
@@ -188,6 +262,22 @@ update(deltaTime) {
     if (this.moveRight) {
       this.player.position.add(right.clone().multiplyScalar(-speed));
       moved = true;
+    }
+    
+    // Debug visualization for player movement
+    if (Debug.state.enabled && moved) {
+      // Store position history for debug trail
+      this.debugInfo.positionHistory.push(previousPosition);
+      
+      // Limit history length
+      if (this.debugInfo.positionHistory.length > 20) {
+        this.debugInfo.positionHistory.shift();
+      }
+      
+      // Draw debug trail
+      if (Debug.state.showVisualHelpers) {
+        this.drawDebugTrail();
+      }
     }
     
     // Update animation state
@@ -210,9 +300,43 @@ update(deltaTime) {
       }
     }
     
-    return moved ? {
+    const moveData = moved ? {
       position: this.player.position.clone(),
       rotation: this.player.rotation.y
     } : null;
+    
+    // Store last sent position for debug visualization
+    if (moveData) {
+      this.debugInfo.lastSentPosition = moveData.position.clone();
+    }
+    
+    return moveData;
+  },
+  
+  // Draw debug trail showing player movement history
+  drawDebugTrail() {
+    // Remove old trail if it exists
+    if (this.debugInfo.trail) {
+      SceneManager.scene.remove(this.debugInfo.trail);
+    }
+    
+    // Create points for the trail
+    const points = [...this.debugInfo.positionHistory];
+    
+    // Add current position
+    if (this.player) {
+      points.push(this.player.position.clone());
+    }
+    
+    // Create line
+    if (points.length > 1) {
+      const material = new THREE.LineBasicMaterial({ color: 0x00ffff });
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.Line(geometry, material);
+      
+      // Store and add to scene
+      this.debugInfo.trail = line;
+      SceneManager.scene.add(line);
+    }
   }
 };

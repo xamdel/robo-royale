@@ -27,17 +27,39 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Game state - just store player positions
+// Game state - store player positions
 let players = {};
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
+  // --- Network Diagnostics ---
+  let lastUpdateTimestamp = Date.now();
+  let sentPackets = 0;
+  let lostPackets = 0; // Placeholder - requires more sophisticated tracking
+
+  // Periodically send network statistics to the client
+  const networkStatsInterval = setInterval(() => {
+    const now = Date.now();
+    const latency = now - lastUpdateTimestamp; // Simple latency estimate
+    const packetLoss = lostPackets / (sentPackets + lostPackets) * 100 || 0; // Calculate packet loss
+    // Reset packet counts (in a real implementation, you'd use sequence numbers)
+    sentPackets = 0;
+    lostPackets = 0;
+
+    socket.emit('networkStats', {
+      latency: latency,
+      packetLoss: packetLoss,
+      updateRate: 0, // Placeholder for now, will calculate on move
+    });
+  }, 1000); // Send every second
+
   // Add new player with default position
   players[socket.id] = {
     id: socket.id,
     position: { x: 0, y: 0, z: 0 },
-    rotation: 0
+    rotation: 0,
+    isRunning: false
   };
 
   // Tell others about the new player
@@ -52,19 +74,37 @@ io.on('connection', (socket) => {
       // Update player position directly
       players[socket.id].position = moveData.position;
       players[socket.id].rotation = moveData.rotation;
-      
+      players[socket.id].isRunning = moveData.isRunning;
+
+      // --- Server-Side Movement Logging ---
+      // Only log if debug flag is set in the move data
+      if (moveData.debug) {
+        console.log(`[${Date.now()}] Movement - Player ${socket.id}:`, moveData);
+      }
+
       // Broadcast to all other clients
-      socket.broadcast.emit('playerMoved', { 
-        id: socket.id, 
+      const now = Date.now();
+      const updateRate = now - lastUpdateTimestamp;
+      lastUpdateTimestamp = now;
+      sentPackets++;
+
+      socket.broadcast.emit('playerMoved', {
+        id: socket.id,
         position: players[socket.id].position,
-        rotation: players[socket.id].rotation
+        rotation: players[socket.id].rotation,
+        isRunning: players[socket.id].isRunning,
+        updateRate: updateRate, // Send actual update rate
+        sequence: moveData.sequence // Pass through sequence number if available
       });
+    } else {
+      lostPackets++; // Increment if move data is for a non-existent player
     }
   });
 
   // Handle disconnection
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    clearInterval(networkStatsInterval); // Stop sending stats
     delete players[socket.id];
     io.emit('playerDisconnected', socket.id);
   });

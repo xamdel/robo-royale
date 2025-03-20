@@ -6,6 +6,7 @@ export const SceneManager = {
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
   cameraOffset: new THREE.Vector3(0, 10, 10), // Simple third-person camera offset
+  debugHelpers: {}, // Store debug helpers
 
   init() {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -80,6 +81,41 @@ export const SceneManager = {
 
   remove(object) {
     this.scene.remove(object);
+    // Also remove any debug helpers associated with this object
+    if (this.debugHelpers[object.uuid]) {
+      this.scene.remove(this.debugHelpers[object.uuid]);
+      delete this.debugHelpers[object.uuid];
+    }
+  },
+  
+  // Add debug visualization for interpolation
+  addDebugHelper(playerId, mesh, targetPosition) {
+    // Create a line between current position and target position
+    const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      mesh.position,
+      targetPosition
+    ]);
+    const line = new THREE.Line(geometry, material);
+    this.scene.add(line);
+    
+    // Store the helper
+    this.debugHelpers[mesh.uuid] = line;
+    
+    return line;
+  },
+  
+  // Update debug visualization
+  updateDebugHelper(mesh, targetPosition) {
+    if (this.debugHelpers[mesh.uuid]) {
+      // Update the line geometry
+      const points = [mesh.position.clone(), targetPosition.clone()];
+      this.debugHelpers[mesh.uuid].geometry.setFromPoints(points);
+      this.debugHelpers[mesh.uuid].geometry.attributes.position.needsUpdate = true;
+    } else {
+      // Create a new helper if it doesn't exist
+      this.addDebugHelper(mesh.uuid, mesh, targetPosition);
+    }
   },
 
   render() {

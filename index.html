@@ -1,15 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Robo Royale</title>
-  <style>
-    body { margin: 0; overflow: hidden; }
-    canvas { display: block; }
-  </style>
-</head>
-<body>
-  <script type="module" src="/src/main.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Robo Royale</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden; /* Hide scrollbars */
+      }
+      #debug-overlay {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        font-family: monospace;
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 1000; /* Ensure it's on top */
+      }
+      .debug-stat {
+          margin-bottom: 5px;
+      }
+      #debug-toggle {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        z-index: 1000;
+      }
+      .debug-controls {
+        margin-top: 10px;
+      }
+      .debug-controls button {
+        margin-right: 5px;
+        background-color: rgba(255, 255, 255, 0.2);
+        color: white;
+        border: none;
+        padding: 3px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="debug-toggle">Debug: OFF</button>
+    <div id="debug-overlay" style="display: none;">
+        <div class="debug-stat" id="latency">Latency: - ms</div>
+        <div class="debug-stat" id="packet-loss">Packet Loss: - %</div>
+        <div class="debug-stat" id="update-rate">Update Rate: - ms</div>
+        <div class="debug-controls">
+            <button id="debug-interpolation-speed-down">-</button>
+            <span id="debug-interpolation-speed">Interp Speed: 10</span>
+            <button id="debug-interpolation-speed-up">+</button>
+        </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
