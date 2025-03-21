@@ -66,6 +66,13 @@ export const Game = {
     await this.loadAnimation('assets/animations/Walk.fbx', 'walk');
     // Load running animation
     await this.loadAnimation('assets/animations/Standing Run Forward.fbx', 'run');
+    
+    // TODO: When animations are available, uncomment these:
+    // // Load strafing animation
+    await this.loadAnimation('assets/animations/Right Strafe.fbx', 'rightStrafe');
+    await this.loadAnimation('assets/animations/Left Strafe.fbx', 'leftStrafe');
+    // // Load walking backward animation
+    await this.loadAnimation('assets/animations/Walk Backward.fbx', 'walkBackward');
 
     // Set up initial state
     this.actions.walk.setLoop(THREE.LoopRepeat);
@@ -98,7 +105,13 @@ export const Game = {
   updateAnimation(isMoving) {
     let targetAction = null;
 
-    if (isMoving) {
+    if (this.moveLeft) {
+      targetAction = this.actions.leftStrafe;
+    } else if (this.moveRight) {
+      targetAction = this.actions.rightStrafe;
+    } else if (this.moveBackward) {
+      targetAction = this.actions.walkBackward;
+    } else if (isMoving) {
       targetAction = this.isRunning ? this.actions.run : this.actions.walk;
     }
 
@@ -159,6 +172,12 @@ export const Game = {
       mixer.clipAction(this.actions.walk._clip) : null;
     const runAction = this.actions.run ? 
       mixer.clipAction(this.actions.run._clip) : null;
+    const leftStrafeAction = this.actions.leftStrafe ? 
+      mixer.clipAction(this.actions.leftStrafe._clip) : null;
+    const rightStrafeAction = this.actions.rightStrafe ? 
+      mixer.clipAction(this.actions.rightStrafe._clip) : null;
+    const walkBackwardAction = this.actions.walkBackward ? 
+      mixer.clipAction(this.actions.walkBackward._clip) : null;
     
     if (walkAction) walkAction.setLoop(THREE.LoopRepeat);
     if (runAction) runAction.setLoop(THREE.LoopRepeat);
@@ -188,8 +207,11 @@ export const Game = {
       mesh: mesh,
       mixer: mixer,
       actions: {
-        walk: walkAction,
-        run: runAction
+      walk: walkAction,
+      run: runAction,
+      leftStrafe: leftStrafeAction,
+      rightStrafe: rightStrafeAction,
+      walkBackward: walkBackwardAction
       },
       currentAction: null,
       isRunning: false,
@@ -216,10 +238,11 @@ export const Game = {
       }
     }
     
-    // Get camera direction and process input
-    const camera = SceneManager.camera;
-    const cameraForward = camera.getWorldDirection(new THREE.Vector3());
-    this.processInput(cameraForward, deltaTime);
+    // Update camera and get direction vectors
+    const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
+    
+    // Process input based on camera directions
+    this.processInput(cameraDirections, deltaTime);
   },
 
   // Debug properties
@@ -227,28 +250,26 @@ export const Game = {
     lastSentPosition: null,
     positionHistory: []
   },
+  
+  // Store last movement data for network updates
+  lastMoveData: null,
 
-  processInput(cameraForward, deltaTime) {
+  processInput(cameraDirections, deltaTime) {
     let speed = 5.0 * deltaTime;
     if (this.isRunning) {
       speed *= 2; // Double speed when running
     }
     let moved = false;
-
-    // Calculate movement direction based on camera orientation
-    const forward = cameraForward.clone();
-    forward.y = 0;
-    forward.normalize();
     
-    const right = new THREE.Vector3();
-    right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+    // Get direction vectors from camera
+    const { forward, right } = cameraDirections;
     
     // Store previous position for debug visualization
     const previousPosition = this.player.position.clone();
     
     // Apply movement based on keys pressed
     if (this.moveForward) {
-      this.player.position.add(forward.clone().multiplyScalar(speed)).setY(this.player.position.y);
+      this.player.position.add(forward.clone().multiplyScalar(speed));
       moved = true;
     }
     if (this.moveBackward) {
@@ -256,13 +277,16 @@ export const Game = {
       moved = true;
     }
     if (this.moveLeft) {
-      this.player.position.add(right.clone().multiplyScalar(speed));
-      moved = true;
-    }
-    if (this.moveRight) {
       this.player.position.add(right.clone().multiplyScalar(-speed));
       moved = true;
     }
+    if (this.moveRight) {
+      this.player.position.add(right.clone().multiplyScalar(speed));
+      moved = true;
+    }
+    
+    // Maintain player's Y position
+    this.player.position.setY(this.player.position.y);
     
     // Debug visualization for player movement
     if (Debug.state.enabled && moved) {
@@ -280,30 +304,19 @@ export const Game = {
       }
     }
     
-    // Update animation state
+    // Update animation state based on movement
     this.updateAnimation(moved);
     
-    // Update player rotation to face movement direction
-    if (moved) {
-      // Calculate movement direction
-      const movementDirection = new THREE.Vector3();
-      
-      if (this.moveForward) movementDirection.add(forward);
-      if (this.moveBackward) movementDirection.sub(forward);
-      if (this.moveLeft) movementDirection.add(right);
-      if (this.moveRight) movementDirection.sub(right);
-      
-      if (movementDirection.length() > 0.1) {
-        movementDirection.normalize();
-        const targetAngle = Math.atan2(movementDirection.x, movementDirection.z);
-        this.player.rotation.y = targetAngle;
-      }
-    }
+    // Player rotation is now handled by the SceneManager.updateCamera method
+    // when not in free look mode
     
     const moveData = moved ? {
       position: this.player.position.clone(),
       rotation: this.player.rotation.y
     } : null;
+    
+    // Store last move data for network updates in main.js
+    this.lastMoveData = moveData;
     
     // Store last sent position for debug visualization
     if (moveData) {

@@ -84,12 +84,10 @@ function gameLoop(timestamp) {
   const deltaTime = (timestamp - lastTime) / 1000; // Convert to seconds
   lastTime = timestamp;
   
-  // Update camera position based on player
+  // Player and camera are now updated in Game.update() so we don't need to call updateCamera here
   if (Game.player) {
-    const cameraForward = SceneManager.updateCamera(Game.player.position);
-    
-    // Process player input and get movement data
-    const moveData = Game.processInput(cameraForward, deltaTime);
+    // Get movement data from Game.update() via Game.processInput()
+    const moveData = Game.processInput ? Game.lastMoveData : null;
     
     // Send position to server at a controlled rate based on movement speed
     const updateRate = Game.isRunning ? RUN_UPDATE_RATE : WALK_UPDATE_RATE;

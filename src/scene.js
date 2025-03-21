@@ -5,7 +5,15 @@ export const SceneManager = {
   scene: new THREE.Scene(),
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
-  cameraOffset: new THREE.Vector3(0, 10, 10), // Simple third-person camera offset
+  cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
+  cameraDistance: 7, // Distance from player
+  cameraHeight: 7, // Height offset
+  freeLookActive: false, // Free look mode toggle
+  mouseSensitivity: 0.002, // Mouse sensitivity
+  yaw: 0, // Horizontal camera rotation
+  pitch: -0.3, // Vertical camera rotation (slightly looking down)
+  minPitch: -0.8, // Limit looking down
+  maxPitch: 0.8, // Limit looking up
   debugHelpers: {}, // Store debug helpers
 
   init() {
@@ -14,6 +22,9 @@ export const SceneManager = {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.5;
     document.body.appendChild(this.renderer.domElement);
+    
+    // Setup mouse controls
+    this.setupMouseControls();
 
     // Set scene background color to sky blue
     this.scene.background = new THREE.Color('#87CEEB');
@@ -126,14 +137,77 @@ export const SceneManager = {
     this.renderer.render(this.scene, this.camera);
   },
 
-  updateCamera(playerPosition) {
-    // Simple third-person camera that follows the player
-    const targetCameraPosition = playerPosition.clone().add(this.cameraOffset);
-    this.camera.position.copy(targetCameraPosition);
-    this.camera.lookAt(playerPosition);
+  setupMouseControls() {
+    // Mouse movement handler
+    document.addEventListener('mousemove', (event) => {
+      if (document.pointerLockElement === document.body) {
+        // Apply mouse movement to camera rotation
+        this.yaw -= event.movementX * this.mouseSensitivity;
+        this.pitch -= event.movementY * this.mouseSensitivity;
+        
+        // Clamp pitch to prevent camera flipping
+        this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.pitch));
+      }
+    });
     
-    // Return camera forward direction for movement calculations
+    // Pointer lock setup
+    document.addEventListener('click', () => {
+      if (document.pointerLockElement !== document.body) {
+        document.body.requestPointerLock();
+      }
+    });
+    
+    // Middle mouse for free look
+    document.addEventListener('mousedown', (event) => {
+      if (event.button === 1) { // Middle mouse button
+        this.freeLookActive = true;
+      }
+    });
+    
+    document.addEventListener('mouseup', (event) => {
+      if (event.button === 1) { // Middle mouse button
+        this.freeLookActive = false;
+      }
+    });
+    
+    // Handle pointer lock change
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement !== document.body) {
+        // Reset free look when pointer lock is exited
+        this.freeLookActive = false;
+      }
+    });
+  },
+
+  updateCamera(playerPosition, playerModel) {
+    // Apply camera rotation based on yaw and pitch
+    const qx = new THREE.Quaternion();
+    qx.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    
+    // Calculate camera position based on the player and rotation
+    const offset = new THREE.Vector3(0, this.cameraHeight, this.cameraDistance);
+    offset.applyQuaternion(qx); // Rotate offset by yaw
+    
+    // Set camera position
+    const targetCameraPosition = playerPosition.clone().add(offset);
+    this.camera.position.copy(targetCameraPosition);
+    
+    // Apply pitch to camera (looking up/down)
+    this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    
+    // Return camera forward direction (flattened) for movement calculations
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    return forward;
+    forward.y = 0;
+    forward.normalize();
+    
+    // Rotate the player model to match camera direction unless in free look mode
+    if (playerModel && !this.freeLookActive) {
+      playerModel.rotation.y = this.yaw + Math.PI; // Add PI to rotate 180 degrees
+    }
+    
+    return {
+      forward: forward,
+      right: new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize()
+    };
   }
 };
