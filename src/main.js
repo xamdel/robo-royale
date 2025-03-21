@@ -1,6 +1,7 @@
 import { SceneManager } from './scene.js';
 import { Game } from './game.js';
 import { Network } from './network.js';
+import { DebugTools } from './debug-tools.js';
 import * as THREE from 'three';
 
 // Debug variables
@@ -101,8 +102,14 @@ function gameLoop(timestamp) {
   }
   Network.update(deltaTime);  // Add network update for interpolation
   
+  // Update debug visualizations
+  if (debugState.enabled) {
+    DebugTools.updateDebugVisuals();
+    DebugTools.updateNetworkDebugUI();
+  }
+  
   // Render the scene
-    SceneManager.render(Game.player?.position);
+  SceneManager.render(Game.player?.position);
   
   // Continue the game loop
   requestAnimationFrame(gameLoop);
@@ -127,12 +134,12 @@ function toggleDebug() {
   // Toggle visual helpers
   debugState.showVisualHelpers = debugState.enabled;
   
-  // Clear all debug helpers if turning off
-  if (!debugState.enabled) {
-    for (const id in SceneManager.debugHelpers) {
-      SceneManager.scene.remove(SceneManager.debugHelpers[id]);
-    }
-    SceneManager.debugHelpers = {};
+  if (debugState.enabled) {
+    // Initialize debug visualizations
+    DebugTools.createDebugVisuals(SceneManager.scene);
+  } else {
+    // Clear all debug visualizations
+    DebugTools.clearDebugVisuals(SceneManager.scene);
   }
   
   console.log(`Debug mode ${debugState.enabled ? 'enabled' : 'disabled'}`);

@@ -8,8 +8,13 @@ import * as THREE from 'three';
 export const Network = {
   socket: null,
   
-  // Improved interpolation settings
-  interpolationSpeed: 5, // Smoother, more controlled interpolation
+  // Network parameters
+  interpolationSpeed: 5,
+  smoothedRTT: 100, // Initial estimate (ms)
+  jitterBuffer: [],
+  adaptiveInterpolationSpeed: 5,
+  adaptiveBufferSize: 10,
+  reconciliationThreshold: 0.05, // Distance threshold for reconciliation
   
   // Sequence and state tracking
   sequenceNumber: 0,
@@ -21,6 +26,10 @@ export const Network = {
     
     this.socket.on('connect', () => {
       console.log('Connected to server with ID:', this.socket.id);
+    });
+
+    this.socket.on('moveValidated', (data) => {
+      this.handleServerValidation(data);
     });
 
     this.socket.on('projectileHit', (data) => {
@@ -50,8 +59,6 @@ export const Network = {
     this.socket.on('playerMoved', (data) => {
       if (Game.otherPlayers[data.id]) {
         const player = Game.otherPlayers[data.id];
-        
-        // Validate and buffer network state
         this.bufferPlayerState(data);
       }
     });
@@ -67,12 +74,10 @@ export const Network = {
   },
 
   bufferPlayerState(data) {
-    // Create buffer for player if not exists
     if (!this.playerStateBuffer[data.id]) {
       this.playerStateBuffer[data.id] = [];
     }
 
-    // Add new state to buffer
     const newState = {
       position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
       rotation: new THREE.Quaternion(
@@ -88,12 +93,10 @@ export const Network = {
 
     this.playerStateBuffer[data.id].push(newState);
 
-    // Limit buffer size
     if (this.playerStateBuffer[data.id].length > 10) {
       this.playerStateBuffer[data.id].shift();
     }
 
-    // Optional: Sequence number validation
     if (data.sequence !== undefined) {
       this.validateSequence(data.id, data.sequence);
     }
@@ -121,7 +124,6 @@ export const Network = {
     if (Game.otherPlayers[id]) {
       SceneManager.add(Game.otherPlayers[id].mesh);
       
-      // Initialize with quaternion rotation
       const initialRotation = new THREE.Quaternion().setFromAxisAngle(
         new THREE.Vector3(0, 1, 0), 
         playerData.rotation || 0
@@ -134,7 +136,6 @@ export const Network = {
       );
       Game.otherPlayers[id].mesh.quaternion.copy(initialRotation);
       
-      // Initialize state tracking
       Game.otherPlayers[id].targetTransform = {
         position: new THREE.Vector3(
           playerData.position.x,
@@ -148,26 +149,21 @@ export const Network = {
   },
 
   update(deltaTime) {
+    this.adaptInterpolationParameters();
+    
     for (const id in Game.otherPlayers) {
       const player = Game.otherPlayers[id];
       const stateBuffer = this.playerStateBuffer[id];
       
       if (!stateBuffer || stateBuffer.length === 0) continue;
 
-      // Get most recent buffered state
       const latestState = stateBuffer[stateBuffer.length - 1];
       
       if (player.mesh && latestState) {
-        // Interpolation factor
-        const lerpFactor = Math.min(this.interpolationSpeed * deltaTime, 1);
-        
-        // Position interpolation
+        const lerpFactor = Math.min(this.adaptiveInterpolationSpeed * deltaTime, 1);
         player.mesh.position.lerp(latestState.position, lerpFactor);
-        
-        // Rotation interpolation using quaternion SLERP
         player.mesh.quaternion.slerp(latestState.rotation, lerpFactor);
         
-        // Debug visualization
         if (Debug.state.enabled && Debug.state.showVisualHelpers) {
           SceneManager.updateDebugHelper(
             player.mesh, 
@@ -178,31 +174,118 @@ export const Network = {
     }
   },
 
+  handleServerValidation(validationData) {
+    const { inputId, position, rotation, serverTime } = validationData;
+    
+    Game.lastProcessedInputId = Math.max(Game.lastProcessedInputId, inputId);
+    Game.inputBuffer = Game.inputBuffer.filter(input => input.id > inputId);
+    
+    const historyIndex = Game.stateHistory.findIndex(state => state.inputId === inputId);
+    if (historyIndex === -1) return;
+    
+    const predictedState = Game.stateHistory[historyIndex];
+    const serverPos = new THREE.Vector3(position.x, position.y, position.z);
+    const positionError = predictedState.position.distanceTo(serverPos);
+    
+    if (positionError > this.reconciliationThreshold) {
+      console.log(`Reconciling position, error: ${positionError.toFixed(4)}`);
+      Game.player.position.copy(serverPos);
+      
+      // Reconcile rotation as well
+      Game.player.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+      
+      const cameraDirections = SceneManager.updateCamera(Game.player.position, Game.player);
+      for (let i = historyIndex + 1; i < Game.stateHistory.length; i++) {
+        const replayInput = Game.inputBuffer.find(input => 
+          input.id === Game.stateHistory[i].inputId);
+          
+        if (replayInput) {
+          const moveVector = Game.applyInput(replayInput, cameraDirections);
+          Game.player.position.add(moveVector);
+          Game.stateHistory[i].position = Game.player.position.clone();
+          Game.stateHistory[i].rotation = Game.player.quaternion.clone();
+        }
+      }
+    }
+    
+    this.updateNetworkStats(serverTime);
+  },
+
+  adaptInterpolationParameters() {
+    if (this.jitterBuffer.length >= 10) {
+      const avg = this.jitterBuffer.reduce((sum, val) => sum + val, 0) / this.jitterBuffer.length;
+      const variance = this.jitterBuffer.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / this.jitterBuffer.length;
+      const jitter = Math.sqrt(variance);
+      
+      if (this.smoothedRTT > 200 || jitter > 50) {
+        this.adaptiveBufferSize = Math.min(20, this.adaptiveBufferSize + 1);
+        this.adaptiveInterpolationSpeed = Math.max(3, this.adaptiveInterpolationSpeed - 0.5);
+      } else if (this.smoothedRTT < 50 && jitter < 10) {
+        this.adaptiveBufferSize = Math.max(5, this.adaptiveBufferSize - 1);
+        this.adaptiveInterpolationSpeed = Math.min(10, this.adaptiveInterpolationSpeed + 0.5);
+      }
+      
+      this.jitterBuffer = [];
+    }
+  },
+
+  updateNetworkStats(serverTime) {
+    const now = Date.now();
+    const rtt = now - serverTime;
+    
+    this.jitterBuffer.push(rtt);
+    if (this.jitterBuffer.length > 30) this.jitterBuffer.shift();
+    
+    this.smoothedRTT = this.smoothedRTT ? 
+      0.9 * this.smoothedRTT + 0.1 * rtt : 
+      rtt;
+  },
+
   sendMove(moveData) {
     if (!moveData || !moveData.position) {
       console.warn('Invalid moveData:', moveData);
       return;
     }
     
-    // Prepare network transform
+    // Calculate movement direction quaternion if there's movement
+    const moveVector = new THREE.Vector3(
+      moveData.position.x - (Game.player.position.x || 0),
+      0,
+      moveData.position.z - (Game.player.position.z || 0)
+    );
+    let movementRotation = null;
+    if (moveVector.lengthSq() > 0.001) { // Small threshold to avoid noise
+      moveVector.normalize();
+      movementRotation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, -1),
+        moveVector
+      );
+    }
+
     const networkTransform = {
       position: {
         x: moveData.position.x,
         y: moveData.position.y,
         z: moveData.position.z
       },
-      rotation: {
+      rotation: { // Camera rotation
         x: moveData.rotation.x,
         y: moveData.rotation.y,
         z: moveData.rotation.z,
         w: moveData.rotation.w
       },
+      movementRotation: movementRotation ? { // Movement-based rotation
+        x: movementRotation.x,
+        y: movementRotation.y,
+        z: movementRotation.z,
+        w: movementRotation.w
+      } : null,
+      input: moveData.input,
       isRunning: Game.isRunning,
       sequence: this.sequenceNumber++,
       timestamp: Date.now()
     };
     
-    // Optional debug logging
     if (Debug.state.enabled) {
       console.log('Sending move data:', networkTransform);
     }

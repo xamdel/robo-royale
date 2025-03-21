@@ -216,38 +216,32 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
   },
 
   updateCamera(playerPosition, playerModel) {
-    // Create camera rotation quaternion from yaw and pitch
     const cameraRotation = new THREE.Quaternion()
       .setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
-    
-    // Calculate camera offset using quaternion rotation
+
     const offset = new THREE.Vector3(0, this.cameraHeight, this.cameraDistance)
       .applyQuaternion(cameraRotation);
-    
-    // Set camera position relative to player
+
     const targetCameraPosition = playerPosition.clone().add(offset);
     this.camera.position.copy(targetCameraPosition);
-    
-    // Set camera orientation directly
     this.camera.quaternion.copy(cameraRotation);
-    
-    // Calculate movement directions using camera quaternion
+
     const forward = new THREE.Vector3(0, 0, -1)
       .applyQuaternion(cameraRotation)
       .setY(0)
       .normalize();
-    
+
     const right = new THREE.Vector3(1, 0, 0)
       .applyQuaternion(cameraRotation)
       .setY(0)
       .normalize();
-    
-    // Update player model orientation
+
+    // Only update player model orientation if not in free look mode
     if (playerModel && !this.freeLookActive) {
-      // Use quaternion for player rotation to match camera
       playerModel.quaternion.copy(cameraRotation);
     }
-    
+    // Note: When in free look, the server will use movementRotation instead
+
     return { forward, right };
-  }
+  },
 };

@@ -1,202 +1,188 @@
 import * as THREE from 'three';
-import { SceneManager } from './scene.js';
+import { Network } from './network.js';
+import { Game } from './game.js';
 
 export const DebugTools = {
-  boneVisualizers: [],
-
-  addDirectionIndicator(playerObject) {
-    // Create an arrow to show forward direction
-    const arrowGeo = new THREE.ConeGeometry(0.2, 1, 8);
-    const arrowMat = new THREE.MeshBasicMaterial({color: 0x00ff00});
-    const arrow = new THREE.Mesh(arrowGeo, arrowMat);
-    
-    // Position in front of the player
-    arrow.position.set(0, 1.5, -1); // Z-negative is "forward" in three.js
-    arrow.rotation.x = Math.PI/2; // Rotate to point forward
-    
-    console.log("Adding direction indicator to player", playerObject);
-    playerObject.add(arrow);
-    
-    // Make sure it's visible even through other objects
-    arrow.material.depthTest = false;
-    arrow.renderOrder = 1;
-    
-    return arrow;
-  },
-
-  visualizeBones(player) {
-    // Remove existing visualizers
-    if (this.boneVisualizers) {
-      this.boneVisualizers.forEach(helper => {
-        SceneManager.scene.remove(helper);
-      });
-    }
-    
-    this.boneVisualizers = [];
-    
-    const createBoneMarker = (bone, color = 0xff0000) => {
-      const geometry = new THREE.SphereGeometry(0.1, 8, 8);
-      const material = new THREE.MeshBasicMaterial({ color });
-      const marker = new THREE.Mesh(geometry, material);
-      
-      const axesHelper = new THREE.AxesHelper(0.5);
-      marker.add(axesHelper);
-      
-      bone.add(marker);
-      
-      this.boneVisualizers.push(marker);
-      
-      const worldPos = new THREE.Vector3();
-      bone.getWorldPosition(worldPos);
-      console.log(`Bone "${bone.name}" world position:`, worldPos);
-      
-      return marker;
-    };
-    
-    // Visualize important bones
-    const leftArm = this.findLeftArm(player);
-    if (leftArm) {
-      console.log('Visualizing left arm bone');
-      createBoneMarker(leftArm, 0xff0000); // Red for left arm
-      
-      // Create markers for parent bones to see hierarchy
-      let parent = leftArm.parent;
-      let color = 0x00ff00; // Start with green
-      
-      while (parent && parent.name) {
-        console.log(`Visualizing parent bone: ${parent.name}`);
-        createBoneMarker(parent, color);
-        parent = parent.parent;
-        color = color === 0x00ff00 ? 0x0000ff : 0x00ff00; // Alternate colors
-      }
-    }
-    
-    this.logBoneStructure(player);
-  },
-
-  findLeftArm(player) {
+  // Existing tools
+  findLeftArm(model) {
     let leftArm = null;
-    
-    if (!player) {
-      console.error('Player model not loaded');
-      return null;
-    }
-    
-    player.traverse((child) => {
-      if (child.name === 'Arm.L' || 
-          child.name === 'arm_L' || 
-          child.name === 'ArmL' ||
-          child.name === 'L_Arm' || 
-          (child.name.toLowerCase().includes('arm') && 
-           (child.name.includes('l') || child.name.includes('L')))) {
-        
-        if (!leftArm || child.name === 'Arm.L') {
-          leftArm = child;
-        }
+    model.traverse((child) => {
+      if (child.name.toLowerCase().includes('leftarm') || 
+          child.name.toLowerCase().includes('left_arm')) {
+        leftArm = child;
       }
     });
-    
     return leftArm;
   },
 
-  logBoneStructure(player) {
-    if (!player) {
-      console.error('Player model not loaded');
-      return;
-    }
-    
-    console.log('=== FULL BONE STRUCTURE ===');
-    const logNode = (node, depth = 0) => {
-      const indent = '  '.repeat(depth);
-      const localPos = node.position.toArray().map(n => n.toFixed(2));
-      const worldPos = new THREE.Vector3();
-      node.getWorldPosition(worldPos);
-      const worldPosArr = worldPos.toArray().map(n => n.toFixed(2));
-      
-      console.log(`${indent}${node.name || 'unnamed'} - Local: [${localPos}], World: [${worldPosArr}]`);
-      
-      node.children.forEach(child => {
-        logNode(child, depth + 1);
-      });
-    };
-    
-    player.children.forEach(child => {
-      logNode(child);
-    });
+  // Network debug visualization
+  debugMeshes: {},
+  debugLines: {},
+  debugText: {},
+
+  createNetworkDebugUI() {
+    const container = document.createElement('div');
+    container.id = 'network-debug';
+    container.style.position = 'fixed';
+    container.style.top = '10px';
+    container.style.right = '10px';
+    container.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    container.style.color = 'white';
+    container.style.padding = '10px';
+    container.style.fontFamily = 'monospace';
+    container.style.fontSize = '12px';
+    container.style.display = 'none';
+
+    const stats = document.createElement('div');
+    stats.id = 'network-stats';
+    container.appendChild(stats);
+
+    const reconciliation = document.createElement('div');
+    reconciliation.id = 'reconciliation-stats';
+    container.appendChild(reconciliation);
+
+    const interpolation = document.createElement('div');
+    interpolation.id = 'interpolation-stats';
+    container.appendChild(interpolation);
+
+    document.body.appendChild(container);
   },
 
-  createTestObject(position = [0, 0, 0], color = 0xff00ff) {
-    const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    const material = new THREE.MeshBasicMaterial({ color });
-    const testCube = new THREE.Mesh(geometry, material);
-    testCube.position.set(...position);
-    SceneManager.scene.add(testCube);
-    return testCube;
+  updateNetworkDebugUI() {
+    if (!document.getElementById('network-debug')) {
+      this.createNetworkDebugUI();
+    }
+
+    const container = document.getElementById('network-debug');
+    const stats = document.getElementById('network-stats');
+    const reconciliation = document.getElementById('reconciliation-stats');
+    const interpolation = document.getElementById('interpolation-stats');
+
+    // Only update if debug mode is enabled
+    if (window.Debug && window.Debug.state.enabled) {
+      container.style.display = 'block';
+
+      // Network stats
+      stats.innerHTML = `
+        RTT: ${Network.smoothedRTT.toFixed(2)}ms<br>
+        Jitter: ${this.calculateJitter().toFixed(2)}ms<br>
+        Buffer Size: ${Network.adaptiveBufferSize}<br>
+        Interp Speed: ${Network.adaptiveInterpolationSpeed.toFixed(2)}
+      `;
+
+      // Reconciliation stats
+      if (Game.stateHistory.length > 0) {
+        const lastState = Game.stateHistory[Game.stateHistory.length - 1];
+        reconciliation.innerHTML = `
+          Input Buffer: ${Game.inputBuffer.length}<br>
+          State History: ${Game.stateHistory.length}<br>
+          Last Input ID: ${Game.lastProcessedInputId}<br>
+          Pending Inputs: ${Game.inputBuffer.length}
+        `;
+      }
+
+      // Interpolation stats
+      const otherPlayerCount = Object.keys(Game.otherPlayers).length;
+      interpolation.innerHTML = `
+        Players: ${otherPlayerCount}<br>
+        State Buffers: ${Object.keys(Network.playerStateBuffer).length}<br>
+        Total States: ${this.getTotalBufferedStates()}<br>
+        Avg States/Player: ${this.getAverageStatesPerPlayer().toFixed(1)}
+      `;
+    } else {
+      container.style.display = 'none';
+    }
   },
 
-  findBestWeaponPosition(player) {
-    const leftArm = this.findLeftArm(player);
-    
-    if (!leftArm) {
-      console.error('Left arm not found');
-      return;
-    }
-    
-    // Test different offsets and display them
-    const offsets = [
-      { name: "Zero", pos: [0, 0, 0], color: 0xff0000 },
-      { name: "Forward", pos: [0, 0, 1], color: 0x00ff00 },
-      { name: "Right", pos: [1, 0, 0], color: 0x0000ff },
-      { name: "Up", pos: [0, 1, 0], color: 0xffff00 },
-      { name: "Custom", pos: [0.5, -0.3, 0.7], color: 0xff00ff }
-    ];
-    
-    this.testMarkers = [];
-    offsets.forEach(offset => {
-      // Create a marker at this offset from the arm
-      const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.1, 8, 8),
-        new THREE.MeshBasicMaterial({ color: offset.color })
+  calculateJitter() {
+    if (Network.jitterBuffer.length < 2) return 0;
+    const avg = Network.jitterBuffer.reduce((a, b) => a + b) / Network.jitterBuffer.length;
+    const variance = Network.jitterBuffer.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / Network.jitterBuffer.length;
+    return Math.sqrt(variance);
+  },
+
+  getTotalBufferedStates() {
+    return Object.values(Network.playerStateBuffer).reduce((total, buffer) => total + buffer.length, 0);
+  },
+
+  getAverageStatesPerPlayer() {
+    const playerCount = Object.keys(Network.playerStateBuffer).length;
+    return playerCount ? this.getTotalBufferedStates() / playerCount : 0;
+  },
+
+  // Visual debug helpers
+  createDebugVisuals(scene) {
+    // Clear existing debug visuals
+    this.clearDebugVisuals(scene);
+
+    // Create prediction visualization
+    if (Game.player) {
+      const predictionHelper = new THREE.ArrowHelper(
+        new THREE.Vector3(0, 1, 0),
+        Game.player.position,
+        2,
+        0x00ff00
       );
+      scene.add(predictionHelper);
+      this.debugMeshes['prediction'] = predictionHelper;
+    }
+
+    // Create server reconciliation visualization
+    const reconciliationLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xff0000 })
+    );
+    scene.add(reconciliationLine);
+    this.debugLines['reconciliation'] = reconciliationLine;
+  },
+
+  updateDebugVisuals() {
+    if (!window.Debug || !window.Debug.state.enabled) return;
+
+    // Update prediction visualization
+    if (Game.player && this.debugMeshes['prediction']) {
+      const lastInput = Game.inputBuffer[Game.inputBuffer.length - 1];
+      if (lastInput) {
+        const direction = new THREE.Vector3(
+          Math.cos(Game.player.rotation.y),
+          0,
+          Math.sin(Game.player.rotation.y)
+        );
+        this.debugMeshes['prediction'].position.copy(Game.player.position);
+        this.debugMeshes['prediction'].setDirection(direction);
+      }
+    }
+
+    // Update reconciliation visualization
+    if (this.debugLines['reconciliation'] && Game.stateHistory.length > 0) {
+      const points = [];
+      Game.stateHistory.forEach(state => {
+        points.push(state.position);
+      });
       
-      // Add to the arm at the offset position
-      leftArm.add(marker);
-      marker.position.set(...offset.pos);
-      
-      // Add label
-      const worldPos = new THREE.Vector3();
-      marker.getWorldPosition(worldPos);
-      console.log(`Test position "${offset.name}" at local ${offset.pos}, world: ${worldPos.toArray()}`);
-      
-      this.testMarkers.push(marker);
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      this.debugLines['reconciliation'].geometry.dispose();
+      this.debugLines['reconciliation'].geometry = geometry;
+    }
+  },
+
+  clearDebugVisuals(scene) {
+    // Remove debug meshes
+    Object.values(this.debugMeshes).forEach(mesh => {
+      scene.remove(mesh);
     });
-    
-    console.log('Test markers added to visualize potential weapon positions');
+    this.debugMeshes = {};
+
+    // Remove debug lines
+    Object.values(this.debugLines).forEach(line => {
+      scene.remove(line);
+    });
+    this.debugLines = {};
+
+    // Remove debug text
+    Object.values(this.debugText).forEach(text => {
+      scene.remove(text);
+    });
+    this.debugText = {};
   }
 };
-
-// Initialize debug commands
-if (typeof window !== 'undefined') {
-  window.debugWeapons = {
-    showBones: (player) => {
-      DebugTools.visualizeBones(player);
-      return "Bone visualization enabled";
-    },
-    findBestPosition: (player) => {
-      DebugTools.findBestWeaponPosition(player);
-      return "Test markers added at various positions";
-    }
-  };
-
-  window.debugBones = () => {
-    if (window.Game && window.Game.player) {
-      DebugTools.visualizeBones(window.Game.player);
-      DebugTools.findBestWeaponPosition(window.Game.player);
-      console.log("Debug visualization enabled - you should see colored markers on the model");
-      return "Success";
-    } else {
-      console.error("Game.player not available. Make sure the game is running and the model is loaded.");
-      return "Failed - Game.player not found";
-    }
-  };
-}

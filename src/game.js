@@ -19,6 +19,13 @@ export const Game = {
   currentAction: null,
   leftArm: null,
   cannonAttached: false,
+  previousPosition: null,
+  
+  // Client prediction properties
+  inputBuffer: [],
+  stateHistory: [],
+  lastProcessedInputId: 0,
+  inputSequence: 0,
   
   loadMechModel() {
     return new Promise((resolve) => {
@@ -56,8 +63,9 @@ export const Game = {
     const playerModel = await this.loadMechModel();
     this.player = playerModel;
     this.player.position.set(0, playerModel.position.y, 0);
+    this.previousPosition = this.player.position.clone(); // Initialize
     SceneManager.add(this.player);
-
+    
     // Set up animation looping
     Object.values(this.actions).forEach(action => {
       if (action) {
@@ -160,54 +168,75 @@ export const Game = {
     return playerMesh;
   },
 
-  processInput(cameraDirections, deltaTime) {
-    let speed = 5.0 * deltaTime;
-    if (this.isRunning) {
+  // Apply input without side effects
+  applyInput(input, cameraDirections) {
+    const { forward, right } = cameraDirections;
+    let speed = 5.0 * input.deltaTime;
+    if (input.isRunning) {
       speed *= 2;
     }
-    let moved = false;
     
-    const { forward, right } = cameraDirections;
-    const previousPosition = this.player.position.clone();
-    
-    // Movement vector calculation
+    // Calculate movement vector based on input
     const moveVector = new THREE.Vector3();
     
-    if (this.moveForward) {
-      moveVector.add(forward.clone().multiplyScalar(speed));
-      moved = true;
-    }
-    if (this.moveBackward) {
-      moveVector.add(forward.clone().multiplyScalar(-speed));
-      moved = true;
-    }
-    if (this.moveLeft) {
-      moveVector.add(right.clone().multiplyScalar(-speed));
-      moved = true;
-    }
-    if (this.moveRight) {
-      moveVector.add(right.clone().multiplyScalar(speed));
-      moved = true;
-    }
+    if (input.moveForward) moveVector.add(forward.clone().multiplyScalar(speed));
+    if (input.moveBackward) moveVector.add(forward.clone().multiplyScalar(-speed));
+    if (input.moveLeft) moveVector.add(right.clone().multiplyScalar(-speed));
+    if (input.moveRight) moveVector.add(right.clone().multiplyScalar(speed));
     
-    // Apply movement
-    this.player.position.add(moveVector);
-    this.player.position.setY(0);
-    
-    // Update player animations
+    return moveVector;
+  },
+
+  processInput(cameraDirections, deltaTime) {
+    const input = {
+      id: this.inputSequence++,
+      deltaTime: deltaTime,
+      moveForward: this.moveForward,
+      moveBackward: this.moveBackward,
+      moveLeft: this.moveLeft,
+      moveRight: this.moveRight,
+      isRunning: this.isRunning,
+      timestamp: Date.now()
+    };
+
+    this.inputBuffer.push(input);
+
+    const moveVector = this.applyInput(input, cameraDirections);
+    let moved = false;
+
+    if (moveVector.lengthSq() > 0) {
+      moved = true;
+      this.player.position.add(moveVector);
+      this.player.position.setY(0);
+    }
+
+    this.stateHistory.push({
+      inputId: input.id,
+      position: this.player.position.clone(),
+      rotation: this.player.quaternion.clone(),
+      timestamp: Date.now()
+    });
+
+    if (this.stateHistory.length > 60) this.stateHistory.shift();
+
     PlayerAnimations.updatePlayerAnimation(this, moved);
-    
-    // Prepare move data with full quaternion rotation
+
     const moveData = moved ? {
+      inputId: input.id,
       position: this.player.position.clone(),
       rotation: {
         x: this.player.quaternion.x,
         y: this.player.quaternion.y,
         z: this.player.quaternion.z,
         w: this.player.quaternion.w
-      }
+      },
+      timestamp: input.timestamp,
+      input: input
     } : null;
-    
+
+    // Update previous position
+    if (moved) this.previousPosition.copy(this.player.position);
+
     return moveData;
-  }
+  },
 };
