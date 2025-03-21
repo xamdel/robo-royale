@@ -4,6 +4,26 @@ import { SceneManager } from './scene.js';
 export const DebugTools = {
   boneVisualizers: [],
 
+  addDirectionIndicator(playerObject) {
+    // Create an arrow to show forward direction
+    const arrowGeo = new THREE.ConeGeometry(0.2, 1, 8);
+    const arrowMat = new THREE.MeshBasicMaterial({color: 0x00ff00});
+    const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+    
+    // Position in front of the player
+    arrow.position.set(0, 1.5, -1); // Z-negative is "forward" in three.js
+    arrow.rotation.x = Math.PI/2; // Rotate to point forward
+    
+    console.log("Adding direction indicator to player", playerObject);
+    playerObject.add(arrow);
+    
+    // Make sure it's visible even through other objects
+    arrow.material.depthTest = false;
+    arrow.renderOrder = 1;
+    
+    return arrow;
+  },
+
   visualizeBones(player) {
     // Remove existing visualizers
     if (this.boneVisualizers) {

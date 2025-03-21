@@ -170,30 +170,42 @@ export const Game = {
     const { forward, right } = cameraDirections;
     const previousPosition = this.player.position.clone();
     
+    // Movement vector calculation
+    const moveVector = new THREE.Vector3();
+    
     if (this.moveForward) {
-      this.player.position.add(forward.clone().multiplyScalar(speed));
+      moveVector.add(forward.clone().multiplyScalar(speed));
       moved = true;
     }
     if (this.moveBackward) {
-      this.player.position.add(forward.clone().multiplyScalar(-speed));
+      moveVector.add(forward.clone().multiplyScalar(-speed));
       moved = true;
     }
     if (this.moveLeft) {
-      this.player.position.add(right.clone().multiplyScalar(-speed));
+      moveVector.add(right.clone().multiplyScalar(-speed));
       moved = true;
     }
     if (this.moveRight) {
-      this.player.position.add(right.clone().multiplyScalar(speed));
+      moveVector.add(right.clone().multiplyScalar(speed));
       moved = true;
     }
     
+    // Apply movement
+    this.player.position.add(moveVector);
     this.player.position.setY(0);
     
+    // Update player animations
     PlayerAnimations.updatePlayerAnimation(this, moved);
     
+    // Prepare move data with full quaternion rotation
     const moveData = moved ? {
       position: this.player.position.clone(),
-      rotation: this.player.rotation.y
+      rotation: {
+        x: this.player.quaternion.x,
+        y: this.player.quaternion.y,
+        z: this.player.quaternion.z,
+        w: this.player.quaternion.w
+      }
     } : null;
     
     return moveData;

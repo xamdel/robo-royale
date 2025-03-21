@@ -23,22 +23,50 @@ export const PlayerAnimations = {
 
     if (!player.actions) return;
 
-    // Prioritize strafe movements using exact animation names
+    // Determine movement direction based on player's movement vector
+    const movementVector = new THREE.Vector3();
+    
     if (player.moveLeft) {
-      targetAction = player.actions['RunLeft-loop'];
-    } else if (player.moveRight) {
-      targetAction = player.actions['RunRight-loop'];
-    } else if (player.moveBackward) {
-      targetAction = player.actions['RunBackward-loop'];
-    } else if (isMoving) {
+      movementVector.x -= 1;
+    }
+    if (player.moveRight) {
+      movementVector.x += 1;
+    }
+    if (player.moveForward) {
+      movementVector.z -= 1;
+    }
+    if (player.moveBackward) {
+      movementVector.z += 1;
+    }
+
+    // Normalize movement vector to get primary direction
+    movementVector.normalize();
+
+    // Select animation based on movement direction
+    if (Math.abs(movementVector.x) > Math.abs(movementVector.z)) {
+      // Horizontal movement takes priority
+      targetAction = movementVector.x < 0 
+        ? player.actions['RunLeft-loop'] 
+        : player.actions['RunRight-loop'];
+    } else if (movementVector.z !== 0) {
+      // Vertical movement
+      targetAction = movementVector.z < 0 
+        ? player.actions['RunForward-loop'] 
+        : player.actions['RunBackward-loop'];
+    }
+
+    // Fallback to forward animation if moving
+    if (!targetAction && isMoving) {
       targetAction = player.actions['RunForward-loop'];
     }
 
+    // Transition animations
     if (targetAction && player.currentAction !== targetAction) {
       if (player.currentAction) {
         player.currentAction.fadeOut(0.2);
         player.currentAction.setEffectiveWeight(0);
       }
+      
       targetAction.reset();
       targetAction.setEffectiveWeight(1);
       targetAction.fadeIn(0.2).play();
@@ -60,18 +88,26 @@ export const PlayerAnimations = {
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
+        
+        // Create unique material for each player
         if (child.material) {
           child.material = child.material.clone();
-          if (child.material.isMeshStandardMaterial) {
-            child.material.color.setHex(0xff0000);
-          } else {
-            const color = child.material.color ? child.material.color : new THREE.Color(0xff0000);
-            child.material = new THREE.MeshStandardMaterial({
-              color: color,
-              roughness: 0.7,
-              metalness: 0.3
-            });
-          }
+          
+          // Randomize player color slightly
+          const baseColor = new THREE.Color(0xff0000);
+          const colorVariation = new THREE.Color(
+            Math.random() * 0.2 + 0.8, // Vary red
+            Math.random() * 0.2 + 0.8, // Vary green
+            Math.random() * 0.2 + 0.8  // Vary blue
+          );
+          
+          const finalColor = baseColor.multiply(colorVariation);
+          
+          child.material = new THREE.MeshStandardMaterial({
+            color: finalColor,
+            roughness: 0.7,
+            metalness: 0.3
+          });
           child.material.needsUpdate = true;
         }
       }
@@ -83,8 +119,15 @@ export const PlayerAnimations = {
       actions: playerActions,
       currentAction: null,
       isRunning: false,
-      targetPosition: null,
-      targetRotation: 0,
+      moveLeft: false,
+      moveRight: false,
+      moveForward: false,
+      moveBackward: false,
+      targetTransform: {
+        position: new THREE.Vector3(),
+        rotation: new THREE.Quaternion(),
+        scale: new THREE.Vector3(1, 1, 1)
+      },
       previousPosition: null
     };
   }

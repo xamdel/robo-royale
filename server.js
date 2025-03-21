@@ -27,101 +27,141 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Game state - store player positions
+// Game state - store player positions with enhanced transform
 let players = {};
+
+// Network performance tracking
+const networkStats = {
+  players: {},
+  globalStats: {
+    totalLatency: 0,
+    packetLossRate: 0,
+    updateFrequency: 0
+  }
+};
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
-  // --- Network Diagnostics ---
-  let lastUpdateTimestamp = Date.now();
-  let sentPackets = 0;
-  let lostPackets = 0; // Placeholder - requires more sophisticated tracking
-
-  // Periodically send network statistics to the client
-  const networkStatsInterval = setInterval(() => {
-    const now = Date.now();
-    const latency = now - lastUpdateTimestamp; // Simple latency estimate
-    const packetLoss = lostPackets / (sentPackets + lostPackets) * 100 || 0; // Calculate packet loss
-    // Reset packet counts (in a real implementation, you'd use sequence numbers)
-    sentPackets = 0;
-    lostPackets = 0;
-
-    socket.emit('networkStats', {
-      latency: latency,
-      packetLoss: packetLoss,
-      updateRate: 0, // Placeholder for now, will calculate on move
-    });
-  }, 1000); // Send every second
-
-  // Add new player with default position
+  // Initialize player with comprehensive transform
   players[socket.id] = {
     id: socket.id,
-    position: { x: 0, y: 0, z: 0 },
-    rotation: 0,
-    isRunning: false
+    transform: {
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 }, // Identity quaternion
+      scale: { x: 1, y: 1, z: 1 }
+    },
+    state: {
+      isRunning: false,
+      health: 100,
+      lastUpdateTimestamp: Date.now()
+    },
+    networkMetrics: {
+      latency: 0,
+      packetLoss: 0,
+      updateRate: 0
+    }
   };
 
-  // Tell others about the new player
-  socket.broadcast.emit('newPlayer', players[socket.id]);
+  // Network performance tracking for this player
+  networkStats.players[socket.id] = {
+    sentPackets: 0,
+    receivedPackets: 0,
+    lostPackets: 0
+  };
 
-  // Send existing players to the new player
+  // Notify other players about new player
+  socket.broadcast.emit('newPlayer', {
+    id: socket.id,
+    position: players[socket.id].transform.position,
+    rotation: players[socket.id].transform.rotation,
+    isRunning: players[socket.id].state.isRunning
+  });
+
+  // Send existing players to new player
   socket.emit('existingPlayers', players);
 
-  // Handle movement - simple position update
+  // Periodic network stats calculation
+  const networkStatsInterval = setInterval(() => {
+    const playerStats = networkStats.players[socket.id];
+    const packetLoss = playerStats.lostPackets / (playerStats.sentPackets + 1) * 100;
+
+    socket.emit('networkStats', {
+      latency: players[socket.id].networkMetrics.latency,
+      packetLoss: packetLoss,
+      updateRate: players[socket.id].networkMetrics.updateRate
+    });
+  }, 1000);
+
+  // Enhanced move handling with comprehensive validation
   socket.on('move', (moveData) => {
-    if (!players[socket.id]) {
-      lostPackets++;
+    const now = Date.now();
+    const playerStats = networkStats.players[socket.id];
+
+    // Validate move data
+    if (!moveData || !moveData.position || !moveData.rotation) {
+      playerStats.lostPackets++;
+      console.warn(`Invalid move data from player ${socket.id}:`, moveData);
       return;
     }
 
-    if (!moveData || !moveData.position) {
-      console.warn(`Invalid move data received from player ${socket.id}:`, moveData);
-      lostPackets++;
-      return;
-    }
+    // Update player transform
+    players[socket.id].transform = {
+      position: moveData.position,
+      rotation: moveData.rotation,
+      scale: { x: 1, y: 1, z: 1 }
+    };
 
-    // Update player position
-    players[socket.id].position = moveData.position;
-    players[socket.id].rotation = moveData.rotation;
-    players[socket.id].isRunning = moveData.isRunning;
+    // Update player state
+    players[socket.id].state.isRunning = moveData.isRunning;
+    
+    // Calculate network metrics
+    const lastUpdate = players[socket.id].state.lastUpdateTimestamp;
+    players[socket.id].networkMetrics.updateRate = now - lastUpdate;
+    players[socket.id].networkMetrics.latency = moveData.timestamp ? now - moveData.timestamp : 0;
+    players[socket.id].state.lastUpdateTimestamp = now;
 
-    // --- Server-Side Movement Logging ---
-    // Only log if debug flag is set in the move data
+    // Update network stats
+    playerStats.sentPackets++;
+    playerStats.receivedPackets++;
+
+    // Broadcast move to other players
+    socket.broadcast.emit('playerMoved', {
+      id: socket.id,
+      position: moveData.position,
+      rotation: moveData.rotation,
+      isRunning: moveData.isRunning,
+      sequence: moveData.sequence,
+      timestamp: moveData.timestamp
+    });
+
+    // Optional detailed logging
     if (moveData.debug) {
-      console.log(`[${Date.now()}] Movement - Player ${socket.id}:`, {
+      console.log(`[${now}] Player ${socket.id} Move:`, {
         position: moveData.position,
         rotation: moveData.rotation,
         isRunning: moveData.isRunning,
-        sequence: moveData.sequence
+        sequence: moveData.sequence,
+        latency: players[socket.id].networkMetrics.latency
       });
     }
-
-    // Broadcast to all other clients
-    const now = Date.now();
-    const updateRate = now - lastUpdateTimestamp;
-    lastUpdateTimestamp = now;
-    sentPackets++;
-
-    socket.broadcast.emit('playerMoved', {
-      id: socket.id,
-      position: players[socket.id].position,
-      rotation: players[socket.id].rotation,
-      isRunning: players[socket.id].isRunning,
-      updateRate: updateRate,
-      sequence: moveData.sequence
-    });
   });
 
-  // Handle disconnection
+  // Handle player disconnection
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
     socket.broadcast.emit('playerDisconnected', socket.id);
+    
+    // Clean up player data
     delete players[socket.id];
+    delete networkStats.players[socket.id];
+    
+    // Clear interval to prevent memory leaks
+    clearInterval(networkStatsInterval);
   });
 
+  // Projectile hit handling
   socket.on('projectileHit', (data) => {
-    // Broadcast hit to all clients except sender
     socket.broadcast.emit('projectileHit', data);
   });
 });

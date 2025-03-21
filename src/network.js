@@ -8,12 +8,13 @@ import * as THREE from 'three';
 export const Network = {
   socket: null,
   
-  // Add interpolation settings
-  interpolationSpeed: 10, // Adjust for smoothness
+  // Improved interpolation settings
+  interpolationSpeed: 5, // Smoother, more controlled interpolation
   
-  // Sequence tracking
+  // Sequence and state tracking
   sequenceNumber: 0,
   lastReceivedSequence: {},
+  playerStateBuffer: {},
 
   init() {
     this.socket = io();
@@ -23,7 +24,6 @@ export const Network = {
     });
 
     this.socket.on('projectileHit', (data) => {
-      // Create explosion effect at hit position
       WeaponManager.createExplosion(new THREE.Vector3(
         data.position.x,
         data.position.y,
@@ -51,35 +51,8 @@ export const Network = {
       if (Game.otherPlayers[data.id]) {
         const player = Game.otherPlayers[data.id];
         
-        // Check sequence number if available
-        if (data.sequence !== undefined) {
-          // Track last received sequence for this player
-          this.lastReceivedSequence[data.id] = this.lastReceivedSequence[data.id] || 0;
-          
-          // Log out-of-order packets if debug is enabled
-          if (Debug.state.enabled && data.sequence < this.lastReceivedSequence[data.id]) {
-            console.warn(`[${Date.now()}] Out-of-order packet received for player ${data.id}:`, {
-              received: data.sequence,
-              expected: this.lastReceivedSequence[data.id] + 1
-            });
-          }
-          
-          // Update last received sequence
-          this.lastReceivedSequence[data.id] = data.sequence;
-        }
-        
-        // Store target position instead of immediately setting it
-        player.targetPosition = new THREE.Vector3(
-          data.position.x,
-          data.position.y,
-          data.position.z
-        );
-        
-        // Store original rotation - offset will be applied during interpolation
-        player.targetRotation = data.rotation;
-        
-        // Store if the player is running
-        player.isRunning = data.isRunning;
+        // Validate and buffer network state
+        this.bufferPlayerState(data);
       }
     });
 
@@ -88,8 +61,58 @@ export const Network = {
       if (Game.otherPlayers[id]) {
         SceneManager.remove(Game.otherPlayers[id].mesh);
         delete Game.otherPlayers[id];
+        delete this.playerStateBuffer[id];
       }
     });
+  },
+
+  bufferPlayerState(data) {
+    // Create buffer for player if not exists
+    if (!this.playerStateBuffer[data.id]) {
+      this.playerStateBuffer[data.id] = [];
+    }
+
+    // Add new state to buffer
+    const newState = {
+      position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
+      rotation: new THREE.Quaternion(
+        data.rotation.x || 0, 
+        data.rotation.y || 0, 
+        data.rotation.z || 0, 
+        data.rotation.w || 1
+      ),
+      isRunning: data.isRunning,
+      timestamp: Date.now(),
+      sequence: data.sequence
+    };
+
+    this.playerStateBuffer[data.id].push(newState);
+
+    // Limit buffer size
+    if (this.playerStateBuffer[data.id].length > 10) {
+      this.playerStateBuffer[data.id].shift();
+    }
+
+    // Optional: Sequence number validation
+    if (data.sequence !== undefined) {
+      this.validateSequence(data.id, data.sequence);
+    }
+  },
+
+  validateSequence(playerId, sequence) {
+    this.lastReceivedSequence[playerId] = this.lastReceivedSequence[playerId] || 0;
+    
+    if (Debug.state.enabled && sequence < this.lastReceivedSequence[playerId]) {
+      console.warn(`[${Date.now()}] Out-of-order packet for player ${playerId}:`, {
+        received: sequence,
+        expected: this.lastReceivedSequence[playerId] + 1
+      });
+    }
+    
+    this.lastReceivedSequence[playerId] = Math.max(
+      this.lastReceivedSequence[playerId], 
+      sequence
+    );
   },
 
   addOtherPlayer(id, playerData) {
@@ -97,81 +120,59 @@ export const Network = {
     
     if (Game.otherPlayers[id]) {
       SceneManager.add(Game.otherPlayers[id].mesh);
+      
+      // Initialize with quaternion rotation
+      const initialRotation = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0), 
+        playerData.rotation || 0
+      );
+      
       Game.otherPlayers[id].mesh.position.set(
         playerData.position.x, 
         playerData.position.y, 
         playerData.position.z
       );
+      Game.otherPlayers[id].mesh.quaternion.copy(initialRotation);
       
-      // Initialize target position to current position
-      Game.otherPlayers[id].targetPosition = new THREE.Vector3(
-        playerData.position.x,
-        playerData.position.y,
-        playerData.position.z
-      );
-      
-      // Initialize rotation and running state
-      Game.otherPlayers[id].targetRotation = playerData.rotation || 0;
-      Game.otherPlayers[id].isRunning = playerData.isRunning || false;
-      Game.otherPlayers[id].previousPosition = Game.otherPlayers[id].mesh.position.clone();
+      // Initialize state tracking
+      Game.otherPlayers[id].targetTransform = {
+        position: new THREE.Vector3(
+          playerData.position.x,
+          playerData.position.y,
+          playerData.position.z
+        ),
+        rotation: initialRotation,
+        isRunning: playerData.isRunning || false
+      };
     }
   },
 
   update(deltaTime) {
     for (const id in Game.otherPlayers) {
       const player = Game.otherPlayers[id];
+      const stateBuffer = this.playerStateBuffer[id];
       
-      if (player.targetPosition && player.mesh) {
-        // Store previous position for distance calculation
-        const prevPosition = player.mesh.position.clone();
-        
-        // Interpolate position
+      if (!stateBuffer || stateBuffer.length === 0) continue;
+
+      // Get most recent buffered state
+      const latestState = stateBuffer[stateBuffer.length - 1];
+      
+      if (player.mesh && latestState) {
+        // Interpolation factor
         const lerpFactor = Math.min(this.interpolationSpeed * deltaTime, 1);
-        player.mesh.position.lerp(player.targetPosition, lerpFactor);
-
-        // --- Client-Side Interpolation Diagnostics ---
-        // Only log when there's a significant change in position
-        const distanceToTarget = player.mesh.position.distanceTo(player.targetPosition);
-        const distanceMoved = player.mesh.position.distanceTo(prevPosition);
         
-        // Store these values for debugging
-        player.debugInfo = player.debugInfo || {};
-        player.debugInfo.distanceToTarget = distanceToTarget;
-        player.debugInfo.distanceMoved = distanceMoved;
-        player.debugInfo.lerpFactor = lerpFactor;
+        // Position interpolation
+        player.mesh.position.lerp(latestState.position, lerpFactor);
         
-        // Update visual debug helper if debug mode is enabled
-        if (Debug.state.enabled && Debug.state.showVisualHelpers && distanceToTarget > 0.1) {
-          SceneManager.updateDebugHelper(player.mesh, player.targetPosition);
-        }
+        // Rotation interpolation using quaternion SLERP
+        player.mesh.quaternion.slerp(latestState.rotation, lerpFactor);
         
-        // Log only when debug is enabled and there's a significant change or every 30 frames
-        if (Debug.state.enabled && (distanceToTarget > 0.5 || player.debugInfo.frameCount % 30 === 0)) {
-          console.log(`[${Date.now()}] Interpolation - Player ${id}:`, {
-            distanceToTarget: distanceToTarget.toFixed(2),
-            distanceMoved: distanceMoved.toFixed(2),
-            lerpFactor: lerpFactor.toFixed(2)
-          });
-        }
-        
-        // Increment frame counter
-        player.debugInfo.frameCount = (player.debugInfo.frameCount || 0) + 1;
-
-        // Interpolate rotation (with proper angle interpolation)
-        if (player.targetRotation !== undefined) {
-          // Simple rotation interpolation
-          const currentY = player.mesh.rotation.y;
-          const targetY = player.targetRotation;
-          
-          // Apply 180-degree offset for remote perspective
-          const adjustedTargetY = targetY + Math.PI;
-          
-          // Handle angle wrapping
-          let delta = adjustedTargetY - currentY;
-          if (delta > Math.PI) delta -= Math.PI * 2;
-          if (delta < -Math.PI) delta += Math.PI * 2;
-          
-          player.mesh.rotation.y += delta * lerpFactor;
+        // Debug visualization
+        if (Debug.state.enabled && Debug.state.showVisualHelpers) {
+          SceneManager.updateDebugHelper(
+            player.mesh, 
+            latestState.position
+          );
         }
       }
     }
@@ -179,30 +180,34 @@ export const Network = {
 
   sendMove(moveData) {
     if (!moveData || !moveData.position) {
-      console.warn('Invalid moveData received:', moveData);
+      console.warn('Invalid moveData:', moveData);
       return;
     }
     
-    // Add running state to move data
-    moveData.isRunning = Game.isRunning;
+    // Prepare network transform
+    const networkTransform = {
+      position: {
+        x: moveData.position.x,
+        y: moveData.position.y,
+        z: moveData.position.z
+      },
+      rotation: {
+        x: moveData.rotation.x,
+        y: moveData.rotation.y,
+        z: moveData.rotation.z,
+        w: moveData.rotation.w
+      },
+      isRunning: Game.isRunning,
+      sequence: this.sequenceNumber++,
+      timestamp: Date.now()
+    };
     
-    // Add debug flag if debug mode is enabled
+    // Optional debug logging
     if (Debug.state.enabled) {
-      moveData.debug = true;
-      
-      // Log movement data in debug mode
-      console.log('Sending move data:', {
-        position: moveData.position.toArray(),
-        rotation: moveData.rotation,
-        isRunning: moveData.isRunning,
-        sequence: this.sequenceNumber
-      });
+      console.log('Sending move data:', networkTransform);
     }
     
-    // Add sequence number
-    moveData.sequence = this.sequenceNumber++;
-    
-    this.socket.emit('move', moveData);
+    this.socket.emit('move', networkTransform);
   },
 
   sendProjectileHit(position) {

@@ -136,6 +136,11 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
     }
   },
 
+  getPlayerFacingYaw() {
+    // This is the raw yaw without the camera-specific adjustment
+    return this.yaw;
+  },
+
   render(playerPosition) {
     const now = performance.now();
     const deltaTime = this.lastRenderTime ? (now - this.lastRenderTime)/1000 : 0;
@@ -211,34 +216,38 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
   },
 
   updateCamera(playerPosition, playerModel) {
-    // Apply camera rotation based on yaw and pitch
-    const qx = new THREE.Quaternion();
-    qx.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    // Create camera rotation quaternion from yaw and pitch
+    const cameraRotation = new THREE.Quaternion()
+      .setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
     
-    // Calculate camera position based on the player and rotation
-    const offset = new THREE.Vector3(0, this.cameraHeight, this.cameraDistance);
-    offset.applyQuaternion(qx); // Rotate offset by yaw
+    // Calculate camera offset using quaternion rotation
+    const offset = new THREE.Vector3(0, this.cameraHeight, this.cameraDistance)
+      .applyQuaternion(cameraRotation);
     
-    // Set camera position
+    // Set camera position relative to player
     const targetCameraPosition = playerPosition.clone().add(offset);
     this.camera.position.copy(targetCameraPosition);
     
-    // Apply pitch to camera (looking up/down)
-    this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    // Set camera orientation directly
+    this.camera.quaternion.copy(cameraRotation);
     
-    // Return camera forward direction (flattened) for movement calculations
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    forward.y = 0;
-    forward.normalize();
+    // Calculate movement directions using camera quaternion
+    const forward = new THREE.Vector3(0, 0, -1)
+      .applyQuaternion(cameraRotation)
+      .setY(0)
+      .normalize();
     
-    // Rotate the player model to match camera direction unless in free look mode
+    const right = new THREE.Vector3(1, 0, 0)
+      .applyQuaternion(cameraRotation)
+      .setY(0)
+      .normalize();
+    
+    // Update player model orientation
     if (playerModel && !this.freeLookActive) {
-      playerModel.rotation.y = this.yaw + Math.PI; // Add PI to rotate 180 degrees
+      // Use quaternion for player rotation to match camera
+      playerModel.quaternion.copy(cameraRotation);
     }
     
-    return {
-      forward: forward,
-      right: new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize()
-    };
+    return { forward, right };
   }
 };
