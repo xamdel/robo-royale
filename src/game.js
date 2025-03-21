@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SceneManager } from './scene.js';
 import { Debug } from './main.js';
 
@@ -18,36 +18,30 @@ export const Game = {
 
   loadMechModel() {
     return new Promise((resolve) => {
-      const loader = new FBXLoader();
-      loader.load('assets/models/gemini-mech-rigged.fbx', (fbx) => {
-        console.log(fbx);
-        fbx.traverse((child) => {
-          console.log(child.name, child.type); // Log all children (bones, meshes, etc.)
+      const loader = new GLTFLoader();
+      loader.load('assets/models/Mech-norootmotion.glb', (gltf) => {
+        const model = gltf.scene;
+        console.log('Loaded mech model with animations:', gltf.animations);
+        
+        // Set up animations
+        this.mixer = new THREE.AnimationMixer(model);
+        this.actions = {};
+        
+        gltf.animations.forEach((clip) => {
+          // Use exact animation names from Mech.glb
+          const action = this.mixer.clipAction(clip);
+          this.actions[clip.name] = action;
+          console.log(`Registered animation action: ${clip.name}`);
         });
-        fbx.scale.set(5, 5, 5)
-        fbx.position.y = 0.1;
 
-        fbx.traverse((child) => {
+        model.traverse((child) => {
           if (child.isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
           }
         });
-
-        this.mixer = new THREE.AnimationMixer(fbx);
-        this.mechModel = fbx;
-        resolve(fbx);
-      });
-    });
-  },
-
-  loadAnimation(animationPath, name) {
-    return new Promise((resolve) => {
-      const loader = new FBXLoader();
-      loader.load(animationPath, (anim) => {
-        const action = this.mixer.clipAction(anim.animations[0]);
-        this.actions[name] = action;
-        resolve(action);
+        this.mechModel = model;
+        resolve(model);
       });
     });
   },
@@ -59,24 +53,12 @@ export const Game = {
     this.player.position.set(0, playerModel.position.y, 0);
     SceneManager.add(this.player);
 
-    // Initialize actions
-    this.actions = {};
-
-    // Load walking animation
-    await this.loadAnimation('assets/animations/Walk.fbx', 'walk');
-    // Load running animation
-    await this.loadAnimation('assets/animations/Standing Run Forward.fbx', 'run');
-    
-    // TODO: When animations are available, uncomment these:
-    // // Load strafing animation
-    await this.loadAnimation('assets/animations/Right Strafe.fbx', 'rightStrafe');
-    await this.loadAnimation('assets/animations/Left Strafe.fbx', 'leftStrafe');
-    // // Load walking backward animation
-    await this.loadAnimation('assets/animations/Walk Backward.fbx', 'walkBackward');
-
-    // Set up initial state
-    this.actions.walk.setLoop(THREE.LoopRepeat);
-    this.actions.run.setLoop(THREE.LoopRepeat);
+    // Set up animation looping for all actions
+    Object.values(this.actions).forEach(action => {
+      if (action) {
+        action.setLoop(THREE.LoopRepeat);
+      }
+    });
     this.currentAction = null;
 
     // Input handling
@@ -105,24 +87,34 @@ export const Game = {
   updateAnimation(isMoving) {
     let targetAction = null;
 
+    // Prioritize strafe movements using exact animation names
     if (this.moveLeft) {
-      targetAction = this.actions.leftStrafe;
+      targetAction = this.actions['RunLeft-loop'];
     } else if (this.moveRight) {
-      targetAction = this.actions.rightStrafe;
+      targetAction = this.actions['RunRight-loop'];
     } else if (this.moveBackward) {
-      targetAction = this.actions.walkBackward;
+      targetAction = this.actions['RunBackward-loop'];
     } else if (isMoving) {
-      targetAction = this.isRunning ? this.actions.run : this.actions.walk;
+      targetAction = this.actions['RunForward-loop'];
     }
 
-    if (targetAction != null && this.currentAction !== targetAction) {
+    // Handle idle state
+    if (!isMoving && !this.moveLeft && !this.moveRight && !this.moveBackward) {
+      targetAction = this.actions['Stand'];
+    }
+
+    if (targetAction && this.currentAction !== targetAction) {
         if (this.currentAction) {
             this.currentAction.fadeOut(0.2);
+            this.currentAction.setEffectiveWeight(0);
         }
-        targetAction.reset().fadeIn(0.2).play();
+        targetAction.reset();
+        targetAction.setEffectiveWeight(1);
+        targetAction.fadeIn(0.2).play();
         this.currentAction = targetAction;
     } else if (!isMoving && this.currentAction) {
       this.currentAction.fadeOut(0.2);
+      this.currentAction.setEffectiveWeight(0);
       this.currentAction = null;
     }
   },
@@ -141,17 +133,25 @@ export const Game = {
     let targetAction = null;
     
     if (isMoving) {
-      targetAction = player.isRunning ? player.actions.run : player.actions.walk;
+      // Use RunForward-loop for movement
+      targetAction = player.actions['RunForward-loop'];
+    } else {
+      // Use Stand for idle
+      targetAction = player.actions['Stand'];
     }
     
-    if (targetAction != null && player.currentAction !== targetAction) {
+    if (targetAction && player.currentAction !== targetAction) {
       if (player.currentAction) {
         player.currentAction.fadeOut(0.2);
+        player.currentAction.setEffectiveWeight(0);
       }
-      targetAction.reset().fadeIn(0.2).play();
+      targetAction.reset();
+      targetAction.setEffectiveWeight(1);
+      targetAction.fadeIn(0.2).play();
       player.currentAction = targetAction;
     } else if (!isMoving && player.currentAction) {
       player.currentAction.fadeOut(0.2);
+      player.currentAction.setEffectiveWeight(0);
       player.currentAction = null;
     }
   },
@@ -167,20 +167,22 @@ export const Game = {
     // Create animation mixer for this player
     const mixer = new THREE.AnimationMixer(mesh);
     
-    // Clone animation actions
-    const walkAction = this.actions.walk ? 
-      mixer.clipAction(this.actions.walk._clip) : null;
-    const runAction = this.actions.run ? 
-      mixer.clipAction(this.actions.run._clip) : null;
-    const leftStrafeAction = this.actions.leftStrafe ? 
-      mixer.clipAction(this.actions.leftStrafe._clip) : null;
-    const rightStrafeAction = this.actions.rightStrafe ? 
-      mixer.clipAction(this.actions.rightStrafe._clip) : null;
-    const walkBackwardAction = this.actions.walkBackward ? 
-      mixer.clipAction(this.actions.walkBackward._clip) : null;
+    // Clone animation actions using new animation names
+    const runForwardAction = this.actions['RunForward-loop'] ? 
+      mixer.clipAction(this.actions['RunForward-loop']._clip) : null;
+    const runBackwardAction = this.actions['RunBackward-loop'] ? 
+      mixer.clipAction(this.actions['RunBackward-loop']._clip) : null;
+    const runLeftAction = this.actions['RunLeft-loop'] ? 
+      mixer.clipAction(this.actions['RunLeft-loop']._clip) : null;
+    const runRightAction = this.actions['RunRight-loop'] ? 
+      mixer.clipAction(this.actions['RunRight-loop']._clip) : null;
+    const standAction = this.actions['Stand'] ? 
+      mixer.clipAction(this.actions['Stand']._clip) : null;
     
-    if (walkAction) walkAction.setLoop(THREE.LoopRepeat);
-    if (runAction) runAction.setLoop(THREE.LoopRepeat);
+    // Set up looping for run animations
+    [runForwardAction, runBackwardAction, runLeftAction, runRightAction].forEach(action => {
+      if (action) action.setLoop(THREE.LoopRepeat);
+    });
     
     mesh.traverse((child) => {
       if (child.isMesh) {
@@ -207,11 +209,11 @@ export const Game = {
       mesh: mesh,
       mixer: mixer,
       actions: {
-      walk: walkAction,
-      run: runAction,
-      leftStrafe: leftStrafeAction,
-      rightStrafe: rightStrafeAction,
-      walkBackward: walkBackwardAction
+        'RunForward-loop': runForwardAction,
+        'RunBackward-loop': runBackwardAction,
+        'RunLeft-loop': runLeftAction,
+        'RunRight-loop': runRightAction,
+        'Stand': standAction
       },
       currentAction: null,
       isRunning: false,
@@ -285,8 +287,8 @@ export const Game = {
       moved = true;
     }
     
-    // Maintain player's Y position
-    this.player.position.setY(this.player.position.y);
+    // Maintain player's Y position at initial height
+    this.player.position.setY(0);
     
     // Debug visualization for player movement
     if (Debug.state.enabled && moved) {

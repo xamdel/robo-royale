@@ -6,8 +6,8 @@ export const SceneManager = {
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
   cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
-  cameraDistance: 7, // Distance from player
-  cameraHeight: 7, // Height offset
+  cameraDistance: 5, // Distance from player
+  cameraHeight: 4, // Height offset
   freeLookActive: false, // Free look mode toggle
   mouseSensitivity: 0.002, // Mouse sensitivity
   yaw: 0, // Horizontal camera rotation
