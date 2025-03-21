@@ -87,6 +87,13 @@ export const Game = {
         case 'ShiftRight': this.isRunning = false; break;
       }
     });
+
+    // Add mouse click handler for shooting
+    document.addEventListener('mousedown', (event) => {
+      if (event.button === 0 && this.cannonAttached) { // Left click
+        WeaponManager.fireWeapon(this.player);
+      }
+    });
   },
 
   update(deltaTime) {
@@ -112,10 +119,11 @@ export const Game = {
       }
     }
 
-    // Update animations
+    // Update animations and projectiles
     if (this.mixer) {
       this.mixer.update(deltaTime);
     }
+    WeaponManager.updateProjectiles(deltaTime);
     
     // Update other player animations
     for (const id in this.otherPlayers) {
@@ -141,7 +149,15 @@ export const Game = {
       console.error("Mech model not loaded yet");
       return null;
     }
-    return PlayerAnimations.createPlayerMesh(this.mechModel, this.actions);
+    const playerMesh = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions);
+    
+    // Add collision sphere (radius 2 units)
+    playerMesh.collider = new THREE.Sphere(
+      new THREE.Vector3(),
+      2.0
+    );
+    
+    return playerMesh;
   },
 
   processInput(cameraDirections, deltaTime) {

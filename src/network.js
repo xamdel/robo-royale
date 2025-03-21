@@ -2,6 +2,7 @@ import { io } from 'socket.io-client';
 import { Game } from './game.js';
 import { SceneManager } from './scene.js';
 import { Debug } from './main.js';
+import { WeaponManager } from './weapons.js';
 import * as THREE from 'three';
 
 export const Network = {
@@ -19,6 +20,15 @@ export const Network = {
     
     this.socket.on('connect', () => {
       console.log('Connected to server with ID:', this.socket.id);
+    });
+
+    this.socket.on('projectileHit', (data) => {
+      // Create explosion effect at hit position
+      WeaponManager.createExplosion(new THREE.Vector3(
+        data.position.x,
+        data.position.y,
+        data.position.z
+      ));
     });
 
     this.socket.on('existingPlayers', (serverPlayers) => {
@@ -65,7 +75,7 @@ export const Network = {
           data.position.z
         );
         
-        // Store target rotation
+        // Store original rotation - offset will be applied during interpolation
         player.targetRotation = data.rotation;
         
         // Store if the player is running
@@ -153,8 +163,11 @@ export const Network = {
           const currentY = player.mesh.rotation.y;
           const targetY = player.targetRotation;
           
+          // Apply 180-degree offset for remote perspective
+          const adjustedTargetY = targetY + Math.PI;
+          
           // Handle angle wrapping
-          let delta = targetY - currentY;
+          let delta = adjustedTargetY - currentY;
           if (delta > Math.PI) delta -= Math.PI * 2;
           if (delta < -Math.PI) delta += Math.PI * 2;
           
@@ -165,17 +178,40 @@ export const Network = {
   },
 
   sendMove(moveData) {
+    if (!moveData || !moveData.position) {
+      console.warn('Invalid moveData received:', moveData);
+      return;
+    }
+    
     // Add running state to move data
     moveData.isRunning = Game.isRunning;
     
     // Add debug flag if debug mode is enabled
     if (Debug.state.enabled) {
       moveData.debug = true;
+      
+      // Log movement data in debug mode
+      console.log('Sending move data:', {
+        position: moveData.position.toArray(),
+        rotation: moveData.rotation,
+        isRunning: moveData.isRunning,
+        sequence: this.sequenceNumber
+      });
     }
     
     // Add sequence number
     moveData.sequence = this.sequenceNumber++;
     
     this.socket.emit('move', moveData);
+  },
+
+  sendProjectileHit(position) {
+    this.socket.emit('projectileHit', {
+      position: {
+        x: position.x,
+        y: position.y,
+        z: position.z
+      }
+    });
   }
 };

@@ -70,43 +70,59 @@ io.on('connection', (socket) => {
 
   // Handle movement - simple position update
   socket.on('move', (moveData) => {
-    if (players[socket.id]) {
-      // Update player position directly
-      players[socket.id].position = moveData.position;
-      players[socket.id].rotation = moveData.rotation;
-      players[socket.id].isRunning = moveData.isRunning;
-
-      // --- Server-Side Movement Logging ---
-      // Only log if debug flag is set in the move data
-      if (moveData.debug) {
-        console.log(`[${Date.now()}] Movement - Player ${socket.id}:`, moveData);
-      }
-
-      // Broadcast to all other clients
-      const now = Date.now();
-      const updateRate = now - lastUpdateTimestamp;
-      lastUpdateTimestamp = now;
-      sentPackets++;
-
-      socket.broadcast.emit('playerMoved', {
-        id: socket.id,
-        position: players[socket.id].position,
-        rotation: players[socket.id].rotation,
-        isRunning: players[socket.id].isRunning,
-        updateRate: updateRate, // Send actual update rate
-        sequence: moveData.sequence // Pass through sequence number if available
-      });
-    } else {
-      lostPackets++; // Increment if move data is for a non-existent player
+    if (!players[socket.id]) {
+      lostPackets++;
+      return;
     }
+
+    if (!moveData || !moveData.position) {
+      console.warn(`Invalid move data received from player ${socket.id}:`, moveData);
+      lostPackets++;
+      return;
+    }
+
+    // Update player position
+    players[socket.id].position = moveData.position;
+    players[socket.id].rotation = moveData.rotation;
+    players[socket.id].isRunning = moveData.isRunning;
+
+    // --- Server-Side Movement Logging ---
+    // Only log if debug flag is set in the move data
+    if (moveData.debug) {
+      console.log(`[${Date.now()}] Movement - Player ${socket.id}:`, {
+        position: moveData.position,
+        rotation: moveData.rotation,
+        isRunning: moveData.isRunning,
+        sequence: moveData.sequence
+      });
+    }
+
+    // Broadcast to all other clients
+    const now = Date.now();
+    const updateRate = now - lastUpdateTimestamp;
+    lastUpdateTimestamp = now;
+    sentPackets++;
+
+    socket.broadcast.emit('playerMoved', {
+      id: socket.id,
+      position: players[socket.id].position,
+      rotation: players[socket.id].rotation,
+      isRunning: players[socket.id].isRunning,
+      updateRate: updateRate,
+      sequence: moveData.sequence
+    });
   });
 
   // Handle disconnection
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    clearInterval(networkStatsInterval); // Stop sending stats
+    console.log('Client disconnected:', socket.id);
+    socket.broadcast.emit('playerDisconnected', socket.id);
     delete players[socket.id];
-    io.emit('playerDisconnected', socket.id);
+  });
+
+  socket.on('projectileHit', (data) => {
+    // Broadcast hit to all clients except sender
+    socket.broadcast.emit('projectileHit', data);
   });
 });
 

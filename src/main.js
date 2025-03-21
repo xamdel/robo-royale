@@ -84,10 +84,9 @@ function gameLoop(timestamp) {
   const deltaTime = (timestamp - lastTime) / 1000; // Convert to seconds
   lastTime = timestamp;
   
-  // Player and camera are now updated in Game.update() so we don't need to call updateCamera here
   if (Game.player) {
-    // Get movement data from Game.update() via Game.processInput()
-    const moveData = Game.processInput ? Game.lastMoveData : null;
+    // Get movement data from Game.update()
+    const moveData = Game.update(deltaTime);
     
     // Send position to server at a controlled rate based on movement speed
     const updateRate = Game.isRunning ? RUN_UPDATE_RATE : WALK_UPDATE_RATE;
@@ -96,10 +95,10 @@ function gameLoop(timestamp) {
       lastNetworkUpdate = timestamp;
       lastSentMoveData = moveData; // Store for update rate calculation
     }
+  } else {
+    // If no player, still update game state
+    Game.update(deltaTime);
   }
-
-  // Update animations and networking
-  Game.update(deltaTime);
   Network.update(deltaTime);  // Add network update for interpolation
   
   // Render the scene

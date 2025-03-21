@@ -8,7 +8,7 @@ export const SceneManager = {
   renderer: new THREE.WebGLRenderer({ antialias: true }),
   cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
   cameraDistance: 5, // Distance from player
-  cameraHeight: 4, // Height offset
+  cameraHeight: 5, // Height offset
   freeLookActive: false, // Free look mode toggle
   mouseSensitivity: 0.002, // Mouse sensitivity
   yaw: 0, // Horizontal camera rotation
@@ -36,14 +36,14 @@ export const SceneManager = {
     const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
     directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
+directionalLight.shadow.mapSize.width = 4096;
     directionalLight.shadow.mapSize.height = 4096; // Increased resolution
     directionalLight.shadow.camera.near = 1; // Adjusted near plane
-    directionalLight.shadow.camera.far = 200; // Adjusted far plane
-    directionalLight.shadow.camera.left = -100; // Added left plane
-    directionalLight.shadow.camera.right = 100; // Added right plane
-    directionalLight.shadow.camera.top = 100; // Added top plane
-    directionalLight.shadow.camera.bottom = -100; // Added bottom plane
+directionalLight.shadow.camera.far = 100; // Adjusted far plane
+directionalLight.shadow.camera.left = -50; // Added left plane
+directionalLight.shadow.camera.right = 50; // Added right plane
+directionalLight.shadow.camera.top = 50; // Added top plane
+directionalLight.shadow.camera.bottom = -50; // Added bottom plane
     directionalLight.shadow.bias = -0.001; // Reduce shadow acne
     this.scene.add(directionalLight);
 
@@ -70,7 +70,7 @@ export const SceneManager = {
     const loader = new GLTFLoader();
     loader.load('/assets/models/Cannon.glb', (gltf) => {
       this.cannon = gltf.scene;
-      this.cannon.position.set(10, 0, 0);
+      this.cannon.position.set(0, 0, -10)
       this.cannon.castShadow = true;
       this.scene.add(this.cannon);
       
