@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export const SceneManager = {
   scene: new THREE.Scene(),
@@ -65,18 +66,14 @@ export const SceneManager = {
     terrain.receiveShadow = true;
     this.scene.add(terrain);
 
-    // Add a simple obstacle for reference
-    const cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
-    const cubeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x00ff00,
-      roughness: 0.5,
-      metalness: 0.0
+    // Load cannon model
+    const loader = new GLTFLoader();
+    loader.load('/assets/models/Cannon.glb', (gltf) => {
+      this.cannon = gltf.scene;
+      this.cannon.position.set(0, 0, 0); // Hover height
+      this.cannon.castShadow = true;
+      this.scene.add(this.cannon);
     });
-    const testCube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-    testCube.position.set(5, 1, 5);
-    testCube.castShadow = true;
-    testCube.receiveShadow = true;
-    this.scene.add(testCube);
 
     // Set initial camera position
     this.camera.position.set(0, 10, 10);
@@ -134,6 +131,14 @@ export const SceneManager = {
   },
 
   render() {
+    const now = performance.now();
+    const deltaTime = this.lastRenderTime ? (now - this.lastRenderTime)/1000 : 0;
+    this.lastRenderTime = now;
+
+    if (this.cannon) {
+      this.cannon.rotation.y += deltaTime * 0.5; // 0.5 radians/sec rotation
+    }
+    
     this.renderer.render(this.scene, this.camera);
   },
 
