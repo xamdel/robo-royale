@@ -238,7 +238,10 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
 
     // Only update player model orientation if not in free look mode
     if (playerModel && !this.freeLookActive) {
-      playerModel.quaternion.copy(cameraRotation);
+      const playerRotation = cameraRotation.clone().multiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI)
+      );
+      playerModel.quaternion.copy(playerRotation);
     }
     // Note: When in free look, the server will use movementRotation instead
 

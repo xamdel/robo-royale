@@ -193,6 +193,10 @@ export const Network = {
       
       // Reconcile rotation as well
       Game.player.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+
+      // Debug forward direction
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(Game.player.quaternion);
+    console.log(`Player forward after reconciliation: ${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)}`);
       
       const cameraDirections = SceneManager.updateCamera(Game.player.position, Game.player);
       for (let i = historyIndex + 1; i < Game.stateHistory.length; i++) {
