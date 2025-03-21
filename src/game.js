@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { SceneManager } from './scene.js';
 import { Debug } from './main.js';
 
@@ -161,7 +162,7 @@ export const Game = {
       console.error("Mech model not loaded yet");
       return null;
     }
-    const mesh = this.mechModel.clone();
+    const mesh = SkeletonUtils.clone(this.mechModel);
     mesh.position.set(0, 0, 0);
     
     // Create animation mixer for this player
