@@ -70,7 +70,7 @@ export const SceneManager = {
     const loader = new GLTFLoader();
     loader.load('/assets/models/Cannon.glb', (gltf) => {
       this.cannon = gltf.scene;
-      this.cannon.position.set(0, 0, 0);
+      this.cannon.position.set(10, 0, 0);
       this.cannon.castShadow = true;
       this.scene.add(this.cannon);
       

@@ -152,3 +152,5 @@ window.onload = init;
 export const Debug = {
   state: debugState
 };
+
+window.Game = Game;

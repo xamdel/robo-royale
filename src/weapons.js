@@ -5,7 +5,7 @@ export const WeaponManager = {
   weaponSockets: {
     leftArm: {
       boneName: 'ArmL',
-      position: [0.5, 0, 0],
+      position: [-0.55,-2.46, 0.00],
       rotation: [0, 0, 0],
       scale: 1,
       attachmentCallback: null

@@ -167,4 +167,16 @@ if (typeof window !== 'undefined') {
       return "Test markers added at various positions";
     }
   };
+
+  window.debugBones = () => {
+    if (window.Game && window.Game.player) {
+      DebugTools.visualizeBones(window.Game.player);
+      DebugTools.findBestWeaponPosition(window.Game.player);
+      console.log("Debug visualization enabled - you should see colored markers on the model");
+      return "Success";
+    } else {
+      console.error("Game.player not available. Make sure the game is running and the model is loaded.");
+      return "Failed - Game.player not found";
+    }
+  };
 }
