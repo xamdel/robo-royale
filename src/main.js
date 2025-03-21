@@ -103,7 +103,7 @@ function gameLoop(timestamp) {
   Network.update(deltaTime);  // Add network update for interpolation
   
   // Render the scene
-  SceneManager.render();
+    SceneManager.render(Game.player?.position);
   
   // Continue the game loop
   requestAnimationFrame(gameLoop);

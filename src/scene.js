@@ -70,9 +70,15 @@ export const SceneManager = {
     const loader = new GLTFLoader();
     loader.load('/assets/models/Cannon.glb', (gltf) => {
       this.cannon = gltf.scene;
-      this.cannon.position.set(0, 0, 0); // Hover height
+      this.cannon.position.set(0, 0, 0);
       this.cannon.castShadow = true;
       this.scene.add(this.cannon);
+      
+      // Set up collision sphere for pickup
+      this.cannonCollider = new THREE.Sphere(
+        this.cannon.position.clone(),
+        2.5 // Pickup radius
+      );
     });
 
     // Set initial camera position
@@ -130,13 +136,33 @@ export const SceneManager = {
     }
   },
 
-  render() {
+  render(playerPosition) {
     const now = performance.now();
     const deltaTime = this.lastRenderTime ? (now - this.lastRenderTime)/1000 : 0;
     this.lastRenderTime = now;
 
     if (this.cannon) {
-      this.cannon.rotation.y += deltaTime * 0.5; // 0.5 radians/sec rotation
+      // Only rotate the cannon if it's not attached to the player
+      if (!this.cannonAttached) {
+        this.cannon.rotation.y += deltaTime * 0.5; // 0.5 radians/sec rotation
+      }
+      
+      // Update collider position to match cannon (only if not attached)
+      if (this.cannonCollider) {
+        const worldPos = new THREE.Vector3();
+        this.cannon.getWorldPosition(worldPos);
+        this.cannonCollider.center.copy(worldPos);
+        
+        // Only log in debug mode to avoid flooding the console
+        if (playerPosition && window.Debug && window.Debug.state && window.Debug.state.enabled) {
+          console.log('Cannon collider updated:', {
+            worldPosition: worldPos, 
+            radius: this.cannonCollider.radius,
+            playerPosition: playerPosition,
+            distance: playerPosition ? worldPos.distanceTo(playerPosition) : null
+          });
+        }
+      }
     }
     
     this.renderer.render(this.scene, this.camera);
