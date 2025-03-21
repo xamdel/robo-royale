@@ -34,11 +34,6 @@ export const PlayerAnimations = {
       targetAction = player.actions['RunForward-loop'];
     }
 
-    // Handle idle state
-    if (!isMoving && !player.moveLeft && !player.moveRight && !player.moveBackward) {
-      targetAction = player.actions['Stand'];
-    }
-
     if (targetAction && player.currentAction !== targetAction) {
       if (player.currentAction) {
         player.currentAction.fadeOut(0.2);
