@@ -112,6 +112,28 @@ export const Network = {
       });
     });
 
+    this.socket.on('projectileCreated', (data) => {
+      if (data.sourcePlayerId !== this.socket.id) {
+        const projectile = WeaponManager.projectileManager.spawn(
+          data.weaponType,
+          new THREE.Vector3(data.position.x, data.position.y, data.position.z),
+          new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z),
+          Game.otherPlayers[data.sourcePlayerId]?.mesh
+        );
+        if (projectile) {
+          projectile.serverId = data.id;
+          WeaponManager.networkProjectiles.set(data.id, projectile);
+        }
+      } else {
+        const tempProjectile = WeaponManager.networkProjectiles.get(data.tempId);
+        if (tempProjectile) {
+          WeaponManager.networkProjectiles.delete(data.tempId);
+          tempProjectile.serverId = data.id;
+          WeaponManager.networkProjectiles.set(data.id, tempProjectile);
+        }
+      }
+    });
+
     // Add handler for projectile destroyed
     this.socket.on('projectileDestroyed', (data) => {
       const projectile = WeaponManager.networkProjectiles.get(data.id);
@@ -259,26 +281,11 @@ export const Network = {
 
   sendShot(data) {
     if (this.socket?.connected) {
-      const tempId = `${this.socket.id}-${Date.now()}`; // Temporary ID for prediction
-      const projectile = WeaponManager.projectileManager.spawn(
-        data.type,
-        data.position,
-        data.direction,
-        Game.player
-      );
-      
-      if (projectile) {
-        projectile.serverId = tempId;
-        WeaponManager.networkProjectiles.set(tempId, projectile);
-      }
-
       this.socket.emit('shootProjectile', {
-        id: tempId,
         weaponType: data.type,
         position: data.position,
         direction: data.direction,
-        velocity: data.velocity,
-        sourcePlayerId: this.socket.id
+        velocity: data.velocity
       });
     }
   },

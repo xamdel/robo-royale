@@ -386,11 +386,6 @@ export const WeaponManager = {
       direction,
       sourcePlayer
     );
-    
-    if (projectile) {
-      projectile.serverId = data.id;
-      this.networkProjectiles.set(data.id, projectile);
-    }
   },
 
   createExplosion(position) {

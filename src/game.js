@@ -94,6 +94,18 @@ export const Game = {
     // Create player using the same system as remote players, but specify it's the local player
     const playerData = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions, true);
     this.player = playerData.mesh;
+    // Add colliders to the local player's mesh
+    this.player.colliders = {
+        body: new Collider('capsule', {
+            height: 4.0,
+            radius: 1,
+            offset: new THREE.Vector3(0, 2, 0)
+        }),
+        cabin: new Collider('sphere', {
+            radius: 0.7,
+            offset: new THREE.Vector3(0, 4, 0)
+        })
+    };
     this.mixer = playerData.mixer;
     this.actions = playerData.actions;
     this.currentAction = null;
