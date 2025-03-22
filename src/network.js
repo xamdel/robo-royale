@@ -147,9 +147,9 @@ export const Network = {
     }
   },
 
-  sendShot(position, direction) {
+  sendHit(sourcePlayerId) {
     if (this.socket?.connected) {
-      this.socket.emit('shoot', { position, direction });
+      this.socket.emit('playerHit', { sourcePlayerId });
     }
   },
 

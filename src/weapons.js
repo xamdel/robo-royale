@@ -45,16 +45,59 @@ class Projectile extends THREE.Mesh {
   }
 
   checkCollisions() {
-    // Collision logic moved from WeaponManager
+    const allPlayers = [Game.player, ...Object.values(Game.otherPlayers).map(p => p.mesh)];
+    let collisionPoint = null;
+
+    for (const player of allPlayers) {
+      if (!player || player === this.sourcePlayer) continue;
+
+      const colliders = player.colliders;
+
+      // Capsule collision check
+      const capsule = colliders.body.params;
+      const capsuleStart = new THREE.Vector3(0, capsule.height / 2, 0).add(player.position).add(capsule.offset);
+      const capsuleEnd = new THREE.Vector3(0, -capsule.height / 2, 0).add(player.position).add(capsule.offset);
+      const capsuleRadius = capsule.radius;
+
+      const segment = new THREE.Line3(capsuleStart, capsuleEnd);
+      const closestPoint = new THREE.Vector3();
+      segment.closestPointToPoint(this.position, true, closestPoint);
+
+      const distanceToCapsule = this.position.distanceTo(closestPoint);
+      if (distanceToCapsule < capsuleRadius + this.config.radius) {
+        this.setCollisionPoint(closestPoint);
+        return true; // Hit the body
+      }
+
+      // Sphere collision check
+      const sphere = colliders.cabin.params;
+      const sphereCenter = new THREE.Vector3().add(player.position).add(sphere.offset);
+      const distanceToSphere = this.position.distanceTo(sphereCenter);
+
+      if (distanceToSphere < sphere.radius + this.config.radius) {
+        this.setCollisionPoint(sphereCenter);
+        return true; // Hit the cabin
+      }
+    }
+
+    return false;
   }
 
   onHit() {
-    // Spawn effects, notify network, etc
+    console.log('Projectile hit!');
+    Network.sendHit(this.sourcePlayer.uuid);
+    if (this.collisionPoint) {
+      WeaponManager.addCollisionEffect(this.collisionPoint, this.config.color);
+    }
   }
 
   deactivate() {
     this.active = false;
     SceneManager.remove(this);
+  }
+
+  setCollisionPoint(point) {
+    this.collisionPoint = point;
   }
 }
 
@@ -66,7 +109,7 @@ class ProjectileManager {
     // Pre-configure projectile types
     this.projectileTypes = {
       cannon: {
-        radius: 0.2,
+        radius: 0.15,
         speed: 300,
         maxDistance: 100,
         color: 0xdae640,
@@ -329,6 +372,65 @@ export const WeaponManager = {
 
     const startTime = performance.now();
     const duration = 1000;
+
+    const updateParticles = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = elapsed / duration;
+
+      if (progress >= 1) {
+        SceneManager.remove(particles);
+        return;
+      }
+
+      particles.children.forEach((particle) => {
+        particle.position.add(
+          particle.userData.velocity.clone().multiplyScalar(0.016)
+        );
+        particle.userData.velocity.y -= 0.1;
+
+        if (particle.material) {
+          particle.material.opacity = 0.8 * (1 - progress);
+        }
+      });
+
+      requestAnimationFrame(updateParticles);
+    };
+
+    updateParticles();
+  },
+
+  addCollisionEffect(position, color = 0xffff00) {
+    const particles = new THREE.Group();
+
+    for (let i = 0; i < 20; i++) {
+      const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+      const material = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.8,
+      });
+
+      const particle = new THREE.Mesh(geometry, material);
+
+      particle.position.set(
+        position.x + (Math.random() - 0.5) * 1,
+        position.y + (Math.random() - 0.5) * 1,
+        position.z + (Math.random() - 0.5) * 1
+      );
+
+      particle.userData.velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 5,
+        Math.random() * 5,
+        (Math.random() - 0.5) * 5
+      );
+
+      particles.add(particle);
+    }
+
+    SceneManager.add(particles);
+
+    const startTime = performance.now();
+    const duration = 500;
 
     const updateParticles = () => {
       const elapsed = performance.now() - startTime;

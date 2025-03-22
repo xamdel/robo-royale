@@ -221,12 +221,19 @@ export const Game = {
     }
     
     const playerData = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions);
-    
-    // Add collision sphere (radius 2 units)
-    playerData.mesh.collider = new THREE.Sphere(
-      new THREE.Vector3(),
-      2.0
-    );
+
+    // Add compound colliders
+    playerData.mesh.colliders = {
+      body: new Collider('capsule', {
+        height: 4.0,
+        radius: 1,
+        offset: new THREE.Vector3(0, 2, 0)
+      }),
+      cabin: new Collider('sphere', {
+        radius: 0.7,
+        offset: new THREE.Vector3(0, 4, 0)
+      })
+    };
     
     // Add to scene
     SceneManager.add(playerData.mesh);
@@ -380,3 +387,12 @@ export const Game = {
     return moveData;
   },
 };
+
+class Collider {
+  constructor(type, params) {
+    this.type = type; // 'capsule' or 'sphere'
+    this.params = params;
+    // For capsule: height, radius, offset
+    // For sphere: radius, offset
+  }
+}
