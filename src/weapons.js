@@ -58,13 +58,12 @@ class Projectile extends THREE.Mesh {
   }
 
   checkCollisions() {
-    // Add grace period to avoid self-collision
-    const COLLISION_GRACE_PERIOD = 100; // ms
-    if (Date.now() - this.spawnTime < COLLISION_GRACE_PERIOD) {
-      return false;
+    // Filter out the source player to completely prevent self-collisions
+    const allPlayers = Object.values(Game.otherPlayers).map(p => p.mesh);
+    // Only include the local player in collision checks if this is not their projectile
+    if (this.sourcePlayer !== Game.player) {
+      allPlayers.push(Game.player);
     }
-
-    const allPlayers = [Game.player, ...Object.values(Game.otherPlayers).map(p => p.mesh)];
     
     // Always use the previously stored position or fall back to start position
     // This ensures the ray begins from a valid previous position
@@ -132,7 +131,8 @@ class Projectile extends THREE.Mesh {
   checkRaycastHit(raycaster, allPlayers) {
     // For each player, create bounding spheres for simpler collision testing
     for (const player of allPlayers) {
-      if (!player || player === this.sourcePlayer) continue;
+      // Skip invalid players and the source player (already filtered in checkCollisions)
+      if (!player) continue;
       
       // Skip players without colliders
       if (!player.colliders) continue;

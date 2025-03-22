@@ -32,6 +32,9 @@ function validateProjectileHit(hitData, projectile) {
   const hitPlayer = players.get(hitData.hitPlayerId);
   if (!hitPlayer) return false;
   
+  // Don't allow hits on the player who fired the projectile
+  if (hitData.hitPlayerId === projectile.ownerId) return false;
+  
   // Get ray origin and direction
   const rayOrigin = hitData.prevPosition || projectile.prevPosition || projectile.position;
   const rayDest = hitData.position;
@@ -528,7 +531,7 @@ io.on('connection', (socket) => {
         
         // For each player, check collisions with compound collider
         for (const [playerId, playerData] of players.entries()) {
-          // Don't collide with own player
+          // Don't collide with own player - stronger check to prevent any self-collisions
           if (playerId === projectile.ownerId) continue;
           
           // Get player data
