@@ -19,61 +19,77 @@ export const PlayerAnimations = {
   },
 
   updatePlayerAnimation(player, isMoving) {
-    let targetAction = null;
-
     if (!player.actions) return;
 
-    // Determine movement direction based on player's movement vector
-    const movementVector = new THREE.Vector3();
+    // Create a baseline target action
+    let targetAction = null;
     
-    if (player.moveLeft) {
-      movementVector.x -= 1;
-    }
-    if (player.moveRight) {
-      movementVector.x += 1;
-    }
-    if (player.moveForward) {
-      movementVector.z -= 1;
-    }
-    if (player.moveBackward) {
-      movementVector.z += 1;
-    }
-
-    // Normalize movement vector to get primary direction
-    movementVector.normalize();
-
-    // Select animation based on movement direction
-    if (Math.abs(movementVector.x) > Math.abs(movementVector.z)) {
-      // Horizontal movement takes priority
-      targetAction = movementVector.x < 0 
-        ? player.actions['RunLeft-loop'] 
-        : player.actions['RunRight-loop'];
-    } else if (movementVector.z !== 0) {
-      // Vertical movement
-      targetAction = movementVector.z < 0 
-        ? player.actions['RunForward-loop'] 
-        : player.actions['RunBackward-loop'];
-    }
-
-    // Fallback to forward animation if moving
-    if (!targetAction && isMoving) {
-      targetAction = player.actions['RunForward-loop'];
-    }
-
-    // Transition animations
-    if (targetAction && player.currentAction !== targetAction) {
-      if (player.currentAction) {
-        player.currentAction.fadeOut(0.2);
-        player.currentAction.setEffectiveWeight(0);
+    if (isMoving) {
+      // Determine primary movement direction
+      let primaryDirection = 'forward'; // Default
+      
+      // Check each movement direction
+      if (player.moveForward) primaryDirection = 'forward';
+      else if (player.moveBackward) primaryDirection = 'backward';
+      else if (player.moveLeft) primaryDirection = 'left';
+      else if (player.moveRight) primaryDirection = 'right';
+      
+      // Select animation based on direction
+      switch (primaryDirection) {
+        case 'forward':
+          targetAction = player.actions['RunForward-loop'];
+          break;
+        case 'backward':
+          targetAction = player.actions['RunBackward-loop'];
+          break;
+        case 'left':
+          targetAction = player.actions['RunLeft-loop'];
+          break;
+        case 'right':
+          targetAction = player.actions['RunRight-loop'];
+          break;
+        default:
+          // Fallback
+          targetAction = player.actions['RunForward-loop'];
       }
       
+      // Set animation speed based on running state
+      if (targetAction) {
+        targetAction.timeScale = player.isRunning ? 1.5 : 1.0;
+      }
+    } else {
+      // When not moving, use Stand animation if available
+      targetAction = player.actions['Stand'];
+      
+      // If no Stand animation, just stop the current action
+      if (!targetAction) {
+        if (player.currentAction) {
+          player.currentAction.fadeOut(0.2);
+          player.currentAction = null;
+        }
+        return;
+      }
+    }
+    
+    // Skip if same action is already playing
+    if (targetAction === player.currentAction) return;
+    
+    // Handle animation transitions
+    if (targetAction) {
+      // Fade out current animation if it exists
+      if (player.currentAction) {
+        player.currentAction.fadeOut(0.15); // Faster transition
+      }
+      
+      // Start new animation
       targetAction.reset();
-      targetAction.setEffectiveWeight(1);
-      targetAction.fadeIn(0.2).play();
+      targetAction.fadeIn(0.15); // Faster transition
+      targetAction.play();
       player.currentAction = targetAction;
-    } else if (!isMoving && player.currentAction) {
+    } 
+    // Explicitly handle stopping animations when no target action
+    else if (player.currentAction) {
       player.currentAction.fadeOut(0.2);
-      player.currentAction.setEffectiveWeight(0);
       player.currentAction = null;
     }
   },

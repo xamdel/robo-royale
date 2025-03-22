@@ -8,10 +8,13 @@ import * as THREE from 'three';
 export const Network = {
   socket: null,
   interpolationBuffer: new Map(),
-  BUFFER_SIZE: 8, // Increased buffer size for smoother interpolation
-  interpolationSpeed: 1,
-  lastUpdateTime: new Map(), // Track last update time per player
-  velocities: new Map(), // Track velocities for prediction
+  BUFFER_SIZE: 8, // Increased buffer size for smoother movement
+  interpolationSpeed: 5, // Reduced speed for smoother interpolation
+  lastUpdateTime: new Map(),
+  playerStates: new Map(), // Store current and target states
+  playerStateBuffer: new Map(), // Buffer for smoother transitions
+  isMovingMap: new Map(), // Track if players are currently moving
+  playerVelocities: new Map(), // Track velocities for prediction
   
   init() {
     this.socket = io('http://localhost:3000', {
@@ -39,42 +42,29 @@ export const Network = {
     this.socket.on('gameState', (state) => {
       state.players.forEach(playerData => {
         if (playerData.id !== this.socket.id) {
-          // Calculate velocity if we have previous data
-          const lastUpdate = this.lastUpdateTime.get(playerData.id);
-          if (lastUpdate) {
-            const deltaTime = (state.timestamp - lastUpdate.timestamp) / 1000;
-            if (deltaTime > 0) {
-              const velocity = new THREE.Vector3(
-                (playerData.position.x - lastUpdate.position.x) / deltaTime,
-                (playerData.position.y - lastUpdate.position.y) / deltaTime,
-                (playerData.position.z - lastUpdate.position.z) / deltaTime
-              );
-              this.velocities.set(playerData.id, velocity);
-            }
-          }
-          
-          // Buffer positions for interpolation
+          // Get or create buffer for this player
           let buffer = this.interpolationBuffer.get(playerData.id) || [];
+          
+          // Add the state to the buffer
           buffer.push({
             position: playerData.position,
             rotation: playerData.rotation,
             timestamp: state.timestamp,
-            moveState: playerData.moveState // Add movement state
+            moveState: playerData.moveState
           });
           
-          // Keep buffer size manageable
+          // Keep buffer size consistent with our BUFFER_SIZE setting
           while (buffer.length > this.BUFFER_SIZE) {
             buffer.shift();
           }
           
+          // Store the buffer
           this.interpolationBuffer.set(playerData.id, buffer);
-          this.lastUpdateTime.set(playerData.id, {
-            position: playerData.position,
-            timestamp: state.timestamp
-          });
+          
+          // Update the player in the game
           Game.updateOtherPlayer(playerData);
         } else if (Game.lastProcessedInputId < playerData.lastProcessedInput) {
-          // Server reconciliation
+          // Server reconciliation for local player
           Game.lastProcessedInputId = playerData.lastProcessedInput;
           Game.inputBuffer = Game.inputBuffer.filter(input => 
             input.id > playerData.lastProcessedInput
@@ -88,8 +78,10 @@ export const Network = {
           if (Game.otherPlayers[playerId]?.mesh) {
             SceneManager.remove(Game.otherPlayers[playerId].mesh);
           }
-          delete Game.otherPlayers[playerId];
-          this.interpolationBuffer.delete(playerId);
+      delete Game.otherPlayers[playerId];
+      this.interpolationBuffer.delete(playerId);
+      this.isMovingMap.delete(playerId);
+      this.playerVelocities.delete(playerId);
         }
       });
     });
@@ -98,8 +90,9 @@ export const Network = {
       if (Game.otherPlayers[playerId]?.mesh) {
         SceneManager.remove(Game.otherPlayers[playerId].mesh);
       }
-      delete Game.otherPlayers[playerId];
-      this.interpolationBuffer.delete(playerId);
+    delete Game.otherPlayers[playerId];
+    this.interpolationBuffer.delete(playerId);
+    this.playerVelocities.delete(playerId);
     });
 
     this.socket.on('playerShot', (data) => {
@@ -177,85 +170,79 @@ export const Network = {
 
   update(deltaTime) {
     const now = Date.now();
+
     // Interpolate other players
     for (const [playerId, buffer] of this.interpolationBuffer) {
-      if (buffer.length >= 2) {
-        const player = Game.otherPlayers[playerId];
-        if (player?.mesh) {
-          // Find the two buffer states to interpolate between
-          let currentIndex = 0;
-          while (currentIndex < buffer.length - 2 && 
-                 buffer[currentIndex + 1].timestamp < now) {
-            currentIndex++;
-          }
-          
-          const current = buffer[currentIndex];
-          const target = buffer[currentIndex + 1];
-          const next = buffer[currentIndex + 2];
-          
-          // Calculate interpolation alpha
-          const alpha = Math.min(
-            (now - current.timestamp) / 
-            (target.timestamp - current.timestamp),
-            1
-          );
-          
-          // Apply velocity-based prediction
-          const velocity = this.velocities.get(playerId);
-          const predictedPosition = velocity ? new THREE.Vector3(
-            target.position.x + velocity.x * deltaTime,
-            target.position.y + velocity.y * deltaTime,
-            target.position.z + velocity.z * deltaTime
-          ) : new THREE.Vector3(target.position.x, target.position.y, target.position.z);
-          
-          // Cubic interpolation for position
-          if (next && alpha > 0.5) {
-            // Use cubic interpolation when we have enough points
-            const p0 = new THREE.Vector3(current.position.x, current.position.y, current.position.z);
-            const p1 = new THREE.Vector3(target.position.x, target.position.y, target.position.z);
-            const p2 = new THREE.Vector3(next.position.x, next.position.y, next.position.z);
-            
-            const t = (alpha - 0.5) * 2; // Remap alpha for the second half
-            player.mesh.position.copy(p0)
-              .multiplyScalar((1 - t) * (1 - t))
-              .add(p1.multiplyScalar(2 * (1 - t) * t))
-              .add(p2.multiplyScalar(t * t));
-          } else {
-            // Fall back to linear interpolation with prediction
-            player.mesh.position.lerpVectors(
-              new THREE.Vector3(current.position.x, current.position.y, current.position.z),
-              predictedPosition,
-              alpha * this.interpolationSpeed
-            );
-          }
-
-          // Interpolate rotation with adaptive speed
-          const rotationSpeed = alpha > 0.8 ? this.interpolationSpeed * 1.5 : this.interpolationSpeed;
-          player.mesh.quaternion.slerpQuaternions(
-            new THREE.Quaternion(
-              current.rotation.x,
-              current.rotation.y,
-              current.rotation.z,
-              current.rotation.w
-            ),
-            new THREE.Quaternion(
-              target.rotation.x,
-              target.rotation.y,
-              target.rotation.z,
-              target.rotation.w
-            ),
-            alpha * rotationSpeed
-          );
-          
-          // Update movement state for animations
-          if (target.moveState) {
-            player.moveForward = target.moveState.moveForward;
-            player.moveBackward = target.moveState.moveBackward;
-            player.moveLeft = target.moveState.moveLeft;
-            player.moveRight = target.moveState.moveRight;
-            player.isRunning = target.moveState.isRunning;
-          }
-        }
+      const player = Game.otherPlayers[playerId];
+      if (!player || !player.mesh) continue;
+      
+      // Need at least 2 states to interpolate
+      if (buffer.length < 2) continue;
+      
+      // Use most recent states for interpolation
+      const prevState = buffer[buffer.length - 2];
+      const nextState = buffer[buffer.length - 1];
+      
+      // Calculate how far we are between the two states (0 to 1)
+      const duration = nextState.timestamp - prevState.timestamp;
+      if (duration <= 0) continue; // Skip invalid time data
+      
+      // Calculate normalized time position between the two states
+      let alpha = (now - prevState.timestamp) / duration;
+      alpha = Math.max(0, Math.min(1, alpha));
+      
+      // Create position vectors from state data
+      const prevPosition = new THREE.Vector3(
+        prevState.position.x,
+        prevState.position.y,
+        prevState.position.z
+      );
+      
+      const nextPosition = new THREE.Vector3(
+        nextState.position.x,
+        nextState.position.y,
+        nextState.position.z
+      );
+      
+      // Create quaternions from rotation data
+      const prevRotation = new THREE.Quaternion(
+        prevState.rotation.x,
+        prevState.rotation.y,
+        prevState.rotation.z,
+        prevState.rotation.w
+      );
+      
+      const nextRotation = new THREE.Quaternion(
+        nextState.rotation.x,
+        nextState.rotation.y,
+        nextState.rotation.z,
+        nextState.rotation.w
+      );
+      
+      // Calculate velocity
+      const velocity = this.playerVelocities.get(playerId) || new THREE.Vector3();
+      const newVelocity = nextPosition.clone().sub(prevPosition).multiplyScalar(1 / duration);
+      
+      // Smooth velocity changes
+      velocity.lerp(newVelocity, deltaTime * this.interpolationSpeed);
+      this.playerVelocities.set(playerId, velocity);
+      
+      // Apply velocity-based prediction
+      const predictedPosition = new THREE.Vector3();
+      predictedPosition.lerpVectors(prevPosition, nextPosition, alpha);
+      predictedPosition.add(velocity.clone().multiplyScalar(deltaTime));
+      
+      // Smooth final position
+      player.mesh.position.lerp(predictedPosition, deltaTime * this.interpolationSpeed);
+      
+      // Interpolate rotation with smoother transitions
+      const newRotation = new THREE.Quaternion();
+      newRotation.slerpQuaternions(prevRotation, nextRotation, alpha);
+      player.mesh.quaternion.slerp(newRotation, deltaTime * this.interpolationSpeed);
+      
+      // Only remove old states if we have enough buffer and have completed interpolation
+      if (alpha >= 0.99 && buffer.length > Math.ceil(this.BUFFER_SIZE / 2)) {
+        buffer.shift();
       }
     }
   }

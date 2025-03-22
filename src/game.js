@@ -143,12 +143,18 @@ export const Game = {
     Object.values(this.otherPlayers).forEach(player => {
       if (player.mixer) {
         player.mixer.update(deltaTime);
-        const isMoving = player.mesh.position.distanceTo(
-          player.previousPosition || player.mesh.position
-        ) > 0.01;
         
+        // Check if the player position has changed significantly
+        const positionChanged = player.previousPosition && 
+          player.mesh.position.distanceTo(player.previousPosition) > 0.03;
+        
+        // A player is moving if either their state says so OR their position changed
+        const isMoving = player.isMoving || positionChanged;
+        
+        // Update animation based on move state and actual position change
         PlayerAnimations.updatePlayerAnimation(player, isMoving);
         
+        // Store position for next frame
         if (player.previousPosition) {
           player.previousPosition.copy(player.mesh.position);
         } else {
@@ -192,6 +198,16 @@ export const Game = {
       
       this.otherPlayers[playerData.id] = player;
       player.previousPosition = new THREE.Vector3();
+      player.isMoving = false; // Add movement tracking flag
+    }
+    
+    // Store previous position for movement detection
+    if (player.mesh) {
+      if (!player.previousPosition) {
+        player.previousPosition = player.mesh.position.clone();
+      } else {
+        player.previousPosition.copy(player.mesh.position);
+      }
     }
     
     // Update target position/rotation for interpolation
@@ -215,8 +231,16 @@ export const Game = {
       player.moveLeft = playerData.moveState.moveLeft;
       player.moveRight = playerData.moveState.moveRight;
       player.isRunning = playerData.moveState.isRunning;
+      
+      // Calculate if player is actually moving based on state
+      player.isMoving = (
+        playerData.moveState.moveForward || 
+        playerData.moveState.moveBackward || 
+        playerData.moveState.moveLeft || 
+        playerData.moveState.moveRight
+      );
     }
-
+    
     return player;
   },
 

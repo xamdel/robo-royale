@@ -17,7 +17,7 @@ const io = socketIo(server, {
 const players = new Map();
 const TICK_RATE = 60;
 const MAX_PLAYERS = 16;
-const INACTIVE_TIMEOUT = 30000; // 30 seconds
+const INACTIVE_TIMEOUT = 300000; // 5 minutes
 const moveRateLimit = new Map();
 const MIN_MOVE_INTERVAL = 16; // ~60fps max
 
@@ -66,11 +66,12 @@ io.on('connection', (socket) => {
   }
 
   // Initialize player
-  players.set(socket.id, {
+    players.set(socket.id, {
     position: { x: 0, y: 0, z: 0 },
     rotation: { x: 0, y: 0, z: 0, w: 1 },
     lastProcessedInput: 0,
     lastActive: Date.now(),
+    lastUpdateTime: Date.now(), // Add this
     moveState: {
       moveForward: false,
       moveBackward: false,
@@ -113,6 +114,7 @@ io.on('connection', (socket) => {
         player.rotation = data.rotation;
         player.lastProcessedInput = data.inputId;
         player.lastActive = now;
+        player.lastUpdateTime = now; // Add this line
         
         // Update movement state
         player.moveState = {
@@ -195,7 +197,10 @@ setInterval(() => {
       position: data.position,
       rotation: data.rotation,
       lastProcessedInput: data.lastProcessedInput,
-      moveState: data.moveState
+      moveState: data.moveState,
+      // Add additional fields for smoother interpolation
+      timestamp: now,
+      timeSinceLastUpdate: now - (data.lastUpdateTime || now),
     }))
   });
 }, 1000 / TICK_RATE);
