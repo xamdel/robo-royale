@@ -15,21 +15,31 @@ class Projectile extends THREE.Mesh {
     this.config = config;
     this.active = false;
     this.sourcePlayer = null;
+    this.serverId = null; // Server-assigned ID
+    this.serverPosition = null; // For reconciliation
   }
 
-  init(position, direction, sourcePlayer) {
+  init(position, direction, sourcePlayer, serverId = null) {
     this.position.copy(position);
     this.startPosition.copy(position);
     this.velocity.copy(direction).multiplyScalar(this.config.speed);
     this.sourcePlayer = sourcePlayer;
     this.active = true;
+    this.serverId = serverId; // Store server-assigned ID
   }
 
   update(deltaTime) {
     if (!this.active) return;
-    
-    // Update position based on velocity
-    this.position.addScaledVector(this.velocity, deltaTime);
+
+    // If this is a server-synced projectile and we have a server position
+    if (this.serverId !== null && this.serverPosition && this.sourcePlayer === Game.player) {
+      // Lerp toward server position (soft correction)
+      const CORRECTION_STRENGTH = 0.2;
+      this.position.lerp(this.serverPosition, CORRECTION_STRENGTH);
+    } else {
+      // Normal client-side movement for local prediction
+      this.position.addScaledVector(this.velocity, deltaTime);
+    }
     
     // Check max distance
     if (this.position.distanceTo(this.startPosition) > this.config.maxDistance) {
@@ -83,9 +93,18 @@ class Projectile extends THREE.Mesh {
     return false;
   }
 
+  // Update the onHit method to inform server about hits
   onHit() {
-    console.log('Projectile hit!');
-    Network.sendHit(this.sourcePlayer.uuid);
+    // Only send hit notification if this is a networked projectile
+    if (this.serverId !== null) {
+      Network.socket.emit('projectileHit', {
+        projectileId: this.serverId,
+        position: this.position.clone(),
+        hitPlayerId: this.hitPlayerId // Add this property when hit is detected
+      });
+    }
+    
+    // Visual and audio effects for hit
     if (this.collisionPoint) {
       WeaponManager.addCollisionEffect(this.collisionPoint, this.config.color);
     }
@@ -173,6 +192,7 @@ export const WeaponManager = {
   projectileManager: new ProjectileManager(),
   weaponOwnership: new Map(), // Track which weapons are owned by which players
   lastFireTime: 0, // Track last weapon fire time for cooldown
+  networkProjectiles: new Map(), // Track projectiles by server-assigned ID
 
   weaponSockets: {
     leftArm: {
@@ -360,12 +380,17 @@ export const WeaponManager = {
     const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
     const sourcePlayer = Game.otherPlayers[data.playerId]?.mesh;
     
-    this.projectileManager.spawn(
+    const projectile = this.projectileManager.spawn(
       data.type,
       position,
       direction,
       sourcePlayer
     );
+    
+    if (projectile) {
+      projectile.serverId = data.id;
+      this.networkProjectiles.set(data.id, projectile);
+    }
   },
 
   createExplosion(position) {

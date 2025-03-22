@@ -20,6 +20,8 @@ const MAX_PLAYERS = 16;
 const INACTIVE_TIMEOUT = 300000; // 5 minutes
 const moveRateLimit = new Map();
 const MIN_MOVE_INTERVAL = 16; // ~60fps max
+const projectiles = new Map(); // Map<projectileId, projectileData>
+let nextProjectileId = 0;
 
 // Validation functions
 function isValidMoveData(data) {
@@ -142,27 +144,67 @@ io.on('connection', (socket) => {
   });
 
   // Handle shooting
-  socket.on('shoot', (data) => {
+  socket.on('shootProjectile', (data) => {
+    // Validate projectile data
     if (!isValidShootData(data)) {
       console.warn(`Invalid shoot data from ${socket.id}`);
       return;
     }
 
-    // Broadcast shot to all other players
-    socket.broadcast.emit('playerShot', {
-      playerId: socket.id,
+    // Generate a unique ID for this projectile
+    const projectileId = nextProjectileId++;
+    
+    // Store projectile data on server
+    const projectileData = {
+      id: projectileId,
+      ownerId: socket.id,
       position: data.position,
-      direction: data.direction
-    });
+      direction: data.direction,
+      weaponType: data.weaponType,
+      velocity: data.velocity,
+      createdAt: Date.now(),
+      active: true
+    };
+    
+    projectiles.set(projectileId, projectileData);
+    
+    // Broadcast projectile creation to all clients (including shooter)
+    io.emit('projectileCreated', projectileData);
+    
+    // Automatically remove projectile after maximum lifetime
+    // This ensures cleanup even if hit detection fails
+    setTimeout(() => {
+      if (projectiles.has(projectileId) && projectiles.get(projectileId).active) {
+        projectiles.delete(projectileId);
+        io.emit('projectileDestroyed', { id: projectileId, reason: 'timeout' });
+      }
+    }, 5000); // 5 second maximum lifetime
   });
 
-  // Handle projectile hits
+  // Handle projectile hit reports from clients
   socket.on('projectileHit', (data) => {
-    // Broadcast hit to all players except shooter
-    socket.broadcast.emit('playerHit', {
+    // Validate data first
+    if (!data || typeof data.projectileId !== 'number' || !data.position) {
+      return;
+    }
+    
+    // Check if projectile exists and is still active
+    const projectile = projectiles.get(data.projectileId);
+    if (!projectile || !projectile.active) {
+      return;
+    }
+    
+    // Mark projectile as inactive
+    projectile.active = false;
+    projectiles.delete(data.projectileId);
+    
+    // Broadcast hit to all players
+    io.emit('projectileDestroyed', {
+      id: data.projectileId,
       position: data.position,
       hitPlayerId: data.hitPlayerId,
-      sourcePlayerId: socket.id
+      sourcePlayerId: projectile.ownerId,
+      reason: 'hit'
     });
   });
 
@@ -192,33 +234,83 @@ io.on('connection', (socket) => {
   });
 });
 
-// Server update loop
-setInterval(() => {
-  // Remove inactive players
-  const now = Date.now();
-  for (const [id, player] of players) {
-    if (now - player.lastActive > INACTIVE_TIMEOUT) {
-      console.log(`Removing inactive player: ${id}`);
-      players.delete(id);
-      io.emit('playerLeft', id);
+  // Server update loop - combined player and projectile updates
+  setInterval(() => {
+    const now = Date.now();
+    
+    // --- PLAYER UPDATES ---
+    // Remove inactive players
+    for (const [id, player] of players) {
+      if (now - player.lastActive > INACTIVE_TIMEOUT) {
+        console.log(`Removing inactive player: ${id}`);
+        players.delete(id);
+        io.emit('playerLeft', id);
+      }
     }
-  }
 
-  // Send game state to all players
-  io.emit('gameState', {
-    timestamp: now,
-    players: Array.from(players.entries()).map(([id, data]) => ({
-      id,
-      position: data.position,
-      rotation: data.rotation,
-      lastProcessedInput: data.lastProcessedInput,
-      moveState: data.moveState,
-      // Add additional fields for smoother interpolation
+    // --- PROJECTILE UPDATES ---
+    const updatedProjectiles = [];
+    
+    // Update projectile positions
+    for (const [id, projectile] of projectiles.entries()) {
+      if (!projectile.active) continue;
+      
+      // Calculate time delta since creation
+      const deltaTime = (now - projectile.createdAt) / 1000;
+      
+      // Update position based on velocity and direction
+      const speed = projectile.weaponType === 'cannon' ? 300 : 25;
+      const newPosition = {
+        x: projectile.position.x + projectile.direction.x * speed * deltaTime,
+        y: projectile.position.y + projectile.direction.y * speed * deltaTime,
+        z: projectile.position.z + projectile.direction.z * speed * deltaTime
+      };
+      
+      // Update projectile data
+      projectile.position = newPosition;
+      
+      // Check for projectile lifetime
+      const maxLifetime = 5000; // 5 seconds
+      if (now - projectile.createdAt > maxLifetime) {
+        // Mark for removal
+        projectile.active = false;
+        projectiles.delete(id);
+        io.emit('projectileDestroyed', { id: id, reason: 'timeout' });
+      } else {
+        // Add to updates batch
+        updatedProjectiles.push({
+          id: projectile.id,
+          position: newPosition,
+        });
+      }
+      
+      // TODO: Add server-side collision detection here if desired
+    }
+
+    // --- SEND GAME STATE TO CLIENTS ---
+    // Prepare game state update
+    const gameState = {
       timestamp: now,
-      timeSinceLastUpdate: now - (data.lastUpdateTime || now),
-    }))
-  });
-}, 1000 / TICK_RATE);
+      players: Array.from(players.entries()).map(([id, data]) => ({
+        id,
+        position: data.position,
+        rotation: data.rotation,
+        lastProcessedInput: data.lastProcessedInput,
+        moveState: data.moveState,
+        timestamp: now,
+        timeSinceLastUpdate: now - (data.lastUpdateTime || now),
+      }))
+    };
+    
+    // Add projectile updates if any exist
+    if (updatedProjectiles.length > 0) {
+      gameState.projectiles = updatedProjectiles;
+    }
+    
+    // Send combined game state
+    io.emit('gameState', gameState);
+    
+  }, 1000 / TICK_RATE);
 
 const PORT = process.env.NODE_ENV === 'production' ? (process.env.PORT || 3000) : 3000;
 server.listen(PORT, () => {

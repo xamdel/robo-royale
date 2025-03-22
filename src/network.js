@@ -39,7 +39,9 @@ export const Network = {
       this.interpolationBuffer.clear();
     });
 
+    // In network.js, update the existing gameState handler
     this.socket.on('gameState', (state) => {
+      // Process player updates (existing code)
       state.players.forEach(playerData => {
         if (playerData.id !== this.socket.id) {
           // Get or create buffer for this player
@@ -72,18 +74,68 @@ export const Network = {
         }
       });
 
+      // Process projectile updates (new code)
+      if (state.projectiles && state.projectiles.length > 0) {
+        state.projectiles.forEach(projectileData => {
+          const projectile = WeaponManager.networkProjectiles.get(projectileData.id);
+          
+          if (projectile) {
+            // For projectiles from the local player, use reconciliation
+            const isLocalProjectile = projectile.sourcePlayer === Game.player;
+            
+            // For all projectiles, update from server authority
+            projectile.serverPosition = new THREE.Vector3(
+              projectileData.position.x,
+              projectileData.position.y,
+              projectileData.position.z
+            );
+            
+            // Only override local prediction if discrepancy is too large
+            if (projectile.position.distanceTo(projectile.serverPosition) > 1.0) {
+              projectile.position.copy(projectile.serverPosition);
+            }
+          }
+        });
+      }
+
       // Remove players that are no longer in the game state
       Object.keys(Game.otherPlayers).forEach(playerId => {
         if (!state.players.find(p => p.id === playerId)) {
           if (Game.otherPlayers[playerId]?.mesh) {
             SceneManager.remove(Game.otherPlayers[playerId].mesh);
           }
-      delete Game.otherPlayers[playerId];
-      this.interpolationBuffer.delete(playerId);
-      this.isMovingMap.delete(playerId);
-      this.playerVelocities.delete(playerId);
+          delete Game.otherPlayers[playerId];
+          this.interpolationBuffer.delete(playerId);
+          this.isMovingMap.delete(playerId);
+          this.playerVelocities.delete(playerId);
         }
       });
+    });
+
+    // Add handler for projectile destroyed
+    this.socket.on('projectileDestroyed', (data) => {
+      const projectile = WeaponManager.networkProjectiles.get(data.id);
+      if (projectile) {
+        // Show hit effect if projectile was destroyed due to hit
+        if (data.reason === 'hit') {
+          const hitPosition = new THREE.Vector3(
+            data.position.x,
+            data.position.y,
+            data.position.z
+          );
+          WeaponManager.createExplosion(hitPosition);
+          
+          // Handle player hit logic
+          if (data.hitPlayerId === this.socket.id) {
+            console.log('You were hit by player:', data.sourcePlayerId);
+            // TODO: Implement damage/health system
+          }
+        }
+        
+        // Deactivate and remove projectile
+        projectile.deactivate();
+        WeaponManager.networkProjectiles.delete(data.id);
+      }
     });
 
     this.socket.on('playerLeft', (playerId) => {
@@ -207,9 +259,26 @@ export const Network = {
 
   sendShot(data) {
     if (this.socket?.connected) {
-      this.socket.emit('playerShot', {
-        ...data,
-        playerId: this.socket.id
+      const tempId = `${this.socket.id}-${Date.now()}`; // Temporary ID for prediction
+      const projectile = WeaponManager.projectileManager.spawn(
+        data.type,
+        data.position,
+        data.direction,
+        Game.player
+      );
+      
+      if (projectile) {
+        projectile.serverId = tempId;
+        WeaponManager.networkProjectiles.set(tempId, projectile);
+      }
+
+      this.socket.emit('shootProjectile', {
+        id: tempId,
+        weaponType: data.type,
+        position: data.position,
+        direction: data.direction,
+        velocity: data.velocity,
+        sourcePlayerId: this.socket.id
       });
     }
   },
