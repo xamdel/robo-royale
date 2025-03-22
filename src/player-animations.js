@@ -18,93 +18,176 @@ export const PlayerAnimations = {
     };
   },
 
-  updatePlayerAnimation(player, isMoving) {
-    if (!player.actions) return;
+  /**
+   * Unified animation handler for both local and remote players
+   * @param {Object} playerObject - Either Game object or remote player object
+   * @param {boolean} isMoving - Whether the player is currently moving
+   * @param {Object} options - Optional settings
+   */
+  updateAnimation(playerObject, isMoving, options = {}) {
+    // Detect player type and extract required properties
+    const playerData = this.normalizePlayerData(playerObject, options);
+    
+    if (!playerData.actions) {
+      console.warn('No actions available for player animation update');
+      return;
+    }
 
+    // Debug logging for movement state
+    console.debug('Animation Update:', {
+      isLocalPlayer: playerData.isLocalPlayer,
+      isMoving,
+      moveStates: {
+        forward: playerData.moveForward,
+        backward: playerData.moveBackward,
+        left: playerData.moveLeft,
+        right: playerData.moveRight,
+        running: playerData.isRunning
+      }
+    });
+    
     // Create a baseline target action
     let targetAction = null;
+    
+    console.debug('Available actions:', Object.keys(playerData.actions));
     
     if (isMoving) {
       // Determine primary movement direction
       let primaryDirection = 'forward'; // Default
       
       // Check each movement direction
-      if (player.moveForward) primaryDirection = 'forward';
-      else if (player.moveBackward) primaryDirection = 'backward';
-      else if (player.moveLeft) primaryDirection = 'left';
-      else if (player.moveRight) primaryDirection = 'right';
+      if (playerData.moveForward) primaryDirection = 'forward';
+      else if (playerData.moveBackward) primaryDirection = 'backward';
+      else if (playerData.moveLeft) primaryDirection = 'left';
+      else if (playerData.moveRight) primaryDirection = 'right';
       
       // Select animation based on direction and running state
-      const animPrefix = player.isRunning ? 'Run' : 'Run'; // Use same animations for now
+      const animPrefix = playerData.isRunning ? 'Run' : 'Run'; // Use same animations for now
       
       switch (primaryDirection) {
         case 'forward':
-          targetAction = player.actions[`${animPrefix}Forward-loop`];
+          targetAction = playerData.actions[`${animPrefix}Forward-loop`];
           break;
         case 'backward':
-          targetAction = player.actions[`${animPrefix}Backward-loop`];
+          targetAction = playerData.actions[`${animPrefix}Backward-loop`];
           break;
         case 'left':
-          targetAction = player.actions[`${animPrefix}Left-loop`];
+          targetAction = playerData.actions[`${animPrefix}Left-loop`];
           break;
         case 'right':
-          targetAction = player.actions[`${animPrefix}Right-loop`];
+          targetAction = playerData.actions[`${animPrefix}Right-loop`];
           break;
         default:
           // Fallback
-          targetAction = player.actions[`${animPrefix}Forward-loop`];
+          targetAction = playerData.actions[`${animPrefix}Forward-loop`];
       }
       
-      // Differentiate animation speed between walking and running
+      // Set animation speed based on running state
       if (targetAction) {
-        if (player.isRunning) {
-          targetAction.timeScale = 1.5;  // Fast for running
-        } else {
-          targetAction.timeScale = 0.7;  // Slower for walking
-        }
+        targetAction.timeScale = playerData.isRunning ? 1.5 : 0.7;
+        console.debug('Selected animation:', {
+          name: targetAction._clip.name,
+          timeScale: targetAction.timeScale
+        });
       }
     } else {
       // When not moving, use Stand animation if available
-      targetAction = player.actions['Stand'];
+      targetAction = playerData.actions['Stand'];
       
       // If no Stand animation, just stop the current action
       if (!targetAction) {
-        if (player.currentAction) {
-          player.currentAction.fadeOut(0.2);
-          player.currentAction = null;
+        if (playerData.currentAction) {
+          playerData.currentAction.fadeOut(0.2);
+          this.updateCurrentAction(playerObject, null);
         }
         return;
       }
     }
     
-    // Skip if same action is already playing (but don't skip if timeScale may have changed)
-    if (targetAction === player.currentAction) {
-      // Even if it's the same action, we still update the timeScale
-      // in case running/walking state changed
-      return;
-    }
+    // Skip if same action is already playing
+    if (targetAction === playerData.currentAction) return;
     
     // Handle animation transitions
     if (targetAction) {
       // Fade out current animation if it exists
-      if (player.currentAction) {
-        player.currentAction.fadeOut(0.15); // Fast transition
+      if (playerData.currentAction) {
+        playerData.currentAction.fadeOut(0.15); // Faster transition
       }
       
       // Start new animation
       targetAction.reset();
-      targetAction.fadeIn(0.15); // Fast transition
+      targetAction.fadeIn(0.15); // Faster transition
       targetAction.play();
-      player.currentAction = targetAction;
+      this.updateCurrentAction(playerObject, targetAction);
     } 
     // Explicitly handle stopping animations when no target action
-    else if (player.currentAction) {
-      player.currentAction.fadeOut(0.2);
-      player.currentAction = null;
+    else if (playerData.currentAction) {
+      playerData.currentAction.fadeOut(0.2);
+      this.updateCurrentAction(playerObject, null);
     }
   },
 
-  createPlayerMesh(mechModel, actions) {
+  /**
+   * Normalizes player data from different object structures
+   * @param {Object} playerObject - Either Game object or remote player object
+   * @param {Object} options - Additional options
+   * @returns {Object} - Normalized data object with common properties
+   */
+  normalizePlayerData(playerObject, options) {
+    // Check if this is the Game object (local player)
+    const isLocalPlayer = playerObject.otherPlayers !== undefined;
+    
+    if (isLocalPlayer) {
+      // Local player (Game object)
+      return {
+        actions: playerObject.actions,
+        currentAction: playerObject.currentAction,
+        moveForward: playerObject.moveForward,
+        moveBackward: playerObject.moveBackward,
+        moveLeft: playerObject.moveLeft,
+        moveRight: playerObject.moveRight,
+        isRunning: playerObject.isRunning,
+        isLocalPlayer: true
+      };
+    } else {
+      // Remote player
+      return {
+        actions: playerObject.actions,
+        currentAction: playerObject.currentAction,
+        moveForward: playerObject.moveForward,
+        moveBackward: playerObject.moveBackward,
+        moveLeft: playerObject.moveLeft,
+        moveRight: playerObject.moveRight,
+        isRunning: playerObject.isRunning,
+        isLocalPlayer: false
+      };
+    }
+  },
+  
+  /**
+   * Updates the current action reference on the player object
+   * @param {Object} playerObject - Player object to update
+   * @param {Object} action - New current action to set
+   */
+  updateCurrentAction(playerObject, action) {
+    // Check if this is the Game object (local player)
+    const isLocalPlayer = playerObject.otherPlayers !== undefined;
+    
+    if (isLocalPlayer) {
+      playerObject.currentAction = action;
+    } else {
+      playerObject.currentAction = action;
+    }
+  },
+  
+  // For backward compatibility
+  updatePlayerAnimation(player, isMoving) {
+    // Call our new unified method
+    this.updateAnimation(player, isMoving);
+  },
+
+
+  createPlayerMesh(mechModel, actions, isLocalPlayer = false) {
     const mesh = SkeletonUtils.clone(mechModel);
     mesh.position.set(0, 0, 0);
     
@@ -115,8 +198,8 @@ export const PlayerAnimations = {
         child.castShadow = true;
         child.receiveShadow = true;
         
-        // Create unique material for each player
-        if (child.material) {
+        // Only modify materials for remote players
+        if (child.material && !isLocalPlayer) {
           child.material = child.material.clone();
           
           // Randomize player color slightly

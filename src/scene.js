@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'; //for metallic reflections
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export const SceneManager = {
@@ -8,7 +8,7 @@ export const SceneManager = {
   renderer: new THREE.WebGLRenderer({ antialias: true }),
   cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
   cameraDistance: 5, // Distance from player
-  cameraHeight: 5, // Height offset
+  cameraHeight: 4, // Height offset
   freeLookActive: false, // Free look mode toggle
   mouseSensitivity: 0.002, // Mouse sensitivity
   yaw: 0, // Horizontal camera rotation

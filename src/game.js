@@ -62,19 +62,18 @@ export const Game = {
   },
 
   async init(socket) {
-    const playerModel = await this.loadMechModel();
-    this.player = playerModel;
-    this.player.position.set(0, playerModel.position.y, 0);
-    this.previousPosition = this.player.position.clone(); // Initialize
-    SceneManager.add(this.player);
+    await this.loadMechModel();
     
-    // Set up animation looping
-    Object.values(this.actions).forEach(action => {
-      if (action) {
-        action.setLoop(THREE.LoopRepeat);
-      }
-    });
+    // Create player using the same system as remote players, but specify it's the local player
+    const playerData = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions, true);
+    this.player = playerData.mesh;
+    this.mixer = playerData.mixer;
+    this.actions = playerData.actions;
     this.currentAction = null;
+    
+    this.player.position.set(0, this.player.position.y, 0);
+    this.previousPosition = this.player.position.clone();
+    SceneManager.add(this.player);
 
     // Input handling
     document.addEventListener('keydown', (event) => {
@@ -112,6 +111,9 @@ export const Game = {
       return null;
     }
 
+    // Update local player's animation mixer
+    this.mixer.update(deltaTime);
+
     const now = Date.now();
     // Check for cannon pickup
     if (SceneManager.cannon && SceneManager.cannonCollider && !this.cannonAttached) {
@@ -135,7 +137,7 @@ export const Game = {
       }
     }
 
-    // Update animations
+    // Update other player animations
     Object.values(this.otherPlayers).forEach(player => {
       if (player.mixer) {
         player.mixer.update(deltaTime);
@@ -155,8 +157,7 @@ export const Game = {
         const hasStoppedMoving = !player.lastMovementTime || 
           (Date.now() - player.lastMovementTime > movementTimeout);
         
-        // Updated logic: player is moving if the server says so OR actual movement is detected
-        // For walking, we need to be more sensitive to movement
+        // Updated logic
         let isMoving;
         
         if (player.isMoving) {
@@ -164,12 +165,11 @@ export const Game = {
           isMoving = !hasStoppedMoving || positionChanged;
         } else {
           // If server says they're not moving, still allow local detection of movement
-          // This helps when network updates are sparse for slow-moving players
           isMoving = positionChanged && !hasStoppedMoving;
         }
         
-        // Update animation based on refined movement state
-        PlayerAnimations.updatePlayerAnimation(player, isMoving);
+        // Update animation using unified system
+        PlayerAnimations.updateAnimation(player, isMoving);
         
         // Store position for next frame
         if (player.previousPosition) {
@@ -322,7 +322,8 @@ export const Game = {
 
     if (this.stateHistory.length > 60) this.stateHistory.shift();
 
-    PlayerAnimations.updatePlayerAnimation(this, moved);
+    // Use the unified animation system
+    PlayerAnimations.updateAnimation(this, moved);
 
     const moveData = moved ? {
       inputId: input.id,
