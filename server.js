@@ -415,7 +415,8 @@ io.on('connection', (socket) => {
       projectile.active = false;
       projectiles.delete(data.projectileId);
       
-      // Broadcast authoritative hit to all clients
+      // Broadcast authoritative hit to all clients - send both events
+      // First, notify about the projectile being destroyed
       io.emit('projectileDestroyed', {
         id: data.projectileId,
         position: validationResult.position,
@@ -424,6 +425,13 @@ io.on('connection', (socket) => {
         reason: 'hit',
         serverConfirmed: true,
         clientLatencyMs: Date.now() - (data.timeMs || Date.now()) // For debugging
+      });
+      
+      // Also send a specific player hit event for redundancy
+      io.emit('playerHit', {
+        hitPlayerId: data.hitPlayerId,
+        sourcePlayerId: projectile.ownerId,
+        position: validationResult.position
       });
     } else {
       console.log(`Server rejected client hit suggestion for projectile ${data.projectileId}, validation failed`);
@@ -679,7 +687,8 @@ io.on('connection', (socket) => {
                   projectile.active = false;
                   projectiles.delete(id);
                   
-                  // Broadcast authoritative hit to all clients
+                  // Broadcast authoritative hit to all clients - send both events
+                  // First, notify about the projectile being destroyed
                   io.emit('projectileDestroyed', {
                     id,
                     position: result.position,
@@ -687,6 +696,13 @@ io.on('connection', (socket) => {
                     sourcePlayerId: projectile.ownerId,
                     reason: 'hit',
                     serverConfirmed: true  // Flag indicating this is an authoritative hit
+                  });
+                  
+                  // Also send a specific player hit event for redundancy
+                  io.emit('playerHit', {
+                    hitPlayerId: playerId,
+                    sourcePlayerId: projectile.ownerId,
+                    position: result.position
                   });
                   
                   hitFound = true;
@@ -711,7 +727,8 @@ io.on('connection', (socket) => {
                 projectile.active = false;
                 projectiles.delete(id);
                 
-                // Broadcast authoritative hit to all clients
+                // Broadcast authoritative hit to all clients - send both events
+                // First, notify about the projectile being destroyed
                 io.emit('projectileDestroyed', {
                   id,
                   position: result.position,
@@ -719,6 +736,13 @@ io.on('connection', (socket) => {
                   sourcePlayerId: projectile.ownerId,
                   reason: 'hit',
                   serverConfirmed: true  // Flag indicating this is an authoritative hit
+                });
+                
+                // Also send a specific player hit event for redundancy
+                io.emit('playerHit', {
+                  hitPlayerId: playerId,
+                  sourcePlayerId: projectile.ownerId,
+                  position: result.position
                 });
                 
                 return; // Exit function since projectile is destroyed

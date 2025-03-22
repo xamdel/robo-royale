@@ -178,13 +178,17 @@ class Projectile extends THREE.Mesh {
 
   // Update the onHit method to inform server about hits with improved hit data
   onHit() {
-    // Create visual effect immediately for responsiveness
+    // Create visual effect immediately for client-side responsiveness
     if (this.collisionPoint) {
+      console.log('Client-side hit prediction showing effect at:', this.collisionPoint);
       WeaponManager.createExplosion(this.collisionPoint, this.config.color);
+      // Mark that we've shown the hit effect locally
+      this.hasShownHitEffect = true;
     }
     
     // Only send hit data to server if this is a local projectile
     if (this.sourcePlayer === Game.player && this.serverId !== null) {
+      console.log('Sending hit suggestion to server for projectile:', this.serverId);
       // Enhanced hit suggestion with more detailed data
       Network.socket.emit('projectileHitSuggestion', {
         projectileId: this.serverId,

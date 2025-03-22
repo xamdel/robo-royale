@@ -138,32 +138,31 @@ export const Network = {
     this.socket.on('projectileDestroyed', (data) => {
       const projectile = WeaponManager.networkProjectiles.get(data.id);
       
-      if (projectile) {
-        // Check if this is a server-confirmed hit
-        const isServerConfirmed = data.serverConfirmed === true;
+      // Show hit effect if projectile was destroyed due to hit, regardless of whether
+      // we have the projectile object locally - this ensures observers see hits
+      if (data.reason === 'hit' && data.position) {
+        const hitPosition = new THREE.Vector3(
+          data.position.x,
+          data.position.y,
+          data.position.z
+        );
         
-        // Show hit effect if projectile was destroyed due to hit
-        if (data.reason === 'hit') {
-          const hitPosition = new THREE.Vector3(
-            data.position.x,
-            data.position.y,
-            data.position.z
-          );
-          
-          // If this is a server confirmation but we already showed an effect,
-          // we could either skip the visual or show a different "confirmed" effect
-          if (!isServerConfirmed || !projectile.hasShownHitEffect) {
-            WeaponManager.createExplosion(hitPosition);
-            projectile.hasShownHitEffect = true;
-          }
-          
-          // Handle player hit logic
-          if (data.hitPlayerId === this.socket.id) {
-            console.log('You were hit by player:', data.sourcePlayerId);
-            // TODO: Implement damage/health system
-          }
+        // Always show the explosion for server-confirmed hits
+        // This ensures all clients see the hit effect
+        if (data.serverConfirmed) {
+          console.log('Server confirmed hit at position:', hitPosition);
+          WeaponManager.createExplosion(hitPosition);
         }
-        
+          
+        // Handle player hit logic
+        if (data.hitPlayerId === this.socket.id) {
+          console.log('You were hit by player:', data.sourcePlayerId);
+          // TODO: Implement damage/health system
+        }
+      }
+      
+      // If we have the projectile locally, deactivate it
+      if (projectile) {
         // Deactivate and remove projectile
         projectile.deactivate();
         WeaponManager.networkProjectiles.delete(data.id);
@@ -187,11 +186,16 @@ export const Network = {
 
     this.socket.on('playerHit', (data) => {
       // Handle player being hit by projectile
-      WeaponManager.createExplosion(new THREE.Vector3(
-        data.position.x,
-        data.position.y,
-        data.position.z
-      ));
+      if (data.position) {
+        const hitPosition = new THREE.Vector3(
+          data.position.x,
+          data.position.y,
+          data.position.z
+        );
+        console.log('Player hit event received at position:', hitPosition);
+        // Always create explosion for playerHit events to ensure visual feedback
+        WeaponManager.createExplosion(hitPosition);
+      }
 
       // If this client was hit, could trigger damage effects here
       if (data.hitPlayerId === this.socket.id) {
