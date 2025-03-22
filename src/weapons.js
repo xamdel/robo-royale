@@ -308,8 +308,7 @@ export const WeaponManager = {
       Network.sendWeaponPickup({
         weaponId: weaponObject.uuid,
         weaponType: weaponType,
-        socketName: socketName,
-        playerId: player.uuid
+        socketName: socketName
       });
     }
 

@@ -54,6 +54,13 @@ function isValidShootData(data) {
          typeof data.direction === 'object';
 }
 
+function isValidWeaponPickupData(data) {
+  return data &&
+         typeof data.weaponId === 'string' &&
+         typeof data.weaponType === 'string' &&
+         typeof data.socketName === 'string';
+}
+
 // Socket connection handling
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
@@ -161,9 +168,17 @@ io.on('connection', (socket) => {
 
   // Handle weapon pickups
   socket.on('weaponPickup', (data) => {
+    // Validate weapon pickup data
+    if (!isValidWeaponPickupData(data)) {
+      console.warn(`Invalid weapon pickup data from ${socket.id}`, data);
+      return;
+    }
+
     // Broadcast pickup to all players except the one who picked it up
     socket.broadcast.emit('weaponPickedUp', {
       weaponId: data.weaponId,
+      weaponType: data.weaponType,
+      socketName: data.socketName,
       playerId: socket.id
     });
   });

@@ -130,20 +130,32 @@ export const Network = {
         return;
       }
       
+      // Validate required weapon data
+      if (!data.weaponType || !data.socketName) {
+        console.error('Missing weapon data in pickup event:', data);
+        return;
+      }
+      
       // For other players picking up weapons, only attach to their model
       const remotePlayer = Game.otherPlayers[data.playerId];
-      if (remotePlayer) {
-        const weaponClone = SceneManager.cloneWeapon(data.weaponType);
-        if (weaponClone) {
-          WeaponManager.attachWeaponToSocket(
-            remotePlayer.mesh,
-            weaponClone,
-            data.socketName,
-            data.weaponType,
-            true // Mark as remote pickup to avoid duplicate logs
-          );
-        }
+      if (!remotePlayer) {
+        console.warn('Remote player not found for weapon pickup:', data.playerId);
+        return;
       }
+      
+      const weaponClone = SceneManager.cloneWeapon(data.weaponType);
+      if (!weaponClone) {
+        console.error('Failed to clone weapon of type:', data.weaponType);
+        return;
+      }
+      
+      WeaponManager.attachWeaponToSocket(
+        remotePlayer.mesh,
+        weaponClone,
+        data.socketName,
+        data.weaponType,
+        true // Mark as remote pickup to avoid duplicate logs
+      );
     });
 
     this.socket.on('positionCorrection', (data) => {
