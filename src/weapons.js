@@ -26,6 +26,7 @@ class Projectile extends THREE.Mesh {
     this.sourcePlayer = sourcePlayer;
     this.active = true;
     this.serverId = serverId; // Store server-assigned ID
+    this.spawnTime = Date.now(); // Track spawn time for grace period
   }
 
   update(deltaTime) {
@@ -55,41 +56,79 @@ class Projectile extends THREE.Mesh {
   }
 
   checkCollisions() {
-    const allPlayers = [Game.player, ...Object.values(Game.otherPlayers).map(p => p.mesh)];
-    let collisionPoint = null;
-
-    for (const player of allPlayers) {
-      if (!player || player === this.sourcePlayer) continue;
-
-      const colliders = player.colliders;
-
-      // Capsule collision check
-      const capsule = colliders.body.params;
-      const capsuleStart = new THREE.Vector3(0, capsule.height / 2, 0).add(player.position).add(capsule.offset);
-      const capsuleEnd = new THREE.Vector3(0, -capsule.height / 2, 0).add(player.position).add(capsule.offset);
-      const capsuleRadius = capsule.radius;
-
-      const segment = new THREE.Line3(capsuleStart, capsuleEnd);
-      const closestPoint = new THREE.Vector3();
-      segment.closestPointToPoint(this.position, true, closestPoint);
-
-      const distanceToCapsule = this.position.distanceTo(closestPoint);
-      if (distanceToCapsule < capsuleRadius + this.config.radius) {
-        this.setCollisionPoint(closestPoint);
-        return true; // Hit the body
-      }
-
-      // Sphere collision check
-      const sphere = colliders.cabin.params;
-      const sphereCenter = new THREE.Vector3().add(player.position).add(sphere.offset);
-      const distanceToSphere = this.position.distanceTo(sphereCenter);
-
-      if (distanceToSphere < sphere.radius + this.config.radius) {
-        this.setCollisionPoint(sphereCenter);
-        return true; // Hit the cabin
-      }
+    // Add grace period to avoid self-collision
+    const COLLISION_GRACE_PERIOD = 100; // ms
+    if (Date.now() - this.spawnTime < COLLISION_GRACE_PERIOD) {
+      return false;
     }
 
+    const allPlayers = [Game.player, ...Object.values(Game.otherPlayers).map(p => p.mesh)];
+    
+    // Store previous position for ray casting
+    const prevPosition = this.prevPosition || this.startPosition.clone();
+    
+    // Calculate ray direction and length from previous position to current
+    const rayDirection = new THREE.Vector3().subVectors(this.position, prevPosition);
+    const rayLength = rayDirection.length();
+    
+    // Skip if no movement
+    if (rayLength < 0.0001) {
+      this.prevPosition = this.position.clone();
+      return false;
+    }
+    
+    // Normalize the direction vector
+    rayDirection.normalize();
+    
+    // Create a raycaster
+    const raycaster = new THREE.Raycaster(prevPosition, rayDirection, 0, rayLength);
+    
+    // For each player, create bounding spheres for simpler collision testing
+    for (const player of allPlayers) {
+      if (!player || player === this.sourcePlayer) continue;
+      
+      // Skip players without colliders
+      if (!player.colliders) continue;
+      
+      // Create test spheres based on player colliders
+      const spheres = [];
+      
+      // Body capsule - represent with 3 spheres (top, middle, bottom)
+      const capsule = player.colliders.body.params;
+      const capsuleStart = new THREE.Vector3(0, capsule.height / 2, 0).add(player.position).add(capsule.offset);
+      const capsuleEnd = new THREE.Vector3(0, -capsule.height / 2, 0).add(player.position).add(capsule.offset);
+      const capsuleMid = new THREE.Vector3().addVectors(capsuleStart, capsuleEnd).multiplyScalar(0.5);
+      
+      // Add spheres for capsule ends and middle
+      spheres.push(new THREE.Sphere(capsuleStart, capsule.radius));
+      spheres.push(new THREE.Sphere(capsuleMid, capsule.radius));
+      spheres.push(new THREE.Sphere(capsuleEnd, capsule.radius));
+      
+      // Add sphere for cabin
+      const sphere = player.colliders.cabin.params;
+      const sphereCenter = new THREE.Vector3().add(player.position).add(sphere.offset);
+      spheres.push(new THREE.Sphere(sphereCenter, sphere.radius));
+      
+      // Check intersection with each sphere
+      for (const testSphere of spheres) {
+        // Adjust sphere radius to account for projectile size
+        const adjustedSphere = new THREE.Sphere(testSphere.center, testSphere.radius + this.config.radius);
+        
+        // Check if ray intersects the sphere
+        const hit = raycaster.ray.intersectSphere(adjustedSphere, new THREE.Vector3());
+        
+        if (hit) {
+          // We found a hit!
+          this.setCollisionPoint(hit);
+          this.hitPlayerId = player.userData?.id || null;
+          this.prevPosition = this.position.clone();
+          return true;
+        }
+      }
+    }
+    
+    // Store position for next frame
+    this.prevPosition = this.position.clone();
     return false;
   }
 
@@ -350,6 +389,10 @@ export const WeaponManager = {
 
     bone.getWorldPosition(worldPos);
     bone.getWorldDirection(worldDir);
+
+    // Offset spawn position to avoid self-collision
+    const spawnOffset = 1.5; // Slightly larger than player body radius
+    worldPos.add(worldDir.clone().multiplyScalar(spawnOffset));
 
     const projectile = this.projectileManager.spawn(
       weaponType,
