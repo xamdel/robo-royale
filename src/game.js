@@ -207,6 +207,8 @@ export const Game = {
       }
     });
     
+    WeaponManager.update(deltaTime);
+
     // Update camera and process input
     const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
     return this.processInput(cameraDirections, deltaTime);
