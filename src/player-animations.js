@@ -34,28 +34,34 @@ export const PlayerAnimations = {
       else if (player.moveLeft) primaryDirection = 'left';
       else if (player.moveRight) primaryDirection = 'right';
       
-      // Select animation based on direction
+      // Select animation based on direction and running state
+      const animPrefix = player.isRunning ? 'Run' : 'Run'; // Use same animations for now
+      
       switch (primaryDirection) {
         case 'forward':
-          targetAction = player.actions['RunForward-loop'];
+          targetAction = player.actions[`${animPrefix}Forward-loop`];
           break;
         case 'backward':
-          targetAction = player.actions['RunBackward-loop'];
+          targetAction = player.actions[`${animPrefix}Backward-loop`];
           break;
         case 'left':
-          targetAction = player.actions['RunLeft-loop'];
+          targetAction = player.actions[`${animPrefix}Left-loop`];
           break;
         case 'right':
-          targetAction = player.actions['RunRight-loop'];
+          targetAction = player.actions[`${animPrefix}Right-loop`];
           break;
         default:
           // Fallback
-          targetAction = player.actions['RunForward-loop'];
+          targetAction = player.actions[`${animPrefix}Forward-loop`];
       }
       
-      // Set animation speed based on running state
+      // Differentiate animation speed between walking and running
       if (targetAction) {
-        targetAction.timeScale = player.isRunning ? 1.5 : 1.0;
+        if (player.isRunning) {
+          targetAction.timeScale = 1.5;  // Fast for running
+        } else {
+          targetAction.timeScale = 0.7;  // Slower for walking
+        }
       }
     } else {
       // When not moving, use Stand animation if available
@@ -71,19 +77,23 @@ export const PlayerAnimations = {
       }
     }
     
-    // Skip if same action is already playing
-    if (targetAction === player.currentAction) return;
+    // Skip if same action is already playing (but don't skip if timeScale may have changed)
+    if (targetAction === player.currentAction) {
+      // Even if it's the same action, we still update the timeScale
+      // in case running/walking state changed
+      return;
+    }
     
     // Handle animation transitions
     if (targetAction) {
       // Fade out current animation if it exists
       if (player.currentAction) {
-        player.currentAction.fadeOut(0.15); // Faster transition
+        player.currentAction.fadeOut(0.15); // Fast transition
       }
       
       // Start new animation
       targetAction.reset();
-      targetAction.fadeIn(0.15); // Faster transition
+      targetAction.fadeIn(0.15); // Fast transition
       targetAction.play();
       player.currentAction = targetAction;
     } 

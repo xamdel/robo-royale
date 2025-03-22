@@ -136,22 +136,39 @@ export const Game = {
     }
 
     // Update animations
-    this.mixer.update(deltaTime);
-    WeaponManager.updateProjectiles(deltaTime);
-    
-    // Update other player animations
     Object.values(this.otherPlayers).forEach(player => {
       if (player.mixer) {
         player.mixer.update(deltaTime);
         
-        // Check if the player position has changed significantly
+        // Check if the player position has changed, with different thresholds for walking/running
+        const movementThreshold = player.isRunning ? 0.03 : 0.01; // Lower threshold for walking
         const positionChanged = player.previousPosition && 
-          player.mesh.position.distanceTo(player.previousPosition) > 0.03;
+          player.mesh.position.distanceTo(player.previousPosition) > movementThreshold;
         
-        // A player is moving if either their state says so OR their position changed
-        const isMoving = player.isMoving || positionChanged;
+        // Track the time of the last detected movement
+        if (positionChanged) {
+          player.lastMovementTime = Date.now();
+        }
         
-        // Update animation based on move state and actual position change
+        // Consider a player definitively stopped if no movement for 250ms
+        const movementTimeout = 250; // ms
+        const hasStoppedMoving = !player.lastMovementTime || 
+          (Date.now() - player.lastMovementTime > movementTimeout);
+        
+        // Updated logic: player is moving if the server says so OR actual movement is detected
+        // For walking, we need to be more sensitive to movement
+        let isMoving;
+        
+        if (player.isMoving) {
+          // If server says they're moving, consider them moving until timeout
+          isMoving = !hasStoppedMoving || positionChanged;
+        } else {
+          // If server says they're not moving, still allow local detection of movement
+          // This helps when network updates are sparse for slow-moving players
+          isMoving = positionChanged && !hasStoppedMoving;
+        }
+        
+        // Update animation based on refined movement state
         PlayerAnimations.updatePlayerAnimation(player, isMoving);
         
         // Store position for next frame
@@ -198,7 +215,8 @@ export const Game = {
       
       this.otherPlayers[playerData.id] = player;
       player.previousPosition = new THREE.Vector3();
-      player.isMoving = false; // Add movement tracking flag
+      player.isMoving = false;
+      player.lastMovementTime = 0; // Initialize movement timestamp
     }
     
     // Store previous position for movement detection
@@ -232,6 +250,9 @@ export const Game = {
       player.moveRight = playerData.moveState.moveRight;
       player.isRunning = playerData.moveState.isRunning;
       
+      // Track previous movement state
+      const wasMoving = player.isMoving;
+      
       // Calculate if player is actually moving based on state
       player.isMoving = (
         playerData.moveState.moveForward || 
@@ -239,6 +260,12 @@ export const Game = {
         playerData.moveState.moveLeft || 
         playerData.moveState.moveRight
       );
+      
+      // If movement state changes from moving to stopped, force animation update
+      if (wasMoving && !player.isMoving) {
+        // Reset last movement time to force idle animation immediately
+        player.lastMovementTime = 0;
+      }
     }
     
     return player;
