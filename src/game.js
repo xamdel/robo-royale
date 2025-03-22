@@ -254,6 +254,11 @@ export const Game = {
       player.isMoving = false;
       player.lastMovementTime = 0; // Initialize movement timestamp
     }
+
+    // Update weapon state if changed
+    if (playerData.weaponState) {
+      Game.updateOtherPlayerWeapon(player, playerData.weaponState);
+    }
     
     // Store previous position for movement detection
     if (player.mesh) {
@@ -386,7 +391,23 @@ export const Game = {
 
     return moveData;
   },
-};
+
+  updateOtherPlayerWeapon(player, weaponState) {
+    // Remove existing weapons
+    WeaponManager.cleanupPlayerWeapons(player.mesh);
+    
+    if (weaponState.equipped) {
+      // Clone weapon model and attach
+      const weaponModel = WeaponManager.getWeaponModel(weaponState.weaponType);
+      WeaponManager.attachWeaponToSocket(
+        player.mesh,
+        weaponModel,
+        weaponState.socketName,
+        weaponState.weaponType
+      );
+    }
+  },
+}
 
 class Collider {
   constructor(type, params) {

@@ -65,19 +65,24 @@ io.on('connection', (socket) => {
     return;
   }
 
-  // Initialize player
-    players.set(socket.id, {
+  // Initialize player - Add weapon state
+  players.set(socket.id, {
     position: { x: 0, y: 0, z: 0 },
     rotation: { x: 0, y: 0, z: 0, w: 1 },
     lastProcessedInput: 0,
     lastActive: Date.now(),
-    lastUpdateTime: Date.now(), // Add this
+    lastUpdateTime: Date.now(),
     moveState: {
       moveForward: false,
       moveBackward: false,
       moveLeft: false,
       moveRight: false,
       isRunning: false
+    },
+    weaponState: {
+      equipped: false,
+      weaponType: null,
+      socketName: null
     }
   });
 
@@ -88,7 +93,8 @@ io.on('connection', (socket) => {
       id,
       position: data.position,
       rotation: data.rotation,
-      lastProcessedInput: data.lastProcessedInput
+      lastProcessedInput: data.lastProcessedInput,
+      weaponState: data.weaponState
     }))
   });
 
@@ -161,10 +167,19 @@ io.on('connection', (socket) => {
 
   // Handle weapon pickups
   socket.on('weaponPickup', (data) => {
+    const player = players.get(socket.id);
+    if (player) {
+      player.weaponState = {
+        equipped: true,
+        weaponType: data.weaponType,
+        socketName: data.socketName
+      };
+    }
     // Broadcast pickup to all players except the one who picked it up
     socket.broadcast.emit('weaponPickedUp', {
-      weaponId: data.weaponId,
-      playerId: socket.id
+      playerId: socket.id,
+      weaponType: data.weaponType,
+      socketName: data.socketName
     });
   });
 

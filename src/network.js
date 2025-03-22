@@ -117,6 +117,15 @@ export const Network = {
     });
 
     this.socket.on('weaponPickedUp', (data) => {
+      const otherPlayer = Game.otherPlayers[data.playerId];
+      if (otherPlayer) {
+        Game.updateOtherPlayerWeapon(otherPlayer, {
+          equipped: true,
+          weaponType: data.weaponType,
+          socketName: data.socketName
+        });
+      }
+      
       // Remove weapon from scene if another player picked it up
       if (data.playerId !== this.socket.id && SceneManager.cannon) {
         SceneManager.scene.remove(SceneManager.cannon);
@@ -162,9 +171,12 @@ export const Network = {
     }
   },
 
-  sendWeaponPickup(weaponId) {
+  sendWeaponPickup(weaponType, socketName) {
     if (this.socket?.connected) {
-      this.socket.emit('weaponPickup', { weaponId });
+      this.socket.emit('weaponPickup', { 
+        weaponType,
+        socketName 
+      });
     }
   },
 
