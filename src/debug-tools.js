@@ -5,15 +5,29 @@ import { Game } from './game.js';
 export const DebugTools = {
   // Existing tools
   findLeftArm(model) {
-    let leftArm = null;
+  let leftArm = null;
+  model.traverse((child) => {
+    // Look for standard names and the specific bone name 'ArmL'
+    if (child.name.toLowerCase().includes('leftarm') || 
+        child.name.toLowerCase().includes('left_arm') ||
+        child.name === 'ArmL') {
+      leftArm = child;
+      console.log('Found left arm bone:', child.name);
+    }
+  });
+  
+  if (!leftArm) {
+    console.warn('Left arm bone not found. Available bones:');
+    // List all available bones for debugging
     model.traverse((child) => {
-      if (child.name.toLowerCase().includes('leftarm') || 
-          child.name.toLowerCase().includes('left_arm')) {
-        leftArm = child;
+      if (child.isBone) {
+        console.log(' - ' + child.name);
       }
     });
-    return leftArm;
-  },
+  }
+  
+  return leftArm;
+},
 
   // Network debug visualization
   debugMeshes: {},

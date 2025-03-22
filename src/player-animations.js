@@ -34,22 +34,22 @@ export const PlayerAnimations = {
     }
 
     // Debug logging for movement state
-    console.debug('Animation Update:', {
-      isLocalPlayer: playerData.isLocalPlayer,
-      isMoving,
-      moveStates: {
-        forward: playerData.moveForward,
-        backward: playerData.moveBackward,
-        left: playerData.moveLeft,
-        right: playerData.moveRight,
-        running: playerData.isRunning
-      }
-    });
+    // console.debug('Animation Update:', {
+    //   isLocalPlayer: playerData.isLocalPlayer,
+    //   isMoving,
+    //   moveStates: {
+    //     forward: playerData.moveForward,
+    //     backward: playerData.moveBackward,
+    //     left: playerData.moveLeft,
+    //     right: playerData.moveRight,
+    //     running: playerData.isRunning
+    //   }
+    // });
     
     // Create a baseline target action
     let targetAction = null;
     
-    console.debug('Available actions:', Object.keys(playerData.actions));
+    // console.debug('Available actions:', Object.keys(playerData.actions));
     
     if (isMoving) {
       // Determine primary movement direction
@@ -85,10 +85,10 @@ export const PlayerAnimations = {
       // Set animation speed based on running state
       if (targetAction) {
         targetAction.timeScale = playerData.isRunning ? 1.5 : 0.7;
-        console.debug('Selected animation:', {
-          name: targetAction._clip.name,
-          timeScale: targetAction.timeScale
-        });
+        // console.debug('Selected animation:', {
+        //   name: targetAction._clip.name,
+        //   timeScale: targetAction.timeScale
+        // });
       }
     } else {
       // When not moving, use Stand animation if available

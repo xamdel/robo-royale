@@ -36,8 +36,35 @@ export const Game = {
         const model = gltf.scene;
         console.log('Loaded mech model with animations:', gltf.animations);
 
+        console.log('COMPLETE MODEL HIERARCHY:');
+        function inspectHierarchy(object, indent = '') {
+          console.log(`${indent}${object.name} [${object.type}]`);
+          
+          // Inspect all properties in case ArmL is stored in an unusual property
+          if (object.name.includes('Arm') || object.name.includes('arm')) {
+            console.log(`${indent}POTENTIAL ARM FOUND: ${object.name}`);
+          }
+          
+          // Recursively inspect all children
+          if (object.children && object.children.length > 0) {
+            object.children.forEach(child => {
+              inspectHierarchy(child, indent + '  ');
+            });
+          }
+        }
+        inspectHierarchy(model);
+
         // Find left arm using debug tools
         this.leftArm = DebugTools.findLeftArm(model);
+        console.log('Left arm search result:', this.leftArm ? this.leftArm.name : 'Not Found');
+
+        // Debug: Log all bones in the model to find the correct naming
+        console.log('Debugging all bones in model:');
+        model.traverse((child) => {
+          if (child.isBone || child.type === 'Bone') {
+            console.log('Bone found:', child.name);
+          }
+        });
         
         // Set up animations
         this.mixer = new THREE.AnimationMixer(model);
