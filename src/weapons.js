@@ -22,6 +22,8 @@ class Projectile extends THREE.Mesh {
   init(position, direction, sourcePlayer, serverId = null) {
     this.position.copy(position);
     this.startPosition.copy(position);
+    // Also initialize prevPosition at spawn time to ensure ray casting works on first update
+    this.prevPosition = position.clone();
     this.velocity.copy(direction).multiplyScalar(this.config.speed);
     this.sourcePlayer = sourcePlayer;
     this.active = true;
@@ -64,7 +66,8 @@ class Projectile extends THREE.Mesh {
 
     const allPlayers = [Game.player, ...Object.values(Game.otherPlayers).map(p => p.mesh)];
     
-    // Store previous position for ray casting
+    // Always use the previously stored position or fall back to start position
+    // This ensures the ray begins from a valid previous position
     const prevPosition = this.prevPosition || this.startPosition.clone();
     
     // Calculate ray direction and length from previous position to current
@@ -77,12 +80,56 @@ class Projectile extends THREE.Mesh {
       return false;
     }
     
-    // Normalize the direction vector
-    rayDirection.normalize();
+    // For high-speed projectiles like the cannon, we might need to subdivide the ray
+    // into smaller segments to avoid tunneling through targets
+    const MAX_RAY_DISTANCE = 1.0; // Maximum distance per ray check to prevent tunneling
+    const numSegments = Math.ceil(rayLength / MAX_RAY_DISTANCE);
     
-    // Create a raycaster
-    const raycaster = new THREE.Raycaster(prevPosition, rayDirection, 0, rayLength);
-    
+    // Check if we need to do segmented ray checks
+    if (numSegments > 1) {
+      // Create intermediate points along the ray path
+      for (let i = 1; i <= numSegments; i++) {
+        const t = i / numSegments;
+        const intermediatePos = new THREE.Vector3().lerpVectors(prevPosition, this.position, t);
+        
+        // Create a raycaster for this segment
+        const segmentStart = i === 1 ? prevPosition : 
+                              new THREE.Vector3().lerpVectors(prevPosition, this.position, (i-1)/numSegments);
+        const segmentDirection = new THREE.Vector3().subVectors(intermediatePos, segmentStart).normalize();
+        const segmentLength = segmentStart.distanceTo(intermediatePos);
+        
+        const raycaster = new THREE.Raycaster(segmentStart, segmentDirection, 0, segmentLength);
+        
+        // Check if this segment hits any players
+        if (this.checkRaycastHit(raycaster, allPlayers)) {
+          return true;
+        }
+      }
+      
+      // No hits after checking all segments
+      this.prevPosition = this.position.clone();
+      return false;
+    } else {
+      // Standard single-ray check for slower projectiles
+      // Normalize the direction vector
+      rayDirection.normalize();
+      
+      // Create a raycaster
+      const raycaster = new THREE.Raycaster(prevPosition, rayDirection, 0, rayLength);
+      
+      // Check if the ray hits any players
+      if (this.checkRaycastHit(raycaster, allPlayers)) {
+        return true;
+      }
+      
+      // No hits
+      this.prevPosition = this.position.clone();
+      return false;
+    }
+  }
+  
+  // Helper method to check if a raycaster hits any players
+  checkRaycastHit(raycaster, allPlayers) {
     // For each player, create bounding spheres for simpler collision testing
     for (const player of allPlayers) {
       if (!player || player === this.sourcePlayer) continue;
@@ -121,14 +168,11 @@ class Projectile extends THREE.Mesh {
           // We found a hit!
           this.setCollisionPoint(hit);
           this.hitPlayerId = player.userData?.id || null;
-          this.prevPosition = this.position.clone();
           return true;
         }
       }
     }
     
-    // Store position for next frame
-    this.prevPosition = this.position.clone();
     return false;
   }
 

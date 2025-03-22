@@ -50,93 +50,150 @@ function validateProjectileHit(hitData, projectile) {
     rayDir.z * rayDir.z
   );
   
+  // Skip if no movement
+  if (rayLength < 0.0001) return { hit: false };
+  
   // Normalize ray direction
-  if (rayLength > 0.0001) {
-    rayDir.x /= rayLength;
-    rayDir.y /= rayLength;
-    rayDir.z /= rayLength;
+  rayDir.x /= rayLength;
+  rayDir.y /= rayLength;
+  rayDir.z /= rayLength;
+  
+  // Get player position
+  const playerPos = hitPlayer.position;
+  
+  // Create player compound collider with multiple spheres
+  const capsuleHeight = 4.0;
+  const capsuleRadius = 1.0;
+  
+  // Define sphere colliders
+  const spheres = [
+    // Top sphere (head)
+    {
+      x: playerPos.x,
+      y: playerPos.y + capsuleHeight/2,
+      z: playerPos.z,
+      radius: capsuleRadius
+    },
+    // Middle sphere (torso)
+    {
+      x: playerPos.x,
+      y: playerPos.y + capsuleHeight/4,
+      z: playerPos.z,
+      radius: capsuleRadius
+    },
+    // Bottom sphere (legs)
+    {
+      x: playerPos.x,
+      y: playerPos.y,
+      z: playerPos.z,
+      radius: capsuleRadius
+    },
+    // Cabin/cockpit sphere
+    {
+      x: playerPos.x,
+      y: playerPos.y + 4.0, // cockpit height
+      z: playerPos.z,
+      radius: 0.7 // smaller radius for cabin
+    }
+  ];
+  
+  // Helper function to check sphere intersection
+  const checkIntersection = (segStart, segEnd, segLength, sphere) => {
+    // Calculate segment direction (already normalized)
+    const segDir = {
+      x: (segEnd.x - segStart.x) / segLength,
+      y: (segEnd.y - segStart.y) / segLength,
+      z: (segEnd.z - segStart.z) / segLength
+    };
     
-    // Get player position
-    const playerPos = hitPlayer.position;
+    // Adjust sphere radius to account for projectile size
+    const projectileRadius = projectile.radius || 
+      (projectile.weaponType === 'cannon' ? 0.15 : 0.3);
+    const combinedRadius = sphere.radius + projectileRadius;
     
-    // Create player compound collider with multiple spheres
-    const capsuleHeight = 4.0;
-    const capsuleRadius = 1.0;
+    // Vector from ray origin to sphere center
+    const oc = {
+      x: segStart.x - sphere.x,
+      y: segStart.y - sphere.y,
+      z: segStart.z - sphere.z
+    };
     
-    // Define sphere colliders
-    const spheres = [
-      // Top sphere (head)
-      {
-        x: playerPos.x,
-        y: playerPos.y + capsuleHeight/2,
-        z: playerPos.z,
-        radius: capsuleRadius
-      },
-      // Middle sphere (torso)
-      {
-        x: playerPos.x,
-        y: playerPos.y + capsuleHeight/4,
-        z: playerPos.z,
-        radius: capsuleRadius
-      },
-      // Bottom sphere (legs)
-      {
-        x: playerPos.x,
-        y: playerPos.y,
-        z: playerPos.z,
-        radius: capsuleRadius
-      },
-      // Cabin/cockpit sphere
-      {
-        x: playerPos.x,
-        y: playerPos.y + 4.0, // cockpit height
-        z: playerPos.z,
-        radius: 0.7 // smaller radius for cabin
-      }
-    ];
+    // Quadratic equation coefficients
+    const a = 1; // Because segDir is normalized
+    const b = 2 * (segDir.x * oc.x + segDir.y * oc.y + segDir.z * oc.z);
+    const c = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - (combinedRadius * combinedRadius);
     
-    // Check for intersection with any sphere
-    for (const sphere of spheres) {
-      // Ray-sphere intersection
-      const projectileRadius = projectile.radius || 
-        (projectile.weaponType === 'cannon' ? 0.15 : 0.3);
-      const combinedRadius = sphere.radius + projectileRadius;
+    // Discriminant determines if ray intersects sphere
+    const discriminant = b * b - 4 * a * c;
+    
+    if (discriminant >= 0) {
+      // Calculate intersection distance
+      const t = (-b - Math.sqrt(discriminant)) / (2 * a);
       
-      // Vector from ray origin to sphere center
-      const oc = {
-        x: rayOrigin.x - sphere.x,
-        y: rayOrigin.y - sphere.y,
-        z: rayOrigin.z - sphere.z
+      // Check if intersection is within ray length and in front of ray
+      if (t >= 0 && t <= segLength) {
+        // Calculate hit position
+        return {
+          hit: true,
+          position: {
+            x: segStart.x + segDir.x * t,
+            y: segStart.y + segDir.y * t,
+            z: segStart.z + segDir.z * t
+          },
+          distance: t
+        };
+      }
+    }
+    
+    return { hit: false };
+  };
+  
+  // For high-speed projectiles, we need to subdivide the ray into segments
+  // to prevent tunneling through objects 
+  const MAX_RAY_DISTANCE = 1.0; // Maximum distance per ray check to prevent tunneling
+  const numSegments = Math.ceil(rayLength / MAX_RAY_DISTANCE);
+  
+  // If we need multiple segments, check each segment separately
+  if (numSegments > 1) {
+    // Check each segment for each sphere
+    for (let i = 1; i <= numSegments; i++) {
+      // Calculate the segment start and end points
+      const t1 = (i - 1) / numSegments;
+      const t2 = i / numSegments;
+      
+      const segStart = {
+        x: rayOrigin.x + rayDir.x * rayLength * t1,
+        y: rayOrigin.y + rayDir.y * rayLength * t1,
+        z: rayOrigin.z + rayDir.z * rayLength * t1
       };
       
-      // Quadratic equation coefficients
-      const a = 1; // Normalized ray direction
-      const b = 2 * (rayDir.x * oc.x + rayDir.y * oc.y + rayDir.z * oc.z);
-      const c = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - (combinedRadius * combinedRadius);
+      const segEnd = {
+        x: rayOrigin.x + rayDir.x * rayLength * t2,
+        y: rayOrigin.y + rayDir.y * rayLength * t2,
+        z: rayOrigin.z + rayDir.z * rayLength * t2
+      };
       
-      // Calculate discriminant
-      const discriminant = b * b - 4 * a * c;
+      const segLength = Math.sqrt(
+        Math.pow(segEnd.x - segStart.x, 2) +
+        Math.pow(segEnd.y - segStart.y, 2) +
+        Math.pow(segEnd.z - segStart.z, 2)
+      );
       
-      // If discriminant >= 0, ray intersects sphere
-      if (discriminant >= 0) {
-        // Calculate intersection distance
-        const t = (-b - Math.sqrt(discriminant)) / (2 * a);
-        
-        // Check if intersection is within ray length and in front of ray
-        if (t >= 0 && t <= rayLength) {
-          // Calculate hit position
-          const hitPosition = {
-            x: rayOrigin.x + rayDir.x * t,
-            y: rayOrigin.y + rayDir.y * t,
-            z: rayOrigin.z + rayDir.z * t
-          };
-          
-          return {
-            hit: true,
-            position: hitPosition,
-            distance: t
-          };
+      // Check each sphere for this segment
+      for (const sphere of spheres) {
+        const result = checkIntersection(segStart, segEnd, segLength, sphere);
+        if (result.hit) {
+          console.log(`Validated client hit: projectile hit player on segment ${i}/${numSegments}`);
+          return result; // Return the successful hit result
         }
+      }
+    }
+  } else {
+    // Standard single-ray check for slower projectiles
+    for (const sphere of spheres) {
+      const result = checkIntersection(rayOrigin, rayDest, rayLength, sphere);
+      if (result.hit) {
+        return result; // Return the successful hit result
       }
     }
   }
@@ -506,7 +563,7 @@ io.on('connection', (socket) => {
             }
           ];
           
-          // Calculate ray direction
+          // Calculate ray direction and length
           const rayDirection = {
             x: projectile.position.x - prevPosition.x,
             y: projectile.position.y - prevPosition.y,
@@ -520,49 +577,103 @@ io.on('connection', (socket) => {
             rayDirection.z * rayDirection.z
           );
           
+          // Skip if no movement
+          if (rayLength < 0.0001) continue;
+          
           // Normalize ray direction
-          if (rayLength > 0.0001) {
-            rayDirection.x /= rayLength;
-            rayDirection.y /= rayLength;
-            rayDirection.z /= rayLength;
+          rayDirection.x /= rayLength;
+          rayDirection.y /= rayLength;
+          rayDirection.z /= rayLength;
+          
+          // For high-speed projectiles, we need to subdivide the ray into segments
+          // to prevent tunneling through objects 
+          const MAX_RAY_DISTANCE = 1.0; // Maximum distance per ray check to prevent tunneling
+          const numSegments = Math.ceil(rayLength / MAX_RAY_DISTANCE);
+          
+          // Function to check for sphere intersection
+          const checkIntersection = (segStart, segEnd, segLength, sphere) => {
+            // Calculate segment direction (already normalized)
+            const segDir = {
+              x: (segEnd.x - segStart.x) / segLength,
+              y: (segEnd.y - segStart.y) / segLength,
+              z: (segEnd.z - segStart.z) / segLength
+            };
             
-            // Check each sphere for ray intersection
-            for (const sphere of spheres) {
-              // Ray-sphere intersection - https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
-              // Adjust sphere radius to account for projectile size
-              const projectileRadius = projectile.weaponType === 'cannon' ? 0.15 : 0.3;
-              const combinedRadius = sphere.radius + projectileRadius;
+            // Adjust sphere radius to account for projectile size
+            const projectileRadius = projectile.weaponType === 'cannon' ? 0.15 : 0.3;
+            const combinedRadius = sphere.radius + projectileRadius;
+            
+            // Vector from ray origin to sphere center
+            const oc = {
+              x: segStart.x - sphere.x,
+              y: segStart.y - sphere.y,
+              z: segStart.z - sphere.z
+            };
+            
+            // Quadratic equation coefficients
+            const a = 1; // Because segDir is normalized
+            const b = 2 * (segDir.x * oc.x + segDir.y * oc.y + segDir.z * oc.z);
+            const c = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - (combinedRadius * combinedRadius);
+            
+            // Discriminant determines if ray intersects sphere
+            const discriminant = b * b - 4 * a * c;
+            
+            if (discriminant >= 0) {
+              // Calculate intersection distance
+              const t = (-b - Math.sqrt(discriminant)) / (2 * a);
               
-              // Vector from ray origin to sphere center
-              const oc = {
-                x: prevPosition.x - sphere.x,
-                y: prevPosition.y - sphere.y,
-                z: prevPosition.z - sphere.z
+              // Check if intersection is within ray length and in front of ray
+              if (t >= 0 && t <= segLength) {
+                // Calculate hit position
+                return {
+                  hit: true,
+                  position: {
+                    x: segStart.x + segDir.x * t,
+                    y: segStart.y + segDir.y * t,
+                    z: segStart.z + segDir.z * t
+                  }
+                };
+              }
+            }
+            
+            return { hit: false };
+          };
+          
+          // If we need multiple segments, check each segment separately
+          if (numSegments > 1) {
+            // Check each segment for each sphere
+            let hitFound = false;
+            
+            for (let i = 1; i <= numSegments && !hitFound; i++) {
+              // Calculate the segment start and end points
+              const t1 = (i - 1) / numSegments;
+              const t2 = i / numSegments;
+              
+              const segStart = {
+                x: prevPosition.x + rayDirection.x * rayLength * t1,
+                y: prevPosition.y + rayDirection.y * rayLength * t1,
+                z: prevPosition.z + rayDirection.z * rayLength * t1
               };
               
-              // Quadratic equation coefficients
-              const a = 1; // Because rayDirection is normalized
-              const b = 2 * (rayDirection.x * oc.x + rayDirection.y * oc.y + rayDirection.z * oc.z);
-              const c = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - (combinedRadius * combinedRadius);
+              const segEnd = {
+                x: prevPosition.x + rayDirection.x * rayLength * t2,
+                y: prevPosition.y + rayDirection.y * rayLength * t2,
+                z: prevPosition.z + rayDirection.z * rayLength * t2
+              };
               
-              // Discriminant determines if ray intersects sphere
-              const discriminant = b * b - 4 * a * c;
+              const segLength = Math.sqrt(
+                Math.pow(segEnd.x - segStart.x, 2) +
+                Math.pow(segEnd.y - segStart.y, 2) +
+                Math.pow(segEnd.z - segStart.z, 2)
+              );
               
-              if (discriminant >= 0) {
-                // Calculate intersection distance
-                const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+              // Check each sphere for this segment
+              for (const sphere of spheres) {
+                const result = checkIntersection(segStart, segEnd, segLength, sphere);
                 
-                // Check if intersection is within ray length and in front of ray
-                if (t >= 0 && t <= rayLength) {
-                  // Calculate hit position
-                  const hitPosition = {
-                    x: prevPosition.x + rayDirection.x * t,
-                    y: prevPosition.y + rayDirection.y * t,
-                    z: prevPosition.z + rayDirection.z * t
-                  };
-                  
+                if (result.hit) {
                   // Collision detected!
-                  console.log(`Server detected hit: projectile ${id} hit player ${playerId} at distance ${t}`);
+                  console.log(`Server detected hit: projectile ${id} hit player ${playerId} (segment ${i}/${numSegments})`);
                   
                   // Mark projectile as inactive and remove
                   projectile.active = false;
@@ -571,16 +682,46 @@ io.on('connection', (socket) => {
                   // Broadcast authoritative hit to all clients
                   io.emit('projectileDestroyed', {
                     id,
-                    position: hitPosition,
+                    position: result.position,
                     hitPlayerId: playerId,
                     sourcePlayerId: projectile.ownerId,
                     reason: 'hit',
                     serverConfirmed: true  // Flag indicating this is an authoritative hit
                   });
                   
-                  // Exit all loops since projectile is destroyed
-                  return;
+                  hitFound = true;
+                  break; // Exit sphere loop
                 }
+              }
+              
+              if (hitFound) break; // Exit segment loop
+            }
+            
+            if (hitFound) return; // Exit player loop and function
+          } else {
+            // Standard single-ray check for slower projectiles
+            for (const sphere of spheres) {
+              const result = checkIntersection(prevPosition, projectile.position, rayLength, sphere);
+              
+              if (result.hit) {
+                // Collision detected!
+                console.log(`Server detected hit: projectile ${id} hit player ${playerId}`);
+                
+                // Mark projectile as inactive and remove
+                projectile.active = false;
+                projectiles.delete(id);
+                
+                // Broadcast authoritative hit to all clients
+                io.emit('projectileDestroyed', {
+                  id,
+                  position: result.position,
+                  hitPlayerId: playerId,
+                  sourcePlayerId: projectile.ownerId,
+                  reason: 'hit',
+                  serverConfirmed: true  // Flag indicating this is an authoritative hit
+                });
+                
+                return; // Exit function since projectile is destroyed
               }
             }
           }
