@@ -31,11 +31,6 @@ class Projectile extends THREE.Mesh {
     // Update position based on velocity
     this.position.addScaledVector(this.velocity, deltaTime);
     
-    // Update trail if it exists
-    if (this.trail) {
-      this.updateTrail();
-    }
-    
     // Check max distance
     if (this.position.distanceTo(this.startPosition) > this.config.maxDistance) {
       this.deactivate();
@@ -47,23 +42,6 @@ class Projectile extends THREE.Mesh {
       this.onHit();
       this.deactivate();
     }
-  }
-
-  updateTrail() {
-    this.trailPoints = this.trailPoints || [];
-    this.trailPoints.unshift(this.position.clone());
-    
-    if (this.trailPoints.length > 10) {
-      this.trailPoints.pop();
-    }
-    
-    const positions = new Float32Array(
-      this.trailPoints.flatMap(p => [p.x, p.y, p.z])
-    );
-    this.trail.geometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(positions, 3)
-    );
   }
 
   checkCollisions() {
@@ -193,30 +171,7 @@ class ProjectileManager {
 
 export const WeaponManager = {
   projectileManager: new ProjectileManager(),
-  
-  handleRemoteShot(data) {
-    const otherPlayer = Game.otherPlayers[data.playerId];
-    if (!otherPlayer?.mesh) return;
-
-    const position = new THREE.Vector3(
-      data.position.x,
-      data.position.y,
-      data.position.z
-    );
-    
-    const direction = new THREE.Vector3(
-      data.direction.x,
-      data.direction.y,
-      data.direction.z
-    ).normalize();
-
-    this.projectileManager.spawn(
-      data.type,
-      position,
-      direction,
-      otherPlayer.mesh
-    );
-  },
+  weaponOwnership: new Map(), // Track which weapons are owned by which players
 
   weaponSockets: {
     leftArm: {
@@ -284,7 +239,7 @@ export const WeaponManager = {
     return result;
   },
 
-  attachWeaponToSocket(player, weaponObject, socketName, weaponType = 'cannon') {
+  attachWeaponToSocket(player, weaponObject, socketName, weaponType = 'cannon', isRemotePickup = false) {
     const socket = this.weaponSockets[socketName];
     const weaponConfig = this.weaponTypes[weaponType] || this.weaponTypes.cannon;
 
@@ -292,6 +247,9 @@ export const WeaponManager = {
       console.error(`Socket "${socketName}" not defined`);
       return false;
     }
+
+    // Track weapon ownership
+    this.weaponOwnership.set(weaponObject.uuid, player.uuid);
 
     const bone = this.findBoneByName(player, socket.boneName);
     if (!bone) {
@@ -327,23 +285,33 @@ export const WeaponManager = {
       originalScale.z * finalScale
     );
 
-    console.log(
-      `Attached "${weaponType}" to socket "${socketName}" on bone "${socket.boneName}"`,
-      {
-        finalPosition: weaponObject.position.toArray(),
-        finalRotation: weaponObject.rotation.toArray(),
-        finalScale: weaponObject.scale.toArray(),
-      }
-    );
+    // Only log attachment for local pickups
+    if (!isRemotePickup) {
+      console.log(
+        `Attached "${weaponType}" to socket "${socketName}" on bone "${socket.boneName}"`,
+        {
+          finalPosition: weaponObject.position.toArray(),
+          finalRotation: weaponObject.rotation.toArray(),
+          finalScale: weaponObject.scale.toArray(),
+        }
+      );
+    }
 
     if (socket.attachmentCallback) {
       socket.attachmentCallback(weaponObject, bone);
     }
 
-    this.addPickupEffect(worldPos, weaponConfig.effectColor);
+    // this.addPickupEffect(worldPos, weaponConfig.effectColor);
 
-    // Notify other players about weapon pickup
-    Network.sendWeaponPickup(weaponType, socketName);
+    // Notify other players about weapon pickup with weapon type and player ID
+    if (!isRemotePickup) {
+      Network.sendWeaponPickup({
+        weaponId: weaponObject.uuid,
+        weaponType: weaponType,
+        socketName: socketName,
+        playerId: player.uuid
+      });
+    }
 
     return true;
   },
@@ -386,86 +354,64 @@ export const WeaponManager = {
     this.projectileManager.update(deltaTime);
   },
 
-  getWeaponModel(weaponType) {
-    // Clone the weapon model from the scene
-    const original = SceneManager.cannon;
-    if (!original) return null;
-    
-    const clone = original.clone();
-    clone.material = original.material.clone();
-    return clone;
-  },
+  // addPickupEffect(position, color = 0xffff00) {
+  //   const particles = new THREE.Group();
 
-  cleanupPlayerWeapons(playerMesh) {
-    // Remove all weapons attached to player
-    Object.values(this.weaponSockets).forEach(socket => {
-      const bone = this.findBoneByName(playerMesh, socket.boneName);
-      if (bone) {
-        bone.children.filter(child => child.isWeapon).forEach(weapon => {
-          bone.remove(weapon);
-        });
-      }
-    });
-  },
+  //   for (let i = 0; i < 10; i++) {
+  //     const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+  //     const material = new THREE.MeshBasicMaterial({
+  //       color: color,
+  //       transparent: true,
+  //       opacity: 0.8,
+  //     });
 
-  addPickupEffect(position, color = 0xffff00) {
-    const particles = new THREE.Group();
+  //     const particle = new THREE.Mesh(geometry, material);
 
-    for (let i = 0; i < 10; i++) {
-      const geometry = new THREE.SphereGeometry(0.1, 8, 8);
-      const material = new THREE.MeshBasicMaterial({
-        color: color,
-        transparent: true,
-        opacity: 0.8,
-      });
+  //     particle.position.set(
+  //       position.x + (Math.random() - 0.5) * 0.5,
+  //       position.y + (Math.random() - 0.5) * 0.5,
+  //       position.z + (Math.random() - 0.5) * 0.5
+  //     );
 
-      const particle = new THREE.Mesh(geometry, material);
+  //     particle.userData.velocity = new THREE.Vector3(
+  //       (Math.random() - 0.5) * 2,
+  //       Math.random() * 3 + 1,
+  //       (Math.random() - 0.5) * 2
+  //     );
 
-      particle.position.set(
-        position.x + (Math.random() - 0.5) * 0.5,
-        position.y + (Math.random() - 0.5) * 0.5,
-        position.z + (Math.random() - 0.5) * 0.5
-      );
+  //     particles.add(particle);
+  //   }
 
-      particle.userData.velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        Math.random() * 3 + 1,
-        (Math.random() - 0.5) * 2
-      );
+  //   SceneManager.add(particles);
 
-      particles.add(particle);
-    }
+  //   const startTime = performance.now();
+  //   const duration = 1000;
 
-    SceneManager.add(particles);
+  //   const updateParticles = () => {
+  //     const elapsed = performance.now() - startTime;
+  //     const progress = elapsed / duration;
 
-    const startTime = performance.now();
-    const duration = 1000;
+  //     if (progress >= 1) {
+  //       SceneManager.remove(particles);
+  //       return;
+  //     }
 
-    const updateParticles = () => {
-      const elapsed = performance.now() - startTime;
-      const progress = elapsed / duration;
+  //     particles.children.forEach((particle) => {
+  //       particle.position.add(
+  //         particle.userData.velocity.clone().multiplyScalar(0.016)
+  //       );
+  //       particle.userData.velocity.y -= 0.1;
 
-      if (progress >= 1) {
-        SceneManager.remove(particles);
-        return;
-      }
+  //       if (particle.material) {
+  //         particle.material.opacity = 0.8 * (1 - progress);
+  //       }
+  //     });
 
-      particles.children.forEach((particle) => {
-        particle.position.add(
-          particle.userData.velocity.clone().multiplyScalar(0.016)
-        );
-        particle.userData.velocity.y -= 0.1;
+  //     requestAnimationFrame(updateParticles);
+  //   };
 
-        if (particle.material) {
-          particle.material.opacity = 0.8 * (1 - progress);
-        }
-      });
-
-      requestAnimationFrame(updateParticles);
-    };
-
-    updateParticles();
-  },
+  //   updateParticles();
+  // },
 
   addCollisionEffect(position, color = 0xffff00) {
     const particles = new THREE.Group();

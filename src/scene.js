@@ -7,6 +7,10 @@ export const SceneManager = {
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
   cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
+  weaponModels: new Map(), // Store original weapon models
+  weaponTypes: {
+    'cannon': '/assets/models/Cannon.glb'
+  },
   cameraDistance: 5, // Distance from player
   cameraHeight: 4, // Height offset
   freeLookActive: false, // Free look mode toggle
@@ -69,8 +73,12 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
     // Load cannon model
     const loader = new GLTFLoader();
     loader.load('/assets/models/Cannon.glb', (gltf) => {
-      this.cannon = gltf.scene;
-      this.cannon.position.set(0, 0, -10)
+      // Store the original model for cloning
+      this.weaponModels.set('cannon', gltf.scene);
+      
+      // Create the pickup-able instance
+      this.cannon = gltf.scene.clone();
+      this.cannon.position.set(0, 0, -10);
       this.cannon.castShadow = true;
       this.scene.add(this.cannon);
       
@@ -95,6 +103,22 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
 
   add(object) {
     this.scene.add(object);
+  },
+
+  cloneWeapon(type) {
+    const originalModel = this.weaponModels.get(type);
+    if (!originalModel) {
+      console.warn(`No weapon model found for type: ${type}`);
+      return null;
+    }
+    const clone = originalModel.clone();
+    clone.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.material = child.material.clone(); // Clone materials to allow independent modifications
+      }
+    });
+    return clone;
   },
 
   remove(object) {

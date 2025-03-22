@@ -117,20 +117,32 @@ export const Network = {
     });
 
     this.socket.on('weaponPickedUp', (data) => {
-      const otherPlayer = Game.otherPlayers[data.playerId];
-      if (otherPlayer) {
-        Game.updateOtherPlayerWeapon(otherPlayer, {
-          equipped: true,
-          weaponType: data.weaponType,
-          socketName: data.socketName
-        });
-      }
-      
-      // Remove weapon from scene if another player picked it up
-      if (data.playerId !== this.socket.id && SceneManager.cannon) {
+      // Always remove the original weapon from the scene
+      if (SceneManager.cannon) {
         SceneManager.scene.remove(SceneManager.cannon);
         SceneManager.cannon = null;
         SceneManager.cannonCollider = null;
+      }
+      
+      // If we're the one who picked up the weapon, we've already attached it locally
+      // so we don't need to do anything else
+      if (data.playerId === this.socket.id) {
+        return;
+      }
+      
+      // For other players picking up weapons, only attach to their model
+      const remotePlayer = Game.otherPlayers[data.playerId];
+      if (remotePlayer) {
+        const weaponClone = SceneManager.cloneWeapon(data.weaponType);
+        if (weaponClone) {
+          WeaponManager.attachWeaponToSocket(
+            remotePlayer.mesh,
+            weaponClone,
+            data.socketName,
+            data.weaponType,
+            true // Mark as remote pickup to avoid duplicate logs
+          );
+        }
       }
     });
 
@@ -171,11 +183,12 @@ export const Network = {
     }
   },
 
-  sendWeaponPickup(weaponType, socketName) {
+  sendWeaponPickup(data) {
     if (this.socket?.connected) {
-      this.socket.emit('weaponPickup', { 
-        weaponType,
-        socketName 
+      this.socket.emit('weaponPickup', {
+        weaponId: data.weaponId,
+        weaponType: data.weaponType,
+        socketName: data.socketName
       });
     }
   },

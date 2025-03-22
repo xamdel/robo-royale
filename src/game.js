@@ -154,11 +154,21 @@ export const Game = {
       if (distanceToPlayer <= distanceThreshold) {
         console.log('Player in range of cannon, attempting to attach...');
         if (this.leftArm) {
-          SceneManager.cannonAttached = true;
-          const success = WeaponManager.attachWeaponToSocket(this.player, SceneManager.cannon, 'leftArm', 'cannon');
-          if (success) {
-            SceneManager.cannonCollider = null;
-            this.cannonAttached = true;
+          // Check if weapon is already owned by another player
+          const weaponOwner = WeaponManager.weaponOwnership.get(SceneManager.cannon.uuid);
+          if (!weaponOwner) {
+            SceneManager.cannonAttached = true;
+            const success = WeaponManager.attachWeaponToSocket(
+              this.player, 
+              SceneManager.cannon, 
+              'leftArm', 
+              'cannon',
+              false // Local pickup
+            );
+            if (success) {
+              SceneManager.cannonCollider = null;
+              this.cannonAttached = true;
+            }
           }
         }
       }
@@ -253,11 +263,6 @@ export const Game = {
       player.previousPosition = new THREE.Vector3();
       player.isMoving = false;
       player.lastMovementTime = 0; // Initialize movement timestamp
-    }
-
-    // Update weapon state if changed
-    if (playerData.weaponState) {
-      Game.updateOtherPlayerWeapon(player, playerData.weaponState);
     }
     
     // Store previous position for movement detection
@@ -391,23 +396,7 @@ export const Game = {
 
     return moveData;
   },
-
-  updateOtherPlayerWeapon(player, weaponState) {
-    // Remove existing weapons
-    WeaponManager.cleanupPlayerWeapons(player.mesh);
-    
-    if (weaponState.equipped) {
-      // Clone weapon model and attach
-      const weaponModel = WeaponManager.getWeaponModel(weaponState.weaponType);
-      WeaponManager.attachWeaponToSocket(
-        player.mesh,
-        weaponModel,
-        weaponState.socketName,
-        weaponState.weaponType
-      );
-    }
-  },
-}
+};
 
 class Collider {
   constructor(type, params) {
