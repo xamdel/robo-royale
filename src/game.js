@@ -21,11 +21,13 @@ export const Game = {
   cannonAttached: false,
   previousPosition: null,
   
-  // Client prediction properties
+  // Network and prediction properties
   inputBuffer: [],
   stateHistory: [],
   lastProcessedInputId: 0,
   inputSequence: 0,
+  networkUpdateRate: 60, // Updates per second
+  lastNetworkUpdate: 0,
   
   loadMechModel() {
     return new Promise((resolve) => {
@@ -105,6 +107,12 @@ export const Game = {
   },
 
   update(deltaTime) {
+    if (!this.mixer || !this.player) {
+      console.warn('Update called before initialization completed');
+      return null;
+    }
+
+    const now = Date.now();
     // Check for cannon pickup
     if (SceneManager.cannon && SceneManager.cannonCollider && !this.cannonAttached) {
       const playerWorldPos = new THREE.Vector3();
@@ -127,25 +135,27 @@ export const Game = {
       }
     }
 
-    // Update animations and projectiles
-    if (this.mixer) {
-      this.mixer.update(deltaTime);
-    }
+    // Update animations
+    this.mixer.update(deltaTime);
     WeaponManager.updateProjectiles(deltaTime);
     
     // Update other player animations
-    for (const id in this.otherPlayers) {
-      const player = this.otherPlayers[id];
+    Object.values(this.otherPlayers).forEach(player => {
       if (player.mixer) {
         player.mixer.update(deltaTime);
-        PlayerAnimations.updatePlayerAnimation(player, player.mesh.position.distanceTo(player.previousPosition || player.mesh.position) > 0.01);
+        const isMoving = player.mesh.position.distanceTo(
+          player.previousPosition || player.mesh.position
+        ) > 0.01;
+        
+        PlayerAnimations.updatePlayerAnimation(player, isMoving);
+        
         if (player.previousPosition) {
           player.previousPosition.copy(player.mesh.position);
         } else {
           player.previousPosition = player.mesh.position.clone();
         }
       }
-    }
+    });
     
     // Update camera and process input
     const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
@@ -157,15 +167,57 @@ export const Game = {
       console.error("Mech model not loaded yet");
       return null;
     }
-    const playerMesh = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions);
+    
+    const playerData = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions);
     
     // Add collision sphere (radius 2 units)
-    playerMesh.collider = new THREE.Sphere(
+    playerData.mesh.collider = new THREE.Sphere(
       new THREE.Vector3(),
       2.0
     );
     
-    return playerMesh;
+    // Add to scene
+    SceneManager.add(playerData.mesh);
+    
+    return playerData;
+  },
+
+  updateOtherPlayer(playerData) {
+    let player = this.otherPlayers[playerData.id];
+    
+    if (!player) {
+      // Create new player
+      player = this.createPlayerMesh(playerData.id);
+      if (!player) return;
+      
+      this.otherPlayers[playerData.id] = player;
+      player.previousPosition = new THREE.Vector3();
+    }
+    
+    // Update target position/rotation for interpolation
+    player.targetPosition = new THREE.Vector3(
+      playerData.position.x,
+      playerData.position.y,
+      playerData.position.z
+    );
+    
+    player.targetRotation = new THREE.Quaternion(
+      playerData.rotation.x,
+      playerData.rotation.y,
+      playerData.rotation.z,
+      playerData.rotation.w
+    );
+
+    // Update movement state for animations
+    if (playerData.moveState) {
+      player.moveForward = playerData.moveState.moveForward;
+      player.moveBackward = playerData.moveState.moveBackward;
+      player.moveLeft = playerData.moveState.moveLeft;
+      player.moveRight = playerData.moveState.moveRight;
+      player.isRunning = playerData.moveState.isRunning;
+    }
+
+    return player;
   },
 
   // Apply input without side effects
@@ -231,7 +283,14 @@ export const Game = {
         w: this.player.quaternion.w
       },
       timestamp: input.timestamp,
-      input: input
+      input: {
+        moveForward: this.moveForward,
+        moveBackward: this.moveBackward,
+        moveLeft: this.moveLeft,
+        moveRight: this.moveRight,
+        isRunning: this.isRunning,
+        deltaTime: input.deltaTime
+      }
     } : null;
 
     // Update previous position

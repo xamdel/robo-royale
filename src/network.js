@@ -7,303 +7,256 @@ import * as THREE from 'three';
 
 export const Network = {
   socket: null,
+  interpolationBuffer: new Map(),
+  BUFFER_SIZE: 8, // Increased buffer size for smoother interpolation
+  interpolationSpeed: 1,
+  lastUpdateTime: new Map(), // Track last update time per player
+  velocities: new Map(), // Track velocities for prediction
   
-  // Network parameters
-  interpolationSpeed: 5,
-  smoothedRTT: 100, // Initial estimate (ms)
-  jitterBuffer: [],
-  adaptiveInterpolationSpeed: 5,
-  adaptiveBufferSize: 10,
-  reconciliationThreshold: 0.05, // Distance threshold for reconciliation
-  
-  // Sequence and state tracking
-  sequenceNumber: 0,
-  lastReceivedSequence: {},
-  playerStateBuffer: {},
-
   init() {
-    this.socket = io();
+    this.socket = io('http://localhost:3000', {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000
+    });
     
+    this.setupHandlers();
+  },
+
+  setupHandlers() {
     this.socket.on('connect', () => {
-      console.log('Connected to server with ID:', this.socket.id);
+      console.log('Connected to server');
     });
 
-    this.socket.on('moveValidated', (data) => {
-      this.handleServerValidation(data);
+    this.socket.on('disconnect', () => {
+      console.log('Disconnected from server');
+      // Clear other players on disconnect
+      Game.otherPlayers = {};
+      this.interpolationBuffer.clear();
     });
 
-    this.socket.on('projectileHit', (data) => {
+    this.socket.on('gameState', (state) => {
+      state.players.forEach(playerData => {
+        if (playerData.id !== this.socket.id) {
+          // Calculate velocity if we have previous data
+          const lastUpdate = this.lastUpdateTime.get(playerData.id);
+          if (lastUpdate) {
+            const deltaTime = (state.timestamp - lastUpdate.timestamp) / 1000;
+            if (deltaTime > 0) {
+              const velocity = new THREE.Vector3(
+                (playerData.position.x - lastUpdate.position.x) / deltaTime,
+                (playerData.position.y - lastUpdate.position.y) / deltaTime,
+                (playerData.position.z - lastUpdate.position.z) / deltaTime
+              );
+              this.velocities.set(playerData.id, velocity);
+            }
+          }
+          
+          // Buffer positions for interpolation
+          let buffer = this.interpolationBuffer.get(playerData.id) || [];
+          buffer.push({
+            position: playerData.position,
+            rotation: playerData.rotation,
+            timestamp: state.timestamp,
+            moveState: playerData.moveState // Add movement state
+          });
+          
+          // Keep buffer size manageable
+          while (buffer.length > this.BUFFER_SIZE) {
+            buffer.shift();
+          }
+          
+          this.interpolationBuffer.set(playerData.id, buffer);
+          this.lastUpdateTime.set(playerData.id, {
+            position: playerData.position,
+            timestamp: state.timestamp
+          });
+          Game.updateOtherPlayer(playerData);
+        } else if (Game.lastProcessedInputId < playerData.lastProcessedInput) {
+          // Server reconciliation
+          Game.lastProcessedInputId = playerData.lastProcessedInput;
+          Game.inputBuffer = Game.inputBuffer.filter(input => 
+            input.id > playerData.lastProcessedInput
+          );
+        }
+      });
+
+      // Remove players that are no longer in the game state
+      Object.keys(Game.otherPlayers).forEach(playerId => {
+        if (!state.players.find(p => p.id === playerId)) {
+          if (Game.otherPlayers[playerId]?.mesh) {
+            SceneManager.remove(Game.otherPlayers[playerId].mesh);
+          }
+          delete Game.otherPlayers[playerId];
+          this.interpolationBuffer.delete(playerId);
+        }
+      });
+    });
+
+    this.socket.on('playerLeft', (playerId) => {
+      if (Game.otherPlayers[playerId]?.mesh) {
+        SceneManager.remove(Game.otherPlayers[playerId].mesh);
+      }
+      delete Game.otherPlayers[playerId];
+      this.interpolationBuffer.delete(playerId);
+    });
+
+    this.socket.on('playerShot', (data) => {
+      if (data.playerId !== this.socket.id) {
+        WeaponManager.handleRemoteShot(data);
+      }
+    });
+
+    this.socket.on('playerHit', (data) => {
+      // Handle player being hit by projectile
       WeaponManager.createExplosion(new THREE.Vector3(
         data.position.x,
         data.position.y,
         data.position.z
       ));
-    });
 
-    this.socket.on('existingPlayers', (serverPlayers) => {
-      console.log('Received existing players:', serverPlayers);
-      for (let id in serverPlayers) {
-        if (id !== this.socket.id) {
-          this.addOtherPlayer(id, serverPlayers[id]);
-        }
+      // If this client was hit, could trigger damage effects here
+      if (data.hitPlayerId === this.socket.id) {
+        console.log('You were hit by player:', data.sourcePlayerId);
+        // TODO: Implement damage/health system
       }
     });
 
-    this.socket.on('newPlayer', (player) => {
-      console.log('New player joined:', player.id);
-      if (player.id !== this.socket.id) {
-        this.addOtherPlayer(player.id, player);
+    this.socket.on('weaponPickedUp', (data) => {
+      // Remove weapon from scene if another player picked it up
+      if (data.playerId !== this.socket.id && SceneManager.cannon) {
+        SceneManager.scene.remove(SceneManager.cannon);
+        SceneManager.cannon = null;
+        SceneManager.cannonCollider = null;
       }
     });
 
-    this.socket.on('playerMoved', (data) => {
-      if (Game.otherPlayers[data.id]) {
-        const player = Game.otherPlayers[data.id];
-        this.bufferPlayerState(data);
-      }
-    });
-
-    this.socket.on('playerDisconnected', (id) => {
-      console.log('Player disconnected:', id);
-      if (Game.otherPlayers[id]) {
-        SceneManager.remove(Game.otherPlayers[id].mesh);
-        delete Game.otherPlayers[id];
-        delete this.playerStateBuffer[id];
+    this.socket.on('positionCorrection', (data) => {
+      // Handle server correction
+      if (Game.player) {
+        Game.player.position.set(data.position.x, data.position.y, data.position.z);
+        Game.player.quaternion.set(
+          data.rotation.x,
+          data.rotation.y,
+          data.rotation.z,
+          data.rotation.w
+        );
+        // Clear input buffer on correction
+        Game.inputBuffer = [];
       }
     });
   },
 
-  bufferPlayerState(data) {
-    if (!this.playerStateBuffer[data.id]) {
-      this.playerStateBuffer[data.id] = [];
-    }
-
-    const newState = {
-      position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
-      rotation: new THREE.Quaternion(
-        data.rotation.x || 0, 
-        data.rotation.y || 0, 
-        data.rotation.z || 0, 
-        data.rotation.w || 1
-      ),
-      isRunning: data.isRunning,
-      timestamp: Date.now(),
-      sequence: data.sequence
-    };
-
-    this.playerStateBuffer[data.id].push(newState);
-
-    if (this.playerStateBuffer[data.id].length > 10) {
-      this.playerStateBuffer[data.id].shift();
-    }
-
-    if (data.sequence !== undefined) {
-      this.validateSequence(data.id, data.sequence);
+  sendMove(moveData) {
+    if (this.socket?.connected) {
+      this.socket.emit('move', moveData);
     }
   },
 
-  validateSequence(playerId, sequence) {
-    this.lastReceivedSequence[playerId] = this.lastReceivedSequence[playerId] || 0;
-    
-    if (Debug.state.enabled && sequence < this.lastReceivedSequence[playerId]) {
-      console.warn(`[${Date.now()}] Out-of-order packet for player ${playerId}:`, {
-        received: sequence,
-        expected: this.lastReceivedSequence[playerId] + 1
+  sendShot(position, direction) {
+    if (this.socket?.connected) {
+      this.socket.emit('shoot', { position, direction });
+    }
+  },
+
+  sendProjectileHit(position, hitPlayerId) {
+    if (this.socket?.connected) {
+      this.socket.emit('projectileHit', { 
+        position,
+        hitPlayerId
       });
     }
-    
-    this.lastReceivedSequence[playerId] = Math.max(
-      this.lastReceivedSequence[playerId], 
-      sequence
-    );
   },
 
-  addOtherPlayer(id, playerData) {
-    Game.otherPlayers[id] = Game.createPlayerMesh(id);
-    
-    if (Game.otherPlayers[id]) {
-      SceneManager.add(Game.otherPlayers[id].mesh);
-      
-      const initialRotation = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0), 
-        playerData.rotation || 0
-      );
-      
-      Game.otherPlayers[id].mesh.position.set(
-        playerData.position.x, 
-        playerData.position.y, 
-        playerData.position.z
-      );
-      Game.otherPlayers[id].mesh.quaternion.copy(initialRotation);
-      
-      Game.otherPlayers[id].targetTransform = {
-        position: new THREE.Vector3(
-          playerData.position.x,
-          playerData.position.y,
-          playerData.position.z
-        ),
-        rotation: initialRotation,
-        isRunning: playerData.isRunning || false
-      };
+  sendWeaponPickup(weaponId) {
+    if (this.socket?.connected) {
+      this.socket.emit('weaponPickup', { weaponId });
     }
   },
 
   update(deltaTime) {
-    this.adaptInterpolationParameters();
-    
-    for (const id in Game.otherPlayers) {
-      const player = Game.otherPlayers[id];
-      const stateBuffer = this.playerStateBuffer[id];
-      
-      if (!stateBuffer || stateBuffer.length === 0) continue;
-
-      const latestState = stateBuffer[stateBuffer.length - 1];
-      
-      if (player.mesh && latestState) {
-        const lerpFactor = Math.min(this.adaptiveInterpolationSpeed * deltaTime, 1);
-        player.mesh.position.lerp(latestState.position, lerpFactor);
-        player.mesh.quaternion.slerp(latestState.rotation, lerpFactor);
-        
-        if (Debug.state.enabled && Debug.state.showVisualHelpers) {
-          SceneManager.updateDebugHelper(
-            player.mesh, 
-            latestState.position
-          );
-        }
-      }
-    }
-  },
-
-  handleServerValidation(validationData) {
-    const { inputId, position, rotation, serverTime } = validationData;
-    
-    Game.lastProcessedInputId = Math.max(Game.lastProcessedInputId, inputId);
-    Game.inputBuffer = Game.inputBuffer.filter(input => input.id > inputId);
-    
-    const historyIndex = Game.stateHistory.findIndex(state => state.inputId === inputId);
-    if (historyIndex === -1) return;
-    
-    const predictedState = Game.stateHistory[historyIndex];
-    const serverPos = new THREE.Vector3(position.x, position.y, position.z);
-    const positionError = predictedState.position.distanceTo(serverPos);
-    
-    if (positionError > this.reconciliationThreshold) {
-      console.log(`Reconciling position, error: ${positionError.toFixed(4)}`);
-      Game.player.position.copy(serverPos);
-      
-      // Reconcile rotation as well
-      Game.player.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
-
-      // Debug forward direction
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(Game.player.quaternion);
-    console.log(`Player forward after reconciliation: ${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)}`);
-      
-      const cameraDirections = SceneManager.updateCamera(Game.player.position, Game.player);
-      for (let i = historyIndex + 1; i < Game.stateHistory.length; i++) {
-        const replayInput = Game.inputBuffer.find(input => 
-          input.id === Game.stateHistory[i].inputId);
-          
-        if (replayInput) {
-          const moveVector = Game.applyInput(replayInput, cameraDirections);
-          Game.player.position.add(moveVector);
-          Game.stateHistory[i].position = Game.player.position.clone();
-          Game.stateHistory[i].rotation = Game.player.quaternion.clone();
-        }
-      }
-    }
-    
-    this.updateNetworkStats(serverTime);
-  },
-
-  adaptInterpolationParameters() {
-    if (this.jitterBuffer.length >= 10) {
-      const avg = this.jitterBuffer.reduce((sum, val) => sum + val, 0) / this.jitterBuffer.length;
-      const variance = this.jitterBuffer.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / this.jitterBuffer.length;
-      const jitter = Math.sqrt(variance);
-      
-      if (this.smoothedRTT > 200 || jitter > 50) {
-        this.adaptiveBufferSize = Math.min(20, this.adaptiveBufferSize + 1);
-        this.adaptiveInterpolationSpeed = Math.max(3, this.adaptiveInterpolationSpeed - 0.5);
-      } else if (this.smoothedRTT < 50 && jitter < 10) {
-        this.adaptiveBufferSize = Math.max(5, this.adaptiveBufferSize - 1);
-        this.adaptiveInterpolationSpeed = Math.min(10, this.adaptiveInterpolationSpeed + 0.5);
-      }
-      
-      this.jitterBuffer = [];
-    }
-  },
-
-  updateNetworkStats(serverTime) {
     const now = Date.now();
-    const rtt = now - serverTime;
-    
-    this.jitterBuffer.push(rtt);
-    if (this.jitterBuffer.length > 30) this.jitterBuffer.shift();
-    
-    this.smoothedRTT = this.smoothedRTT ? 
-      0.9 * this.smoothedRTT + 0.1 * rtt : 
-      rtt;
-  },
+    // Interpolate other players
+    for (const [playerId, buffer] of this.interpolationBuffer) {
+      if (buffer.length >= 2) {
+        const player = Game.otherPlayers[playerId];
+        if (player?.mesh) {
+          // Find the two buffer states to interpolate between
+          let currentIndex = 0;
+          while (currentIndex < buffer.length - 2 && 
+                 buffer[currentIndex + 1].timestamp < now) {
+            currentIndex++;
+          }
+          
+          const current = buffer[currentIndex];
+          const target = buffer[currentIndex + 1];
+          const next = buffer[currentIndex + 2];
+          
+          // Calculate interpolation alpha
+          const alpha = Math.min(
+            (now - current.timestamp) / 
+            (target.timestamp - current.timestamp),
+            1
+          );
+          
+          // Apply velocity-based prediction
+          const velocity = this.velocities.get(playerId);
+          const predictedPosition = velocity ? new THREE.Vector3(
+            target.position.x + velocity.x * deltaTime,
+            target.position.y + velocity.y * deltaTime,
+            target.position.z + velocity.z * deltaTime
+          ) : new THREE.Vector3(target.position.x, target.position.y, target.position.z);
+          
+          // Cubic interpolation for position
+          if (next && alpha > 0.5) {
+            // Use cubic interpolation when we have enough points
+            const p0 = new THREE.Vector3(current.position.x, current.position.y, current.position.z);
+            const p1 = new THREE.Vector3(target.position.x, target.position.y, target.position.z);
+            const p2 = new THREE.Vector3(next.position.x, next.position.y, next.position.z);
+            
+            const t = (alpha - 0.5) * 2; // Remap alpha for the second half
+            player.mesh.position.copy(p0)
+              .multiplyScalar((1 - t) * (1 - t))
+              .add(p1.multiplyScalar(2 * (1 - t) * t))
+              .add(p2.multiplyScalar(t * t));
+          } else {
+            // Fall back to linear interpolation with prediction
+            player.mesh.position.lerpVectors(
+              new THREE.Vector3(current.position.x, current.position.y, current.position.z),
+              predictedPosition,
+              alpha * this.interpolationSpeed
+            );
+          }
 
-  sendMove(moveData) {
-    if (!moveData || !moveData.position) {
-      console.warn('Invalid moveData:', moveData);
-      return;
-    }
-    
-    // Calculate movement direction quaternion if there's movement
-    const moveVector = new THREE.Vector3(
-      moveData.position.x - (Game.player.position.x || 0),
-      0,
-      moveData.position.z - (Game.player.position.z || 0)
-    );
-    let movementRotation = null;
-    if (moveVector.lengthSq() > 0.001) { // Small threshold to avoid noise
-      moveVector.normalize();
-      movementRotation = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 0, -1),
-        moveVector
-      );
-    }
-
-    const networkTransform = {
-      position: {
-        x: moveData.position.x,
-        y: moveData.position.y,
-        z: moveData.position.z
-      },
-      rotation: { // Camera rotation
-        x: moveData.rotation.x,
-        y: moveData.rotation.y,
-        z: moveData.rotation.z,
-        w: moveData.rotation.w
-      },
-      movementRotation: movementRotation ? { // Movement-based rotation
-        x: movementRotation.x,
-        y: movementRotation.y,
-        z: movementRotation.z,
-        w: movementRotation.w
-      } : null,
-      input: moveData.input,
-      isRunning: Game.isRunning,
-      sequence: this.sequenceNumber++,
-      timestamp: Date.now()
-    };
-    
-    if (Debug.state.enabled) {
-      console.log('Sending move data:', networkTransform);
-    }
-    
-    this.socket.emit('move', networkTransform);
-  },
-
-  sendProjectileHit(position) {
-    this.socket.emit('projectileHit', {
-      position: {
-        x: position.x,
-        y: position.y,
-        z: position.z
+          // Interpolate rotation with adaptive speed
+          const rotationSpeed = alpha > 0.8 ? this.interpolationSpeed * 1.5 : this.interpolationSpeed;
+          player.mesh.quaternion.slerpQuaternions(
+            new THREE.Quaternion(
+              current.rotation.x,
+              current.rotation.y,
+              current.rotation.z,
+              current.rotation.w
+            ),
+            new THREE.Quaternion(
+              target.rotation.x,
+              target.rotation.y,
+              target.rotation.z,
+              target.rotation.w
+            ),
+            alpha * rotationSpeed
+          );
+          
+          // Update movement state for animations
+          if (target.moveState) {
+            player.moveForward = target.moveState.moveForward;
+            player.moveBackward = target.moveState.moveBackward;
+            player.moveLeft = target.moveState.moveLeft;
+            player.moveRight = target.moveState.moveRight;
+            player.isRunning = target.moveState.isRunning;
+          }
+        }
       }
-    });
+    }
   }
 };

@@ -132,6 +132,9 @@ export const WeaponManager = {
     
     this.addPickupEffect(worldPos, weaponConfig.effectColor);
     
+    // Notify other players about weapon pickup
+    Network.sendWeaponPickup(weaponObject.uuid);
+    
     return true;
   },
 
@@ -152,13 +155,15 @@ export const WeaponManager = {
     const worldDir = new THREE.Vector3(0, 0, -1);
     bone.getWorldDirection(worldDir);
     
-    this.createProjectile(worldPos, worldDir, player);
+    this.createProjectile(worldPos, worldDir, player, false);
     this.projectileSettings.lastFireTime = now;
   },
 
-  createProjectile(position, direction, sourcePlayer) {
+  createProjectile(position, direction, sourcePlayer, isRemote = false) {
     const geometry = new THREE.SphereGeometry(0.2, 8, 8);
-    const material = new THREE.MeshBasicMaterial({ color: '#dae640' });
+    const material = new THREE.MeshBasicMaterial({ 
+      color: isRemote ? '#ff4400' : '#dae640' // Different color for remote shots
+    });
     const projectile = new THREE.Mesh(geometry, material);
     
     projectile.position.copy(position);
@@ -166,10 +171,31 @@ export const WeaponManager = {
       .clone()
       .multiplyScalar(this.projectileSettings.speed);
     projectile.userData.startPosition = position.clone();
-    projectile.userData.sourcePlayer = sourcePlayer; // Track who fired it
+    projectile.userData.sourcePlayer = sourcePlayer;
+    projectile.userData.isRemote = isRemote;
     
     SceneManager.add(projectile);
     this.activeProjectiles.push(projectile);
+
+    // If this is a local shot, send it to the network
+    if (!isRemote && Game.player) {
+      Network.sendShot(position.clone(), direction.clone());
+    }
+  },
+
+  handleRemoteShot(data) {
+    const position = new THREE.Vector3(
+      data.position.x,
+      data.position.y,
+      data.position.z
+    );
+    const direction = new THREE.Vector3(
+      data.direction.x,
+      data.direction.y,
+      data.direction.z
+    );
+    
+    this.createProjectile(position, direction, null, true);
   },
 
   updateProjectiles(deltaTime) {
@@ -202,7 +228,9 @@ export const WeaponManager = {
         
           if (Game.player.collider.containsPoint(projectile.position)) {
             this.createExplosion(projectile.position);
-            Network.sendProjectileHit(projectile.position);
+            if (!projectile.userData.isRemote) {
+              Network.sendProjectileHit(projectile.position, Game.player.uuid);
+            }
             SceneManager.remove(projectile);
             return false;
           }
@@ -219,7 +247,9 @@ export const WeaponManager = {
           
           if (otherPlayer.collider.containsPoint(projectile.position)) {
             this.createExplosion(projectile.position);
-            Network.sendProjectileHit(projectile.position);
+            if (!projectile.userData.isRemote) {
+              Network.sendProjectileHit(projectile.position, otherPlayer.mesh.uuid);
+            }
             SceneManager.remove(projectile);
             return false;
           }
