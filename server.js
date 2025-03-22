@@ -181,33 +181,6 @@ io.on('connection', (socket) => {
     }, 5000); // 5 second maximum lifetime
   });
 
-  // Handle projectile hit reports from clients
-  socket.on('projectileHit', (data) => {
-    // Validate data first
-    if (!data || typeof data.projectileId !== 'number' || !data.position) {
-      return;
-    }
-    
-    // Check if projectile exists and is still active
-    const projectile = projectiles.get(data.projectileId);
-    if (!projectile || !projectile.active) {
-      return;
-    }
-    
-    // Mark projectile as inactive
-    projectile.active = false;
-    projectiles.delete(data.projectileId);
-    
-    // Broadcast hit to all players
-    io.emit('projectileDestroyed', {
-      id: data.projectileId,
-      position: data.position,
-      hitPlayerId: data.hitPlayerId,
-      sourcePlayerId: projectile.ownerId,
-      reason: 'hit'
-    });
-  });
-
   // Handle weapon pickups
   socket.on('weaponPickup', (data) => {
     // Validate weapon pickup data
@@ -275,18 +248,54 @@ io.on('connection', (socket) => {
         // Mark for removal
         projectile.active = false;
         projectiles.delete(id);
-        io.emit('projectileDestroyed', { id: id, reason: 'timeout' });
+        io.emit('projectileDestroyed', { id, reason: 'timeout' });
       } else {
         // Add to updates batch
         updatedProjectiles.push({
           id: projectile.id,
           position: newPosition,
         });
+        
+        // NEW: Server-side collision detection
+        for (const [playerId, playerData] of players.entries()) {
+          // Don't collide with own player
+          if (playerId === projectile.ownerId) continue;
+          
+          // Simple distance-based collision detection
+          // You can expand this to use capsule/sphere collisions
+          const dx = playerData.position.x - projectile.position.x;
+          const dy = playerData.position.y - projectile.position.y;
+          const dz = playerData.position.z - projectile.position.z;
+          
+          // Calculate distance between projectile and player center
+          const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+          
+          // Hit detection with a player radius of 1.0 and projectile radius of 0.15
+          // Note: We're using a simplified collision model here - can be expanded
+          if (distance < 1.15) {  // player radius + projectile radius
+            // Collision detected!
+            console.log(`Server detected hit: projectile ${id} hit player ${playerId}`);
+            
+            // Mark projectile as inactive and remove
+            projectile.active = false;
+            projectiles.delete(id);
+            
+            // Broadcast authoritative hit to all clients
+            io.emit('projectileDestroyed', {
+              id,
+              position: projectile.position,
+              hitPlayerId: playerId,
+              sourcePlayerId: projectile.ownerId,
+              reason: 'hit',
+              serverConfirmed: true  // Flag indicating this is an authoritative hit
+            });
+            
+            // Exit the loop since projectile is now destroyed
+            break;
+          }
+        }
       }
-      
-      // TODO: Add server-side collision detection here if desired
     }
-
     // --- SEND GAME STATE TO CLIENTS ---
     // Prepare game state update
     const gameState = {
@@ -309,7 +318,6 @@ io.on('connection', (socket) => {
     
     // Send combined game state
     io.emit('gameState', gameState);
-    
   }, 1000 / TICK_RATE);
 
 const PORT = process.env.NODE_ENV === 'production' ? (process.env.PORT || 3000) : 3000;

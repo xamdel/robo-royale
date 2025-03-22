@@ -137,7 +137,11 @@ export const Network = {
     // Add handler for projectile destroyed
     this.socket.on('projectileDestroyed', (data) => {
       const projectile = WeaponManager.networkProjectiles.get(data.id);
+      
       if (projectile) {
+        // Check if this is a server-confirmed hit
+        const isServerConfirmed = data.serverConfirmed === true;
+        
         // Show hit effect if projectile was destroyed due to hit
         if (data.reason === 'hit') {
           const hitPosition = new THREE.Vector3(
@@ -145,7 +149,13 @@ export const Network = {
             data.position.y,
             data.position.z
           );
-          WeaponManager.createExplosion(hitPosition);
+          
+          // If this is a server confirmation but we already showed an effect,
+          // we could either skip the visual or show a different "confirmed" effect
+          if (!isServerConfirmed || !projectile.hasShownHitEffect) {
+            WeaponManager.createExplosion(hitPosition);
+            projectile.hasShownHitEffect = true;
+          }
           
           // Handle player hit logic
           if (data.hitPlayerId === this.socket.id) {
@@ -254,17 +264,12 @@ export const Network = {
     }
   },
 
-  sendHit(sourcePlayerId) {
+  sendProjectileHitSuggestion(position, hitPlayerId, projectileId) {
     if (this.socket?.connected) {
-      this.socket.emit('playerHit', { sourcePlayerId });
-    }
-  },
-
-  sendProjectileHit(position, hitPlayerId) {
-    if (this.socket?.connected) {
-      this.socket.emit('projectileHit', { 
+      this.socket.emit('projectileHitSuggestion', { 
         position,
-        hitPlayerId
+        hitPlayerId,
+        projectileId
       });
     }
   },

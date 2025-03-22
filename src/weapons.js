@@ -95,18 +95,19 @@ class Projectile extends THREE.Mesh {
 
   // Update the onHit method to inform server about hits
   onHit() {
-    // Only send hit notification if this is a networked projectile
-    if (this.serverId !== null) {
-      Network.socket.emit('projectileHit', {
+    // Create visual effect immediately for responsiveness
+    if (this.collisionPoint) {
+      WeaponManager.createExplosion(this.collisionPoint, this.config.color);
+    }
+    
+    // Only send hit data to server if this is a local projectile
+    if (this.sourcePlayer === Game.player && this.serverId !== null) {
+      // Changed from authoritative hit report to hit suggestion
+      Network.socket.emit('projectileHitSuggestion', {
         projectileId: this.serverId,
         position: this.position.clone(),
         hitPlayerId: this.hitPlayerId // Add this property when hit is detected
       });
-    }
-    
-    // Visual and audio effects for hit
-    if (this.collisionPoint) {
-      WeaponManager.addCollisionEffect(this.collisionPoint, this.config.color);
     }
   }
 
