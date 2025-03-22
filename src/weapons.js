@@ -132,7 +132,7 @@ class Projectile extends THREE.Mesh {
     return false;
   }
 
-  // Update the onHit method to inform server about hits
+  // Update the onHit method to inform server about hits with improved hit data
   onHit() {
     // Create visual effect immediately for responsiveness
     if (this.collisionPoint) {
@@ -141,11 +141,14 @@ class Projectile extends THREE.Mesh {
     
     // Only send hit data to server if this is a local projectile
     if (this.sourcePlayer === Game.player && this.serverId !== null) {
-      // Changed from authoritative hit report to hit suggestion
+      // Enhanced hit suggestion with more detailed data
       Network.socket.emit('projectileHitSuggestion', {
         projectileId: this.serverId,
         position: this.position.clone(),
-        hitPlayerId: this.hitPlayerId // Add this property when hit is detected
+        prevPosition: this.prevPosition ? this.prevPosition.clone() : this.startPosition.clone(),
+        hitPlayerId: this.hitPlayerId,
+        collisionPoint: this.collisionPoint ? this.collisionPoint.clone() : this.position.clone(),
+        timeMs: Date.now() // Include timestamp for latency calculations
       });
     }
   }

@@ -264,13 +264,9 @@ export const Network = {
     }
   },
 
-  sendProjectileHitSuggestion(position, hitPlayerId, projectileId) {
+  sendProjectileHitSuggestion(data) {
     if (this.socket?.connected) {
-      this.socket.emit('projectileHitSuggestion', { 
-        position,
-        hitPlayerId,
-        projectileId
-      });
+      this.socket.emit('projectileHitSuggestion', data);
     }
   },
 
