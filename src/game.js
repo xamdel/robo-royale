@@ -21,6 +21,14 @@ export const Game = {
   cannonAttached: false,
   previousPosition: null,
   
+  // Player stats for HUD
+  health: 100,
+  maxHealth: 100,
+  ammo: 50, 
+  maxAmmo: 50,
+  lastFireTime: 0,
+  cooldownTime: 250, // ms between shots
+  
   // Network and prediction properties
   inputBuffer: [],
   stateHistory: [],
@@ -113,6 +121,26 @@ export const Game = {
     this.player.position.set(0, this.player.position.y, 0);
     this.previousPosition = this.player.position.clone();
     SceneManager.add(this.player);
+    
+    // Initialize player stats for HUD
+    this.health = this.maxHealth;
+    this.ammo = this.maxAmmo;
+    
+    // Show welcome messages after a short delay
+    setTimeout(() => {
+      if (window.HUD) {
+        window.HUD.showAlert("MECH SYSTEMS ONLINE", "info");
+        setTimeout(() => {
+          window.HUD.addMessage("Welcome to Robo Royale. Controls: WASD to move, SHIFT to run.");
+          setTimeout(() => {
+            window.HUD.addMessage("Left-click to fire when weapon is equipped.");
+            setTimeout(() => {
+              window.HUD.addMessage("Find the cannon on the battlefield to arm your mech.");
+            }, 1500);
+          }, 1500);
+        }, 1000);
+      }
+    }, 1000);
 
     // Input handling
     document.addEventListener('keydown', (event) => {
@@ -180,6 +208,12 @@ export const Game = {
             if (success) {
               SceneManager.cannonCollider = null;
               this.cannonAttached = true;
+              
+              // Show weapon pickup message in HUD
+              if (window.HUD) {
+                window.HUD.showAlert("CANNON ARMED AND READY", "info");
+                window.HUD.addMessage("Cannon equipped. Ammo: " + this.ammo + "/" + this.maxAmmo);
+              }
             }
           }
         }

@@ -2,6 +2,7 @@ import { SceneManager } from './scene.js';
 import { Game } from './game.js';
 import { Network } from './network.js';
 import { DebugTools } from './debug-tools.js';
+import { HUD } from './hud.js';
 import * as THREE from 'three';
 
 // Debug variables
@@ -70,6 +71,9 @@ async function init() {
   
   await Game.init(Network.socket);
   
+  // Initialize HUD after game is initialized
+  HUD.init();
+  
   // Start the game loop
   lastTime = performance.now();
   requestAnimationFrame(gameLoop);
@@ -107,6 +111,9 @@ function gameLoop(timestamp) {
     DebugTools.updateDebugVisuals();
     DebugTools.updateNetworkDebugUI();
   }
+  
+  // Update HUD
+  HUD.update(deltaTime);
   
   // Render the scene
   SceneManager.render(Game.player?.position);
@@ -159,4 +166,6 @@ export const Debug = {
   state: debugState
 };
 
+// Make these available globally for cross-module access
 window.Game = Game;
+window.HUD = HUD;

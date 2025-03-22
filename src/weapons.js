@@ -427,8 +427,18 @@ export const WeaponManager = {
 
   fireWeapon(player, weaponType = 'cannon') {
     const now = Date.now();
-    const fireCooldown = 250; // TODO: Move to weapon config
+    const fireCooldown = Game.cooldownTime || 250; // Use Game's cooldown time
+    
     if (now - this.lastFireTime < fireCooldown) return;
+    
+    // Check ammo for local player
+    if (player === Game.player && Game.ammo <= 0) {
+      // Display "out of ammo" message using HUD if available
+      if (window.HUD) {
+        window.HUD.showAlert("OUT OF AMMO", "warning");
+      }
+      return;
+    }
 
     const socketName = this.weaponTypes[weaponType].socket;
     const socket = this.weaponSockets[socketName];
@@ -455,15 +465,24 @@ export const WeaponManager = {
     if (projectile) {
       // Only send network event if this is the local player
       if (player === Game.player) {
+        // Decrease ammo when firing
+        Game.ammo = Math.max(0, Game.ammo - 1);
+        
         Network.sendShot({
           type: weaponType,
           position: worldPos,
           direction: worldDir,
         });
+        
+        // Show firing message
+        if (window.HUD) {
+          window.HUD.addMessage(`Fired ${weaponType}. Ammo: ${Game.ammo}/${Game.maxAmmo}`);
+        }
       }
     }
 
     this.lastFireTime = now;
+    Game.lastFireTime = now; // Update Game's fire time for HUD cooldown display
   },
 
   update(deltaTime) {
