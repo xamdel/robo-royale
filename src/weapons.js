@@ -473,11 +473,6 @@ export const WeaponManager = {
           position: worldPos,
           direction: worldDir,
         });
-        
-        // Show firing message
-        if (window.HUD) {
-          window.HUD.addMessage(`Fired ${weaponType}. Ammo: ${Game.ammo}/${Game.maxAmmo}`);
-        }
       }
     }
 
