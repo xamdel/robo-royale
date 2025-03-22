@@ -396,6 +396,11 @@ export const Game = {
 
     return moveData;
   },
+
+  isRemotePlayer(player) {
+    // Check if this player is in our otherPlayers map
+    return Object.values(this.otherPlayers).some(p => p.mesh === player);
+  },
 };
 
 class Collider {

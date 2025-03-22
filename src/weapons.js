@@ -172,6 +172,7 @@ class ProjectileManager {
 export const WeaponManager = {
   projectileManager: new ProjectileManager(),
   weaponOwnership: new Map(), // Track which weapons are owned by which players
+  lastFireTime: 0, // Track last weapon fire time for cooldown
 
   weaponSockets: {
     leftArm: {
@@ -301,8 +302,6 @@ export const WeaponManager = {
       socket.attachmentCallback(weaponObject, bone);
     }
 
-    // this.addPickupEffect(worldPos, weaponConfig.effectColor);
-
     // Notify other players about weapon pickup with weapon type and player ID
     if (!isRemotePickup) {
       Network.sendWeaponPickup({
@@ -338,12 +337,15 @@ export const WeaponManager = {
       player
     );
 
-    if (projectile && !Game.isRemotePlayer(player)) {
-      Network.sendShot({
-        type: weaponType,
-        position: worldPos,
-        direction: worldDir,
-      });
+    if (projectile) {
+      // Only send network event if this is the local player
+      if (player === Game.player) {
+        Network.sendShot({
+          type: weaponType,
+          position: worldPos,
+          direction: worldDir,
+        });
+      }
     }
 
     this.lastFireTime = now;
@@ -353,64 +355,23 @@ export const WeaponManager = {
     this.projectileManager.update(deltaTime);
   },
 
-  // addPickupEffect(position, color = 0xffff00) {
-  //   const particles = new THREE.Group();
+  handleRemoteShot(data) {
+    const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+    const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
+    const sourcePlayer = Game.otherPlayers[data.playerId]?.mesh;
+    
+    this.projectileManager.spawn(
+      data.type,
+      position,
+      direction,
+      sourcePlayer
+    );
+  },
 
-  //   for (let i = 0; i < 10; i++) {
-  //     const geometry = new THREE.SphereGeometry(0.1, 8, 8);
-  //     const material = new THREE.MeshBasicMaterial({
-  //       color: color,
-  //       transparent: true,
-  //       opacity: 0.8,
-  //     });
-
-  //     const particle = new THREE.Mesh(geometry, material);
-
-  //     particle.position.set(
-  //       position.x + (Math.random() - 0.5) * 0.5,
-  //       position.y + (Math.random() - 0.5) * 0.5,
-  //       position.z + (Math.random() - 0.5) * 0.5
-  //     );
-
-  //     particle.userData.velocity = new THREE.Vector3(
-  //       (Math.random() - 0.5) * 2,
-  //       Math.random() * 3 + 1,
-  //       (Math.random() - 0.5) * 2
-  //     );
-
-  //     particles.add(particle);
-  //   }
-
-  //   SceneManager.add(particles);
-
-  //   const startTime = performance.now();
-  //   const duration = 1000;
-
-  //   const updateParticles = () => {
-  //     const elapsed = performance.now() - startTime;
-  //     const progress = elapsed / duration;
-
-  //     if (progress >= 1) {
-  //       SceneManager.remove(particles);
-  //       return;
-  //     }
-
-  //     particles.children.forEach((particle) => {
-  //       particle.position.add(
-  //         particle.userData.velocity.clone().multiplyScalar(0.016)
-  //       );
-  //       particle.userData.velocity.y -= 0.1;
-
-  //       if (particle.material) {
-  //         particle.material.opacity = 0.8 * (1 - progress);
-  //       }
-  //     });
-
-  //     requestAnimationFrame(updateParticles);
-  //   };
-
-  //   updateParticles();
-  // },
+  createExplosion(position) {
+    // Use the same effect system as projectile collisions
+    this.addCollisionEffect(position, 0xff4400);
+  },
 
   addCollisionEffect(position, color = 0xffff00) {
     const particles = new THREE.Group();

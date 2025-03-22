@@ -205,6 +205,15 @@ export const Network = {
     }
   },
 
+  sendShot(data) {
+    if (this.socket?.connected) {
+      this.socket.emit('playerShot', {
+        ...data,
+        playerId: this.socket.id
+      });
+    }
+  },
+
   update(deltaTime) {
     const now = Date.now();
 
