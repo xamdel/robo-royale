@@ -353,32 +353,49 @@ export const WeaponManager = {
 
   async init() {
     try {
-      // Initialize particle systems
+      // Initialize particle systems with much larger particle sizes
       this.explosionParticles = await GPUParticleSystem.create({
-        maxParticles: 2000,
-        particleSize: 0.4,
+        maxParticles: 2500,
+        particleSize: 1.5,  // Significantly larger particles
         blending: THREE.AdditiveBlending
       });
       
       this.collisionParticles = await GPUParticleSystem.create({
-        maxParticles: 1000,
-        particleSize: 0.15,
+        maxParticles: 1200,
+        particleSize: 0.8,  // Significantly larger particles
         blending: THREE.AdditiveBlending
       });
 
-      // Add to scene
+      // Add to scene with z-order to ensure visibility
       SceneManager.add(this.explosionParticles);
       SceneManager.add(this.collisionParticles);
-
+      
+      // Explicitly set renderOrder to ensure particles render after scene objects
+      this.explosionParticles.renderOrder = 10;
+      this.collisionParticles.renderOrder = 11;
+      
       console.log('Weapon particle systems initialized');
       
-      // Test particle systems
+      // Run test effects with slight delay to ensure everything is loaded
       setTimeout(() => {
         console.log('[Particles] Running test effects');
-        this.createExplosion(new THREE.Vector3(0, 2, 0));
-        this.addCollisionEffect(new THREE.Vector3(2, 2, 0), 0xffff00);
-        this.createPlayerExplosion(new THREE.Vector3(-2, 2, 0));
-      }, 1000); // Wait for scene to be ready
+        
+        // Test at position clearly visible in scene
+        const testPos = new THREE.Vector3(0, 5, 0);
+        
+        // Test collision effect
+        this.addCollisionEffect(testPos, 0xffff00);
+        
+        // Test regular explosion after a delay
+        setTimeout(() => {
+          this.createExplosion(new THREE.Vector3(5, 5, 0));
+          
+          // Test player explosion after another delay
+          setTimeout(() => {
+            this.createPlayerExplosion(new THREE.Vector3(-5, 5, 0));
+          }, 500);
+        }, 500);
+      }, 2000); // Longer delay to ensure everything is loaded
     } catch (error) {
       console.error('Failed to initialize particle systems:', error);
     }
@@ -410,11 +427,26 @@ export const WeaponManager = {
     console.log('[Particles] Server hit:', data);
     // Show hit effect with weapon-specific colors
     if (data.position) {
+      // Create position vector from data
       const pos = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+      
+      // Make the position slightly higher to ensure visibility
+      pos.y += 1.0;
+      
       // Use weapon-specific colors if available
       const color = data.weaponType === 'cannon' ? 0xffff00 : 0xff4400;
+      
+      // Create more dramatic effects for confirmed hits
       this.createExplosion(pos);
+      
+      // Add multiple collision effects with different colors for more visual impact
       this.addCollisionEffect(pos, color);
+      
+      // Add second impact effect with slight delay and offset
+      setTimeout(() => {
+        const offsetPos = pos.clone().add(new THREE.Vector3(0.5, 0.3, 0.2));
+        this.addCollisionEffect(offsetPos, 0xffffff);
+      }, 50);
     }
 
     // If we're the shooter, show hit confirmation in HUD
@@ -423,6 +455,12 @@ export const WeaponManager = {
       
       if (data.wasKilled) {
         window.HUD.showAlert("Enemy destroyed!", "success");
+        
+        // Create a more dramatic death explosion at the hit position
+        if (data.position) {
+          const deathPos = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+          this.createPlayerExplosion(deathPos);
+        }
       }
     }
   },
@@ -446,59 +484,101 @@ export const WeaponManager = {
     
     console.log('[Particles] Creating player explosion at:', position.toArray());
     
-    // Core explosion
+    // Make position much higher to be more visible
+    const explosionCenter = position.clone().add(new THREE.Vector3(0, 2.0, 0));
+    
+    // Super simple approach - just emit a bunch of particles at once with high velocity
+    
+    // First burst - orange
     this.explosionParticles.emit({
-      position: position,
-      count: 50,
-      spread: 2.0,
-      velocity: 12.0,
-      color: new THREE.Color(0xff3300),
+      position: explosionCenter,
+      count: 150,
+      spread: 4.0,
+      velocity: 20.0,
+      color: new THREE.Color(0xff5500),
+      lifetime: 1.5
+    });
+
+    // Second burst - yellow
+    this.explosionParticles.emit({
+      position: explosionCenter,
+      count: 100,
+      spread: 3.0,
+      velocity: 15.0,
+      color: new THREE.Color(0xffcc00),
+      lifetime: 1.0
+    });
+
+    // Metal fragments
+    this.explosionParticles.emit({
+      position: explosionCenter,
+      count: 80,
+      spread: 6.0,
+      velocity: 30.0,
+      color: new THREE.Color(0xeeeeee),
+      lifetime: 2.0
+    });
+    
+    // Blue electrical sparks
+    this.explosionParticles.emit({
+      position: explosionCenter,
+      count: 70,
+      spread: 5.0,
+      velocity: 25.0,
+      color: new THREE.Color(0x00ccff),
       lifetime: 0.8
     });
-
-    // Metal debris
-    this.explosionParticles.emit({
-      position: position,
-      count: 35,
-      spread: 2.5,
-      velocity: 18.0,
-      color: new THREE.Color(0xcccccc),
-      lifetime: 1.2
-    });
-
-    // Electrical sparks
-    this.explosionParticles.emit({
-      position: position,
-      count: 25,
-      spread: 3.0,
-      velocity: 20.0,
-      color: new THREE.Color(0x00ffff),
-      lifetime: 0.4
-    });
     
-    // Add a flash effect
-    const flash = new THREE.PointLight(0xff8800, 5, 10);
-    flash.position.copy(position);
+    // Add a very bright flash
+    const flash = new THREE.PointLight(0xffaa00, 20, 30);
+    flash.position.copy(explosionCenter);
     SceneManager.add(flash);
     
-    // Fade out the flash
-    const startTime = performance.now();
-    const flashDuration = 300;
+    // Secondary red-orange light for glow
+    const glow = new THREE.PointLight(0xff2200, 10, 20);
+    glow.position.copy(explosionCenter);
+    SceneManager.add(glow);
     
-    const updateFlash = () => {
-      const elapsed = performance.now() - startTime;
-      const progress = elapsed / flashDuration;
+    // Simple fadeout with setTimeout instead of requestAnimationFrame
+    setTimeout(() => {
+      flash.intensity = 15;
+      glow.intensity = 7;
       
-      if (progress >= 1) {
-        SceneManager.remove(flash);
-        return;
-      }
-      
-      flash.intensity = 5 * (1 - progress);
-      requestAnimationFrame(updateFlash);
-    };
+      setTimeout(() => {
+        flash.intensity = 10;
+        glow.intensity = 5;
+        
+        setTimeout(() => {
+          flash.intensity = 5;
+          glow.intensity = 3;
+          
+          setTimeout(() => {
+            flash.intensity = 2;
+            glow.intensity = 1;
+            
+            setTimeout(() => {
+              SceneManager.remove(flash);
+              SceneManager.remove(glow);
+            }, 200);
+          }, 200);
+        }, 200);
+      }, 200);
+    }, 200);
     
-    updateFlash();
+    // Add collision effects at multiple points around the explosion
+    const offsets = [
+      new THREE.Vector3(1, 0, 1),
+      new THREE.Vector3(-1, 0.5, -1),
+      new THREE.Vector3(0, 1, -1),
+      new THREE.Vector3(-1, -0.5, 1)
+    ];
+    
+    offsets.forEach((offset, index) => {
+      setTimeout(() => {
+        const effectPos = explosionCenter.clone().add(offset);
+        this.addCollisionEffect(effectPos, 0xffaa00);
+      }, index * 100); // Stagger the effects
+    });
   },
 
   createExplosion(position) {
@@ -509,14 +589,64 @@ export const WeaponManager = {
     
     console.log('[Particles] Creating explosion at:', position.toArray());
     
+    // Lift the position slightly to improve visibility
+    const explosionPos = position.clone().add(new THREE.Vector3(0, 0.5, 0));
+    
+    // Main explosion burst - more particles
     this.collisionParticles.emit({
-      position: position,
-      count: 40,
+      position: explosionPos,
+      count: 60,  // More particles
       spread: 3.0,
-      velocity: 12.0,
-      color: new THREE.Color(0xff4400),
-      lifetime: 1.0
+      velocity: 15.0,
+      color: new THREE.Color(0xff5500),
+      lifetime: 1.5
     });
+    
+    // Secondary smaller sparks - more particles
+    this.collisionParticles.emit({
+      position: explosionPos.clone().add(new THREE.Vector3(0, 0.3, 0)),
+      count: 40,  // More particles
+      spread: 2.5,
+      velocity: 20.0,  // Faster
+      color: new THREE.Color(0xff9900),
+      lifetime: 0.8
+    });
+    
+    // Add smoke effect
+    this.collisionParticles.emit({
+      position: explosionPos.clone().add(new THREE.Vector3(0, 0.5, 0)),
+      count: 30,
+      spread: 2.0,
+      velocity: 8.0,
+      color: new THREE.Color(0x999999),
+      lifetime: 2.0
+    });
+    
+    // Add a small light flash for the explosion - brighter
+    const flash = new THREE.PointLight(0xff6600, 5, 10);  // Brighter and larger
+    flash.position.copy(explosionPos);
+    SceneManager.add(flash);
+    
+    // Fade out the flash
+    const startTime = performance.now();
+    const flashDuration = 350;  // Longer
+    
+    const updateFlash = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = elapsed / flashDuration;
+      
+      if (progress >= 1) {
+        SceneManager.remove(flash);
+        return;
+      }
+      
+      // Quick fade with slight flicker
+      const flicker = 1 + Math.random() * 0.15;
+      flash.intensity = 5 * (1 - progress) * flicker;
+      requestAnimationFrame(updateFlash);
+    };
+    
+    updateFlash();
   },
 
   addCollisionEffect(position, color = 0xffff00) {
@@ -527,14 +657,56 @@ export const WeaponManager = {
     
     console.log('[Particles] Adding collision effect at:', position.toArray());
     
+    // Main impact particles - more particles
     this.collisionParticles.emit({
       position: position,
-      count: 15, // Fewer particles
-      spread: 1.0, // More concentrated
-      velocity: 6.0, // Slightly slower
+      count: 30,  // Double particles
+      spread: 1.2,
+      velocity: 10.0,  // Faster
       color: new THREE.Color(color),
-      lifetime: 0.3 // Shorter lifetime
+      lifetime: 0.5  // Longer
     });
+    
+    // Add sparks with complementary color for contrast
+    const complementaryColor = new THREE.Color(color).offsetHSL(0.5, 0, 0);
+    
+    // Small sparkle effect - more particles
+    this.collisionParticles.emit({
+      position: position.clone().add(new THREE.Vector3(0, 0.1, 0)),
+      count: 15,  // More particles
+      spread: 1.8,
+      velocity: 15.0,  // Faster
+      color: complementaryColor,
+      lifetime: 0.3
+    });
+    
+    // Tiny brief flash for impact - brighter
+    const flash = new THREE.PointLight(
+      new THREE.Color(color).getHex(),
+      3.0,  // Brighter
+      5  // Larger radius
+    );
+    flash.position.copy(position);
+    SceneManager.add(flash);
+    
+    // Fade out instead of sudden removal
+    const startTime = performance.now();
+    const flashDuration = 150;
+    
+    const updateFlash = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = elapsed / flashDuration;
+      
+      if (progress >= 1) {
+        SceneManager.remove(flash);
+        return;
+      }
+      
+      flash.intensity = 3.0 * (1 - progress);
+      requestAnimationFrame(updateFlash);
+    };
+    
+    updateFlash();
   },
 
   update(deltaTime) {

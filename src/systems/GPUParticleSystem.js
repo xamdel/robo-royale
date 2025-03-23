@@ -10,56 +10,62 @@ export class GPUParticleSystem extends THREE.Points {
             fragmentShaderPath = '/src/shaders/explosion.frag'
         } = options;
 
-        // Load shaders first
-        const [vertexShader, fragmentShader] = await Promise.all([
-            fetch(vertexShaderPath).then(r => r.text()),
-            fetch(fragmentShaderPath).then(r => r.text())
-        ]);
+        try {
+            // Load shaders first
+            const [vertexShader, fragmentShader] = await Promise.all([
+                fetch(vertexShaderPath).then(r => r.text()),
+                fetch(fragmentShaderPath).then(r => r.text())
+            ]);
 
-        // Create geometry with particle attributes
-        const geometry = new THREE.BufferGeometry();
-        
-        // Arrays to store particle data
-        const positions = new Float32Array(maxParticles * 3);
-        const velocities = new Float32Array(maxParticles * 3);
-        const startTimes = new Float32Array(maxParticles);
-        const lifetimes = new Float32Array(maxParticles);
-        const indices = new Float32Array(maxParticles);
+            // Create geometry with particle attributes
+            const geometry = new THREE.BufferGeometry();
+            
+            // Arrays to store particle data
+            const positions = new Float32Array(maxParticles * 3);
+            const velocities = new Float32Array(maxParticles * 3);
+            const startTimes = new Float32Array(maxParticles);
+            const lifetimes = new Float32Array(maxParticles);
+            const indices = new Float32Array(maxParticles);
 
-        // Initialize arrays
-        for (let i = 0; i < maxParticles; i++) {
-            indices[i] = i;
-            startTimes[i] = -1; // Inactive particle
-            lifetimes[i] = 1.0; // Default lifetime
+            // Initialize arrays
+            for (let i = 0; i < maxParticles; i++) {
+                indices[i] = i;
+                startTimes[i] = -1; // Inactive particle
+                lifetimes[i] = 1.0; // Default lifetime
+            }
+
+            // Add attributes to geometry
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+            geometry.setAttribute('startTime', new THREE.BufferAttribute(startTimes, 1));
+            geometry.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
+            geometry.setAttribute('particleIndex', new THREE.BufferAttribute(indices, 1));
+
+            // Create material with loaded shaders
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    size: { value: particleSize },
+                    origin: { value: new THREE.Vector3() },
+                    color: { value: new THREE.Color(0xffffff) }
+                },
+                vertexShader,
+                fragmentShader,
+                blending,
+                transparent: true,
+                depthWrite: false,
+                vertexColors: true,
+                side: THREE.DoubleSide
+            });
+
+            // Create instance
+            const instance = new GPUParticleSystem(geometry, material, maxParticles);
+            console.log('GPUParticleSystem created successfully');
+            return instance;
+        } catch (error) {
+            console.error('Error creating GPUParticleSystem:', error);
+            throw error;
         }
-
-        // Add attributes to geometry
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
-        geometry.setAttribute('startTime', new THREE.BufferAttribute(startTimes, 1));
-        geometry.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
-        geometry.setAttribute('particleIndex', new THREE.BufferAttribute(indices, 1));
-
-        // Create material with loaded shaders
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                size: { value: particleSize },
-                origin: { value: new THREE.Vector3() },
-                color: { value: new THREE.Color(0xffffff) }
-            },
-            vertexShader,
-            fragmentShader,
-            blending,
-            transparent: true,
-            depthWrite: false,
-            vertexColors: true,
-            side: THREE.DoubleSide
-        });
-
-        // Create instance
-        const instance = new GPUParticleSystem(geometry, material, maxParticles);
-        return instance;
     }
 
     constructor(geometry, material, maxParticles) {
@@ -79,6 +85,11 @@ export class GPUParticleSystem extends THREE.Points {
             color = new THREE.Color(0xffffff),
             lifetime = 1.0
         } = options;
+
+        if (!this.geometry || !this.geometry.attributes) {
+            console.error('Particle geometry or attributes missing');
+            return;
+        }
 
         const positions = this.geometry.attributes.position;
         const velocities = this.geometry.attributes.velocity;

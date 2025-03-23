@@ -1,21 +1,25 @@
 uniform vec3 color;
 
 varying float vOpacity;
-varying vec2 vUv;
 
 void main() {
     // Calculate distance from center for circular shape
     vec2 center = gl_PointCoord - vec2(0.5);
     float dist = length(center);
     
-    // Soft circle shape with falloff
-    float alpha = smoothstep(0.5, 0.2, dist) * vOpacity;
+    // Soft circle with fade at edges
+    float alpha = smoothstep(0.5, 0.1, dist) * vOpacity;
     
-    // Apply color with additive blending
-    gl_FragColor = vec4(color, alpha);
+    // Brighter core for more realistic fire/explosion
+    vec3 finalColor = color;
+    if (dist < 0.2) {
+        finalColor = mix(vec3(1.0, 1.0, 0.7), color, dist * 5.0);
+    }
     
-    // Discard pixels outside the particle circle
-    if (dist > 0.5) {
+    gl_FragColor = vec4(finalColor, alpha);
+    
+    // Discard transparent pixels
+    if (alpha < 0.01) {
         discard;
     }
 }
