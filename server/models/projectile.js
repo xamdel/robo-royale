@@ -32,11 +32,8 @@ class Projectile {
     this.distanceTraveled = 0;
   }
 
-  update(currentTime) {
+  update(deltaTime) {
     if (!this.active) return null;
-
-    const deltaTime = (currentTime - this.lastUpdateTime) / 1000;
-    this.lastUpdateTime = currentTime;
 
     // Store previous position
     this.prevPosition = { ...this.position };
@@ -60,7 +57,7 @@ class Projectile {
 
     // Check if projectile has exceeded max distance or lifetime
     if (this.distanceTraveled > this.maxDistance || 
-        (currentTime - this.createdAt) > this.maxLifetime) {
+        (Date.now() - this.createdAt) > this.maxLifetime) {
       this.active = false;
       return null;
     }
@@ -106,11 +103,11 @@ class ProjectileManager {
     return projectile;
   }
 
-  updateProjectiles(currentTime) {
+  updateProjectiles(deltaTime) {
     const updatedProjectiles = [];
     
     for (const [id, projectile] of this.projectiles.entries()) {
-      const update = projectile.update(currentTime);
+      const update = projectile.update(deltaTime);
       
       if (update) {
         updatedProjectiles.push(update);

@@ -67,6 +67,7 @@ class GameServer {
     // Update game loop with managers
     this.gameLoop.playerManager = this.playerController.getPlayerManager();
     this.gameLoop.projectileManager = this.projectileController.getProjectileManager();
+    this.gameLoop.projectileController = this.projectileController;
   }
 
   setupSocketConnection() {

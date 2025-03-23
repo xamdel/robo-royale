@@ -56,14 +56,18 @@ class Player {
 
   takeDamage(amount, projectileData) {
     const now = Date.now();
+  
+    console.log(`Player ${this.id} taking damage: ${amount}, current health: ${this.health}`);
     
     // Check spawn invulnerability
     if (now - this.lastSpawnTime < gameConfig.PLAYER_CONFIG.spawnInvulnerabilityTime) {
+      console.log(`Player ${this.id} has spawn invulnerability, ignoring damage`);
       return false;
     }
 
     // If already dead, ignore damage
     if (this.isDead) {
+      console.log(`Player ${this.id} is already dead, ignoring damage`);
       return false;
     }
 
@@ -84,11 +88,13 @@ class Player {
       }
     }
 
-    // Apply damage
+     // Apply damage
     this.health = Math.max(0, this.health - finalDamage);
+    console.log(`Player ${this.id} took ${finalDamage} damage, health now: ${this.health}`);
 
     // Check for death
     if (this.health === 0 && !this.isDead) {
+      console.log(`Player ${this.id} has died!`);
       this.die();
       return true;
     }

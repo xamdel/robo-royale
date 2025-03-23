@@ -15,6 +15,10 @@ export const Network = {
   playerStateBuffer: new Map(), // Buffer for smoother transitions
   isMovingMap: new Map(), // Track if players are currently moving
   playerVelocities: new Map(), // Track velocities for prediction
+  jitterBuffer: [], // For measuring network quality
+  smoothedRTT: 0, // Running average of round-trip time
+  adaptiveBufferSize: 3, // Dynamic buffer size based on network conditions
+  adaptiveInterpolationSpeed: 5, // Dynamic interpolation speed
   
   init() {
     this.socket = io('http://localhost:3000', {
@@ -39,15 +43,14 @@ export const Network = {
       this.interpolationBuffer.clear();
     });
 
-    // In network.js, update the existing gameState handler
+    // Handle game state updates for player positions
     this.socket.on('gameState', (state) => {
-      // Process player updates (existing code)
+      // Process player updates
       state.players.forEach(playerData => {
         if (playerData.id !== this.socket.id) {
-          // Get or create buffer for this player
+          // Handle other players
           let buffer = this.interpolationBuffer.get(playerData.id) || [];
           
-          // Add the state to the buffer
           buffer.push({
             position: playerData.position,
             rotation: playerData.rotation,
@@ -55,15 +58,11 @@ export const Network = {
             moveState: playerData.moveState
           });
           
-          // Keep buffer size consistent with our BUFFER_SIZE setting
           while (buffer.length > this.BUFFER_SIZE) {
             buffer.shift();
           }
           
-          // Store the buffer
           this.interpolationBuffer.set(playerData.id, buffer);
-          
-          // Update the player in the game
           Game.updateOtherPlayer(playerData);
         } else if (Game.lastProcessedInputId < playerData.lastProcessedInput) {
           // Server reconciliation for local player
@@ -73,30 +72,6 @@ export const Network = {
           );
         }
       });
-
-      // Process projectile updates (new code)
-      if (state.projectiles && state.projectiles.length > 0) {
-        state.projectiles.forEach(projectileData => {
-          const projectile = WeaponManager.networkProjectiles.get(projectileData.id);
-          
-          if (projectile) {
-            // For projectiles from the local player, use reconciliation
-            const isLocalProjectile = projectile.sourcePlayer === Game.player;
-            
-            // For all projectiles, update from server authority
-            projectile.serverPosition = new THREE.Vector3(
-              projectileData.position.x,
-              projectileData.position.y,
-              projectileData.position.z
-            );
-            
-            // Only override local prediction if discrepancy is too large
-            if (projectile.position.distanceTo(projectile.serverPosition) > 1.0) {
-              projectile.position.copy(projectile.serverPosition);
-            }
-          }
-        });
-      }
 
       // Remove players that are no longer in the game state
       Object.keys(Game.otherPlayers).forEach(playerId => {
@@ -112,34 +87,69 @@ export const Network = {
       });
     });
 
+    // NEW: Handle projectile position updates from server
+    this.socket.on('projectilesUpdate', (data) => {
+      if (data.projectiles && data.projectiles.length > 0) {
+        data.projectiles.forEach(projectileData => {
+          const projectile = WeaponManager.networkProjectiles.get(projectileData.id);
+          
+          if (projectile) {
+            // For all projectiles, update from server authority
+            projectile.serverPosition = new THREE.Vector3(
+              projectileData.position.x,
+              projectileData.position.y,
+              projectileData.position.z
+            );
+          }
+        });
+      }
+    });
+
+    // Handle new projectile creation
     this.socket.on('projectileCreated', (data) => {
-      if (data.sourcePlayerId !== this.socket.id) {
+      // Only spawn projectiles for other players - our own are created when we shoot
+      if (data.ownerId !== this.socket.id) {
+        const sourcePlayer = Game.otherPlayers[data.ownerId]?.mesh;
+        
         const projectile = WeaponManager.projectileManager.spawn(
           data.weaponType,
           new THREE.Vector3(data.position.x, data.position.y, data.position.z),
           new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z),
-          Game.otherPlayers[data.sourcePlayerId]?.mesh
+          sourcePlayer
         );
+        
         if (projectile) {
           projectile.serverId = data.id;
           WeaponManager.networkProjectiles.set(data.id, projectile);
         }
       } else {
-        const tempProjectile = WeaponManager.networkProjectiles.get(data.tempId);
-        if (tempProjectile) {
-          WeaponManager.networkProjectiles.delete(data.tempId);
-          tempProjectile.serverId = data.id;
-          WeaponManager.networkProjectiles.set(data.id, tempProjectile);
+        // This is for our own projectiles that we've already created
+        // We need to assign the server ID
+        const localProjectiles = Array.from(WeaponManager.networkProjectiles.values())
+          .filter(p => p.sourcePlayer === Game.player && !p.serverId);
+        
+        if (localProjectiles.length > 0) {
+          // Assume the most recent one is the one the server is confirming
+          const projectile = localProjectiles[localProjectiles.length - 1];
+          projectile.serverId = data.id;
+          
+          // Update our tracking Map
+          const oldId = [...WeaponManager.networkProjectiles.entries()]
+            .find(([_, p]) => p === projectile)?.[0];
+            
+          if (oldId) {
+            WeaponManager.networkProjectiles.delete(oldId);
+            WeaponManager.networkProjectiles.set(data.id, projectile);
+          }
         }
       }
     });
 
-    // Add handler for projectile destroyed
+    // Handle projectile destruction
     this.socket.on('projectileDestroyed', (data) => {
       const projectile = WeaponManager.networkProjectiles.get(data.id);
       
-      // Show hit effect if projectile was destroyed due to hit, regardless of whether
-      // we have the projectile object locally - this ensures observers see hits
+      // Show hit effect if projectile was destroyed due to hit
       if (data.reason === 'hit' && data.position) {
         const hitPosition = new THREE.Vector3(
           data.position.x,
@@ -147,96 +157,96 @@ export const Network = {
           data.position.z
         );
         
-        // Always show the explosion for server-confirmed hits
-        // This ensures all clients see the hit effect
-        if (data.serverConfirmed) {
-          console.log('Server confirmed hit at position:', hitPosition);
-          WeaponManager.createExplosion(hitPosition);
-        }
-          
-        // Handle player hit logic
-        if (data.hitPlayerId === this.socket.id) {
-          console.log('You were hit by player:', data.sourcePlayerId);
-          // TODO: Implement damage/health system
-        }
+        console.log('Server confirmed hit at position:', hitPosition);
+        WeaponManager.createExplosion(hitPosition, data.weaponType === 'cannon' ? 0xffff00 : 0xff4400);
       }
       
-      // If we have the projectile locally, deactivate it
+      // Clean up the projectile from our scene
       if (projectile) {
-        // Deactivate and remove projectile
         projectile.deactivate();
         WeaponManager.networkProjectiles.delete(data.id);
       }
     });
 
+    // Handle player left events
     this.socket.on('playerLeft', (playerId) => {
       if (Game.otherPlayers[playerId]?.mesh) {
         SceneManager.remove(Game.otherPlayers[playerId].mesh);
       }
-    delete Game.otherPlayers[playerId];
-    this.interpolationBuffer.delete(playerId);
-    this.playerVelocities.delete(playerId);
+      delete Game.otherPlayers[playerId];
+      this.interpolationBuffer.delete(playerId);
+      this.playerVelocities.delete(playerId);
     });
 
-    this.socket.on('playerShot', (data) => {
-      if (data.playerId !== this.socket.id) {
-        WeaponManager.handleRemoteShot(data);
-      }
-    });
-
+    // Handle player hit events
     this.socket.on('playerHit', (data) => {
       // Update local player health if we were hit
       if (data.hitPlayerId === this.socket.id) {
         Game.health = data.currentHealth;
+        
+        console.log('Player hit! Current health:', data.currentHealth, 'Was killed:', data.wasKilled);
+        
         if (window.HUD) {
-          window.HUD.updateHealth(data.currentHealth);
+          window.HUD.updateHealth();
+          
+          // Show damage alert
           if (data.damage > 0) {
-            window.HUD.showDamageIndicator(data.damage);
+            window.HUD.showAlert(`Damage taken: ${data.damage}`, "warning");
+          }
+        }
+        
+        // Handle death 
+        if (data.wasKilled) {
+          Game.handleDeath(data.sourcePlayerId);
+          if (window.HUD) {
+            window.HUD.showAlert("YOU WERE DESTROYED", "danger");
           }
         }
       }
-      // Handle visual effects for all hits
-      WeaponManager.handleServerHit(data);
+      
+      // If we're the shooter, show hit confirmation
+      if (data.sourcePlayerId === this.socket.id) {
+        if (window.HUD) {
+          window.HUD.showAlert(`Hit! Damage: ${data.damage}`, "success");
+          
+          if (data.wasKilled) {
+            window.HUD.showAlert("Enemy destroyed!", "success");
+          }
+        }
+      }
     });
 
+    // Handle player killed and respawn events
     this.socket.on('playerKilled', (data) => {
       if (data.playerId === this.socket.id) {
-        // Local player was killed
         Game.handleDeath(data.killerPlayerId);
         if (window.HUD) {
-          window.HUD.showDeathScreen(data.killerPlayerId);
+          window.HUD.showAlert("YOU WERE DESTROYED", "danger");
         }
       }
     });
 
     this.socket.on('playerRespawned', (data) => {
       if (data.playerId === this.socket.id) {
-        // Local player respawned
+        console.log('Player respawning!');
         Game.handleRespawn();
         if (window.HUD) {
-          window.HUD.hideDeathScreen();
-          window.HUD.updateHealth(Game.health);
+          window.HUD.showAlert("SYSTEMS REBOOT COMPLETE", "success");
         }
       }
     });
 
-    this.socket.on('healthUpdate', (data) => {
-      if (data.playerId === this.socket.id) {
-        Game.health = data.health;
-        if (window.HUD) {
-          window.HUD.updateHealth(data.health);
-          if (data.wasHit) {
-            window.HUD.showDamageIndicator(data.damage);
-          }
-        }
-      }
-      WeaponManager.handleHealthUpdate(data);
-    });
-
+    // Handle ammo updates
     this.socket.on('ammoUpdate', (data) => {
-      WeaponManager.handleAmmoUpdate(data);
+      Game.ammo = data.ammo;
+      
+      if (window.HUD) {
+        // No need for separate method since updateWeaponStatus already reads Game.ammo
+        window.HUD.updateWeaponStatus();
+      }
     });
 
+    // Handle weapon pickups
     this.socket.on('weaponPickedUp', (data) => {
       // Always remove the original weapon from the scene
       if (SceneManager.cannon) {
@@ -246,7 +256,6 @@ export const Network = {
       }
       
       // If we're the one who picked up the weapon, we've already attached it locally
-      // so we don't need to do anything else
       if (data.playerId === this.socket.id) {
         return;
       }
@@ -257,7 +266,7 @@ export const Network = {
         return;
       }
       
-      // For other players picking up weapons, only attach to their model
+      // For other players picking up weapons, attach to their model
       const remotePlayer = Game.otherPlayers[data.playerId];
       if (!remotePlayer) {
         console.warn('Remote player not found for weapon pickup:', data.playerId);
@@ -275,12 +284,12 @@ export const Network = {
         weaponClone,
         data.socketName,
         data.weaponType,
-        true // Mark as remote pickup to avoid duplicate logs
+        true // Mark as remote pickup
       );
     });
 
+    // Handle position corrections
     this.socket.on('positionCorrection', (data) => {
-      // Handle server correction
       if (Game.player) {
         Game.player.position.set(data.position.x, data.position.y, data.position.z);
         Game.player.quaternion.set(
@@ -289,7 +298,6 @@ export const Network = {
           data.rotation.z,
           data.rotation.w
         );
-        // Clear input buffer on correction
         Game.inputBuffer = [];
       }
     });
@@ -298,12 +306,6 @@ export const Network = {
   sendMove(moveData) {
     if (this.socket?.connected) {
       this.socket.emit('move', moveData);
-    }
-  },
-
-  sendProjectileHitSuggestion(data) {
-    if (this.socket?.connected) {
-      this.socket.emit('projectileHitSuggestion', data);
     }
   },
 
@@ -319,6 +321,7 @@ export const Network = {
 
   sendShot(data) {
     if (this.socket?.connected) {
+      console.log('Sending shot to server:', data);
       this.socket.emit('shootProjectile', {
         weaponId: data.weaponId,
         weaponType: data.type,

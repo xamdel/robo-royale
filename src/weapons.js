@@ -34,180 +34,22 @@ class Projectile extends THREE.Mesh {
   update(deltaTime) {
     if (!this.active) return;
 
-    // If this is a server-synced projectile and we have a server position
-    if (this.serverId !== null && this.serverPosition && this.sourcePlayer === Game.player) {
-      // Lerp toward server position (soft correction)
+    // Apply server correction if available
+    if (this.serverId !== null && this.serverPosition) {
       const CORRECTION_STRENGTH = 0.2;
       this.position.lerp(this.serverPosition, CORRECTION_STRENGTH);
     } else {
-      // Normal client-side movement for local prediction
+      // Normal client-side movement for visual prediction only
       this.position.addScaledVector(this.velocity, deltaTime);
     }
     
-    // Check max distance
-    if (this.position.distanceTo(this.startPosition) > this.config.maxDistance) {
-      this.deactivate();
-      return;
-    }
-    
-    // Check collisions
-    if (this.checkCollisions()) {
-      this.onHit();
-      this.deactivate();
-    }
-  }
-
-  checkCollisions() {
-    // Filter out the source player to completely prevent self-collisions
-    const allPlayers = Object.values(Game.otherPlayers).map(p => p.mesh);
-    // Only include the local player in collision checks if this is not their projectile
-    if (this.sourcePlayer !== Game.player) {
-      allPlayers.push(Game.player);
-    }
-    
-    // Always use the previously stored position or fall back to start position
-    // This ensures the ray begins from a valid previous position
-    const prevPosition = this.prevPosition || this.startPosition.clone();
-    
-    // Calculate ray direction and length from previous position to current
-    const rayDirection = new THREE.Vector3().subVectors(this.position, prevPosition);
-    const rayLength = rayDirection.length();
-    
-    // Skip if no movement
-    if (rayLength < 0.0001) {
-      this.prevPosition = this.position.clone();
-      return false;
-    }
-    
-    // For high-speed projectiles like the cannon, we might need to subdivide the ray
-    // into smaller segments to avoid tunneling through targets
-    const MAX_RAY_DISTANCE = 1.0; // Maximum distance per ray check to prevent tunneling
-    const numSegments = Math.ceil(rayLength / MAX_RAY_DISTANCE);
-    
-    // Check if we need to do segmented ray checks
-    if (numSegments > 1) {
-      // Create intermediate points along the ray path
-      for (let i = 1; i <= numSegments; i++) {
-        const t = i / numSegments;
-        const intermediatePos = new THREE.Vector3().lerpVectors(prevPosition, this.position, t);
-        
-        // Create a raycaster for this segment
-        const segmentStart = i === 1 ? prevPosition : 
-                              new THREE.Vector3().lerpVectors(prevPosition, this.position, (i-1)/numSegments);
-        const segmentDirection = new THREE.Vector3().subVectors(intermediatePos, segmentStart).normalize();
-        const segmentLength = segmentStart.distanceTo(intermediatePos);
-        
-        const raycaster = new THREE.Raycaster(segmentStart, segmentDirection, 0, segmentLength);
-        
-        // Check if this segment hits any players
-        if (this.checkRaycastHit(raycaster, allPlayers)) {
-          return true;
-        }
-      }
-      
-      // No hits after checking all segments
-      this.prevPosition = this.position.clone();
-      return false;
-    } else {
-      // Standard single-ray check for slower projectiles
-      // Normalize the direction vector
-      rayDirection.normalize();
-      
-      // Create a raycaster
-      const raycaster = new THREE.Raycaster(prevPosition, rayDirection, 0, rayLength);
-      
-      // Check if the ray hits any players
-      if (this.checkRaycastHit(raycaster, allPlayers)) {
-        return true;
-      }
-      
-      // No hits
-      this.prevPosition = this.position.clone();
-      return false;
-    }
+    // Store previous position for visual effects
+    this.prevPosition = this.position.clone();
   }
   
-  // Helper method to check if a raycaster hits any players
-  checkRaycastHit(raycaster, allPlayers) {
-    // For each player, create bounding spheres for simpler collision testing
-    for (const player of allPlayers) {
-      // Skip invalid players and the source player (already filtered in checkCollisions)
-      if (!player) continue;
-      
-      // Skip players without colliders
-      if (!player.colliders) continue;
-      
-      // Create test spheres based on player colliders
-      const spheres = [];
-      
-      // Body capsule - represent with 3 spheres (top, middle, bottom)
-      const capsule = player.colliders.body.params;
-      const capsuleStart = new THREE.Vector3(0, capsule.height / 2, 0).add(player.position).add(capsule.offset);
-      const capsuleEnd = new THREE.Vector3(0, -capsule.height / 2, 0).add(player.position).add(capsule.offset);
-      const capsuleMid = new THREE.Vector3().addVectors(capsuleStart, capsuleEnd).multiplyScalar(0.5);
-      
-      // Add spheres for capsule ends and middle
-      spheres.push(new THREE.Sphere(capsuleStart, capsule.radius));
-      spheres.push(new THREE.Sphere(capsuleMid, capsule.radius));
-      spheres.push(new THREE.Sphere(capsuleEnd, capsule.radius));
-      
-      // Add sphere for cabin
-      const sphere = player.colliders.cabin.params;
-      const sphereCenter = new THREE.Vector3().add(player.position).add(sphere.offset);
-      spheres.push(new THREE.Sphere(sphereCenter, sphere.radius));
-      
-      // Check intersection with each sphere
-      for (const testSphere of spheres) {
-        // Adjust sphere radius to account for projectile size
-        const adjustedSphere = new THREE.Sphere(testSphere.center, testSphere.radius + this.config.radius);
-        
-        // Check if ray intersects the sphere
-        const hit = raycaster.ray.intersectSphere(adjustedSphere, new THREE.Vector3());
-        
-        if (hit) {
-          // We found a hit!
-          this.setCollisionPoint(hit);
-          this.hitPlayerId = player.userData?.id || null;
-          return true;
-        }
-      }
-    }
-    
-    return false;
-  }
-
-  // Update the onHit method to inform server about hits with improved hit data
-  onHit() {
-    // Create visual effect immediately for client-side responsiveness
-    if (this.collisionPoint) {
-      console.log('Client-side hit prediction showing effect at:', this.collisionPoint);
-      WeaponManager.createExplosion(this.collisionPoint, this.config.color);
-      // Mark that we've shown the hit effect locally
-      this.hasShownHitEffect = true;
-    }
-    
-    // Only send hit data to server if this is a local projectile
-    if (this.sourcePlayer === Game.player && this.serverId !== null) {
-      console.log('Sending hit suggestion to server for projectile:', this.serverId);
-      // Enhanced hit suggestion with more detailed data
-      Network.socket.emit('projectileHitSuggestion', {
-        projectileId: this.serverId,
-        position: this.position.clone(),
-        prevPosition: this.prevPosition ? this.prevPosition.clone() : this.startPosition.clone(),
-        hitPlayerId: this.hitPlayerId,
-        collisionPoint: this.collisionPoint ? this.collisionPoint.clone() : this.position.clone(),
-        timeMs: Date.now() // Include timestamp for latency calculations
-      });
-    }
-  }
-
   deactivate() {
     this.active = false;
     SceneManager.remove(this);
-  }
-
-  setCollisionPoint(point) {
-    this.collisionPoint = point;
   }
 }
 
@@ -530,17 +372,19 @@ export const WeaponManager = {
 
   // Handle server hit confirmations
   handleServerHit(data) {
-    // Show hit effect
+    // Show hit effect with weapon-specific colors
     if (data.position) {
-      this.createExplosion(new THREE.Vector3(data.position.x, data.position.y, data.position.z));
+      // Use weapon-specific colors if available
+      const color = data.weaponType === 'cannon' ? 0xffff00 : 0xff4400;
+      this.createExplosion(new THREE.Vector3(data.position.x, data.position.y, data.position.z), color);
     }
 
-    // Update HUD with damage numbers if this was our hit
-    if (Game.player && data.sourcePlayerId === Game.player.userData.id && window.HUD) {
-      window.HUD.showDamageNumber(data.damage, data.position);
+    // If we're the shooter, show hit confirmation in HUD
+    if (Game.player && data.sourcePlayerId === this.socket.id && window.HUD) {
+      window.HUD.showAlert(`Hit! Damage: ${data.damage}`, "success");
       
       if (data.wasKilled) {
-        window.HUD.showKillFeed(data.hitPlayerId);
+        window.HUD.showAlert("Enemy destroyed!", "success");
       }
     }
   },

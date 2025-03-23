@@ -5,6 +5,7 @@ class GameLoop {
     this.io = io;
     this.playerManager = playerManager;
     this.projectileManager = projectileManager;
+    this.projectileController = null;
     this.moveRateLimit = new Map();
   }
 
@@ -27,8 +28,8 @@ class GameLoop {
     // Remove inactive players
     this.cleanupInactivePlayers(now);
 
-    // Update projectiles
-    const updatedProjectiles = this.projectileManager.updateProjectiles(now);
+    // Update projectiles and get updated positions
+    const updatedProjectiles = this.projectileController.update(1 / gameConfig.TICK_RATE);
 
     // Prepare game state update
     const gameState = this.prepareGameState(now, updatedProjectiles);

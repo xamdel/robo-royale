@@ -55,6 +55,31 @@ export const HUD = {
     this.updateScale();
   },
 
+  // Add to the HUD object
+  showDamageIndicator(damage) {
+    this.showAlert(`Damage taken: ${damage}!`, 'warning');
+  },
+
+  showDeathScreen(killerPlayerId) {
+    this.showAlert('You were destroyed! Respawning...', 'danger');
+  },
+
+  hideDeathScreen() {
+    // Clear any death alerts
+  },
+
+  showDamageNumber(damage, position) {
+    this.showAlert(`Hit! Damage: ${damage}`, 'info');
+  },
+
+  showKillFeed(killedPlayerId) {
+    this.showAlert('Enemy destroyed!', 'success');
+  },
+
+  updateAmmo(ammo) {
+    // Already handled by updateWeaponStatus()
+  },
+
   createHealthSystem() {
     // Health container - bottom left, horizontal
     const healthContainer = document.createElement('div');

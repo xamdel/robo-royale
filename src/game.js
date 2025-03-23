@@ -104,6 +104,8 @@ export const Game = {
     // Create player using the same system as remote players, but specify it's the local player
     const playerData = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions, true);
     this.player = playerData.mesh;
+    // In Game.init() after creating player:
+    this.player.userData = { id: socket.id };
     // Add colliders to the local player's mesh
     this.player.colliders = {
         body: new Collider('capsule', {
@@ -187,6 +189,7 @@ export const Game = {
   },
 
   handleRespawn() {
+    console.log('Player respawning!');
     this.isDead = false;
     this.health = this.maxHealth;
     // Reset position to respawn point
@@ -194,6 +197,11 @@ export const Game = {
     // Clear any pending inputs
     this.inputBuffer = [];
     this.stateHistory = [];
+    
+    // Add visual effect
+    if (window.HUD) {
+      window.HUD.showAlert("SYSTEMS REBOOT COMPLETE", "success");
+    }
   },
 
   update(deltaTime) {
