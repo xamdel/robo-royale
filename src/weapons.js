@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SceneManager } from './scene.js';
 import { Game } from './game.js';
 import { Network } from './network.js';
+import { GPUParticleSystem } from './systems/GPUParticleSystem.js';
 
 class Projectile extends THREE.Mesh {
   constructor(config) {
@@ -127,6 +128,10 @@ export const WeaponManager = {
   lastFireTime: 0, // Track last weapon fire time for cooldown
   networkProjectiles: new Map(), // Track projectiles by server-assigned ID
   weaponAmmo: new Map(), // Track ammo for each weapon
+  
+  // Particle systems will be initialized in init()
+  explosionParticles: null,
+  collisionParticles: null,
 
   weaponSockets: {
     leftArm: {
@@ -346,9 +351,39 @@ export const WeaponManager = {
     }
   },
 
-  update(deltaTime) {
-    this.projectileManager.update(deltaTime);
+  async init() {
+    try {
+      // Initialize particle systems
+      this.explosionParticles = await GPUParticleSystem.create({
+        maxParticles: 2000,
+        particleSize: 0.4,
+        blending: THREE.AdditiveBlending
+      });
+      
+      this.collisionParticles = await GPUParticleSystem.create({
+        maxParticles: 1000,
+        particleSize: 0.15,
+        blending: THREE.AdditiveBlending
+      });
+
+      // Add to scene
+      SceneManager.add(this.explosionParticles);
+      SceneManager.add(this.collisionParticles);
+
+      console.log('Weapon particle systems initialized');
+      
+      // Test particle systems
+      setTimeout(() => {
+        console.log('[Particles] Running test effects');
+        this.createExplosion(new THREE.Vector3(0, 2, 0));
+        this.addCollisionEffect(new THREE.Vector3(2, 2, 0), 0xffff00);
+        this.createPlayerExplosion(new THREE.Vector3(-2, 2, 0));
+      }, 1000); // Wait for scene to be ready
+    } catch (error) {
+      console.error('Failed to initialize particle systems:', error);
+    }
   },
+
 
   handleRemoteShot(data) {
     // Only spawn projectile if server confirmed the shot
@@ -372,15 +407,18 @@ export const WeaponManager = {
 
   // Handle server hit confirmations
   handleServerHit(data) {
+    console.log('[Particles] Server hit:', data);
     // Show hit effect with weapon-specific colors
     if (data.position) {
+      const pos = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
       // Use weapon-specific colors if available
       const color = data.weaponType === 'cannon' ? 0xffff00 : 0xff4400;
-      this.createExplosion(new THREE.Vector3(data.position.x, data.position.y, data.position.z), color);
+      this.createExplosion(pos);
+      this.addCollisionEffect(pos, color);
     }
 
     // If we're the shooter, show hit confirmation in HUD
-    if (Game.player && data.sourcePlayerId === this.socket.id && window.HUD) {
+    if (Game.player && data.sourcePlayerId === Network.socket.id && window.HUD) {
       window.HUD.showAlert(`Hit! Damage: ${data.damage}`, "success");
       
       if (data.wasKilled) {
@@ -401,111 +439,42 @@ export const WeaponManager = {
   },
 
   createPlayerExplosion(position) {
-    const particles = new THREE.Group();
-    const explosionColors = [0xff4400, 0xff8800, 0xffcc00]; // Fire colors
+    if (!this.explosionParticles) {
+      console.error('[Particles] Explosion particles not initialized');
+      return;
+    }
     
-    // Create more particles for a bigger explosion
-    for (let i = 0; i < 50; i++) {
-      // Random particle size for varied effect
-      const size = 0.1 + Math.random() * 0.4;
-      const geometry = new THREE.SphereGeometry(size, 8, 8);
-      
-      // Random color from explosionColors array
-      const color = explosionColors[Math.floor(Math.random() * explosionColors.length)];
-      const material = new THREE.MeshBasicMaterial({
-        color: color,
-        transparent: true,
-        opacity: 0.8,
-      });
+    console.log('[Particles] Creating player explosion at:', position.toArray());
+    
+    // Core explosion
+    this.explosionParticles.emit({
+      position: position,
+      count: 50,
+      spread: 2.0,
+      velocity: 12.0,
+      color: new THREE.Color(0xff3300),
+      lifetime: 0.8
+    });
 
-      const particle = new THREE.Mesh(geometry, material);
+    // Metal debris
+    this.explosionParticles.emit({
+      position: position,
+      count: 35,
+      spread: 2.5,
+      velocity: 18.0,
+      color: new THREE.Color(0xcccccc),
+      lifetime: 1.2
+    });
 
-      // Spread particles in a sphere
-      const radius = 2 + Math.random() * 3; // Bigger radius than projectile hits
-      const phi = Math.random() * Math.PI * 2;
-      const theta = Math.random() * Math.PI;
-      
-      particle.position.set(
-        position.x + radius * Math.sin(theta) * Math.cos(phi),
-        position.y + radius * Math.sin(theta) * Math.sin(phi),
-        position.z + radius * Math.cos(theta)
-      );
-
-      // More explosive velocity
-      particle.userData.velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 10,
-        Math.random() * 10,
-        (Math.random() - 0.5) * 10
-      );
-
-      particles.add(particle);
-    }
-
-    // Add smoke particles too
-    for (let i = 0; i < 20; i++) {
-      const size = 0.3 + Math.random() * 0.7;
-      const geometry = new THREE.SphereGeometry(size, 8, 8);
-      const material = new THREE.MeshBasicMaterial({
-        color: 0x555555,
-        transparent: true,
-        opacity: 0.4,
-      });
-
-      const particle = new THREE.Mesh(geometry, material);
-      
-      // Smoke rises and spreads out more
-      const radius = 1 + Math.random() * 3;
-      const angle = Math.random() * Math.PI * 2;
-      
-      particle.position.set(
-        position.x + radius * Math.cos(angle),
-        position.y + 1 + Math.random() * 2,
-        position.z + radius * Math.sin(angle)
-      );
-
-      particle.userData.velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 3,
-        2 + Math.random() * 4,
-        (Math.random() - 0.5) * 3
-      );
-
-      particles.add(particle);
-    }
-
-    SceneManager.add(particles);
-
-    // Longer duration for player explosion
-    const startTime = performance.now();
-    const duration = 1500; // 1.5 seconds
-
-    const updateParticles = () => {
-      const elapsed = performance.now() - startTime;
-      const progress = elapsed / duration;
-
-      if (progress >= 1) {
-        SceneManager.remove(particles);
-        return;
-      }
-
-      particles.children.forEach((particle) => {
-        particle.position.add(
-          particle.userData.velocity.clone().multiplyScalar(0.016)
-        );
-        
-        // Add gravity effect
-        particle.userData.velocity.y -= 0.15;
-
-        // Fade out
-        if (particle.material) {
-          particle.material.opacity = (1 - progress) * 
-            (particle.material.color.r > 0.5 ? 0.8 : 0.4); // Smoke fades faster
-        }
-      });
-
-      requestAnimationFrame(updateParticles);
-    };
-
-    updateParticles();
+    // Electrical sparks
+    this.explosionParticles.emit({
+      position: position,
+      count: 25,
+      spread: 3.0,
+      velocity: 20.0,
+      color: new THREE.Color(0x00ffff),
+      lifetime: 0.4
+    });
     
     // Add a flash effect
     const flash = new THREE.PointLight(0xff8800, 5, 10);
@@ -513,7 +482,9 @@ export const WeaponManager = {
     SceneManager.add(flash);
     
     // Fade out the flash
-    const flashDuration = 300; // 0.3 seconds
+    const startTime = performance.now();
+    const flashDuration = 300;
+    
     const updateFlash = () => {
       const elapsed = performance.now() - startTime;
       const progress = elapsed / flashDuration;
@@ -531,66 +502,48 @@ export const WeaponManager = {
   },
 
   createExplosion(position) {
-    // Use the same effect system as projectile collisions
-    this.addCollisionEffect(position, 0xff4400);
+    if (!this.collisionParticles) {
+      console.error('[Particles] Collision particles not initialized');
+      return;
+    }
+    
+    console.log('[Particles] Creating explosion at:', position.toArray());
+    
+    this.collisionParticles.emit({
+      position: position,
+      count: 40,
+      spread: 3.0,
+      velocity: 12.0,
+      color: new THREE.Color(0xff4400),
+      lifetime: 1.0
+    });
   },
 
   addCollisionEffect(position, color = 0xffff00) {
-    const particles = new THREE.Group();
-
-    for (let i = 0; i < 20; i++) {
-      const geometry = new THREE.SphereGeometry(0.1, 8, 8);
-      const material = new THREE.MeshBasicMaterial({
-        color: color,
-        transparent: true,
-        opacity: 0.8,
-      });
-
-      const particle = new THREE.Mesh(geometry, material);
-
-      particle.position.set(
-        position.x + (Math.random() - 0.5) * 1,
-        position.y + (Math.random() - 0.5) * 1,
-        position.z + (Math.random() - 0.5) * 1
-      );
-
-      particle.userData.velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 5,
-        Math.random() * 5,
-        (Math.random() - 0.5) * 5
-      );
-
-      particles.add(particle);
+    if (!this.collisionParticles) {
+      console.error('[Particles] Collision particles not initialized');
+      return;
     }
-
-    SceneManager.add(particles);
-
-    const startTime = performance.now();
-    const duration = 500;
-
-    const updateParticles = () => {
-      const elapsed = performance.now() - startTime;
-      const progress = elapsed / duration;
-
-      if (progress >= 1) {
-        SceneManager.remove(particles);
-        return;
-      }
-
-      particles.children.forEach((particle) => {
-        particle.position.add(
-          particle.userData.velocity.clone().multiplyScalar(0.016)
-        );
-        particle.userData.velocity.y -= 0.1;
-
-        if (particle.material) {
-          particle.material.opacity = 0.8 * (1 - progress);
-        }
-      });
-
-      requestAnimationFrame(updateParticles);
-    };
-
-    updateParticles();
+    
+    console.log('[Particles] Adding collision effect at:', position.toArray());
+    
+    this.collisionParticles.emit({
+      position: position,
+      count: 15, // Fewer particles
+      spread: 1.0, // More concentrated
+      velocity: 6.0, // Slightly slower
+      color: new THREE.Color(color),
+      lifetime: 0.3 // Shorter lifetime
+    });
   },
+
+  update(deltaTime) {
+    this.projectileManager.update(deltaTime);
+    
+    // Only update particle systems if they're initialized
+    if (this.explosionParticles && this.collisionParticles) {
+      this.explosionParticles.update(deltaTime);
+      this.collisionParticles.update(deltaTime);
+    }
+  }
 };
