@@ -218,11 +218,36 @@ export const Network = {
 
     // Handle player killed and respawn events
     this.socket.on('playerKilled', (data) => {
+      // Convert position to THREE.Vector3
+      const position = new THREE.Vector3(
+        data.position.x,
+        data.position.y,
+        data.position.z
+      );
+      
+      // If it's the local player who died
       if (data.playerId === this.socket.id) {
         Game.handleDeath(data.killerPlayerId);
         if (window.HUD) {
           window.HUD.showAlert("YOU WERE DESTROYED", "danger");
         }
+        
+        // Hide the player model during death state
+        Game.player.visible = false;
+      } else {
+        // Find and hide the remote player
+        const remotePlayer = Game.otherPlayers[data.playerId];
+        if (remotePlayer && remotePlayer.mesh) {
+          remotePlayer.mesh.visible = false;
+        }
+      }
+      
+      // Create explosion at player position
+      WeaponManager.createPlayerExplosion(position);
+      
+      // Play explosion sound
+      if (window.AudioManager) {
+        window.AudioManager.playSound('explosion', position);
       }
     });
 
@@ -230,8 +255,27 @@ export const Network = {
       if (data.playerId === this.socket.id) {
         console.log('Player respawning!');
         Game.handleRespawn();
+        
+        // Make player visible again
+        Game.player.visible = true;
+        
         if (window.HUD) {
           window.HUD.showAlert("SYSTEMS REBOOT COMPLETE", "success");
+        }
+      } else {
+        // Make remote player visible again
+        const remotePlayer = Game.otherPlayers[data.playerId];
+        if (remotePlayer && remotePlayer.mesh) {
+          remotePlayer.mesh.visible = true;
+          
+          // Update position if provided
+          if (data.position) {
+            remotePlayer.mesh.position.set(
+              data.position.x, 
+              data.position.y, 
+              data.position.z
+            );
+          }
         }
       }
     });

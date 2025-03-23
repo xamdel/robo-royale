@@ -400,6 +400,136 @@ export const WeaponManager = {
     }
   },
 
+  createPlayerExplosion(position) {
+    const particles = new THREE.Group();
+    const explosionColors = [0xff4400, 0xff8800, 0xffcc00]; // Fire colors
+    
+    // Create more particles for a bigger explosion
+    for (let i = 0; i < 50; i++) {
+      // Random particle size for varied effect
+      const size = 0.1 + Math.random() * 0.4;
+      const geometry = new THREE.SphereGeometry(size, 8, 8);
+      
+      // Random color from explosionColors array
+      const color = explosionColors[Math.floor(Math.random() * explosionColors.length)];
+      const material = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.8,
+      });
+
+      const particle = new THREE.Mesh(geometry, material);
+
+      // Spread particles in a sphere
+      const radius = 2 + Math.random() * 3; // Bigger radius than projectile hits
+      const phi = Math.random() * Math.PI * 2;
+      const theta = Math.random() * Math.PI;
+      
+      particle.position.set(
+        position.x + radius * Math.sin(theta) * Math.cos(phi),
+        position.y + radius * Math.sin(theta) * Math.sin(phi),
+        position.z + radius * Math.cos(theta)
+      );
+
+      // More explosive velocity
+      particle.userData.velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 10,
+        Math.random() * 10,
+        (Math.random() - 0.5) * 10
+      );
+
+      particles.add(particle);
+    }
+
+    // Add smoke particles too
+    for (let i = 0; i < 20; i++) {
+      const size = 0.3 + Math.random() * 0.7;
+      const geometry = new THREE.SphereGeometry(size, 8, 8);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x555555,
+        transparent: true,
+        opacity: 0.4,
+      });
+
+      const particle = new THREE.Mesh(geometry, material);
+      
+      // Smoke rises and spreads out more
+      const radius = 1 + Math.random() * 3;
+      const angle = Math.random() * Math.PI * 2;
+      
+      particle.position.set(
+        position.x + radius * Math.cos(angle),
+        position.y + 1 + Math.random() * 2,
+        position.z + radius * Math.sin(angle)
+      );
+
+      particle.userData.velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 3,
+        2 + Math.random() * 4,
+        (Math.random() - 0.5) * 3
+      );
+
+      particles.add(particle);
+    }
+
+    SceneManager.add(particles);
+
+    // Longer duration for player explosion
+    const startTime = performance.now();
+    const duration = 1500; // 1.5 seconds
+
+    const updateParticles = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = elapsed / duration;
+
+      if (progress >= 1) {
+        SceneManager.remove(particles);
+        return;
+      }
+
+      particles.children.forEach((particle) => {
+        particle.position.add(
+          particle.userData.velocity.clone().multiplyScalar(0.016)
+        );
+        
+        // Add gravity effect
+        particle.userData.velocity.y -= 0.15;
+
+        // Fade out
+        if (particle.material) {
+          particle.material.opacity = (1 - progress) * 
+            (particle.material.color.r > 0.5 ? 0.8 : 0.4); // Smoke fades faster
+        }
+      });
+
+      requestAnimationFrame(updateParticles);
+    };
+
+    updateParticles();
+    
+    // Add a flash effect
+    const flash = new THREE.PointLight(0xff8800, 5, 10);
+    flash.position.copy(position);
+    SceneManager.add(flash);
+    
+    // Fade out the flash
+    const flashDuration = 300; // 0.3 seconds
+    const updateFlash = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = elapsed / flashDuration;
+      
+      if (progress >= 1) {
+        SceneManager.remove(flash);
+        return;
+      }
+      
+      flash.intensity = 5 * (1 - progress);
+      requestAnimationFrame(updateFlash);
+    };
+    
+    updateFlash();
+  },
+
   createExplosion(position) {
     // Use the same effect system as projectile collisions
     this.addCollisionEffect(position, 0xff4400);

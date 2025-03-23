@@ -311,20 +311,22 @@ class ProjectileController {
   handlePlayerKilled(player, killerSocketId) {
     console.log(`Player ${player.id} killed by ${killerSocketId}`);
     
-    // Broadcast kill event
+    // Broadcast kill event with position information
     this.io.emit('playerKilled', {
       playerId: player.id,
       killerPlayerId: killerSocketId,
+      position: player.position, // Add player position for explosion effect
       timestamp: Date.now()
     });
 
     // Set up respawn check
     setTimeout(() => {
       if (player.checkRespawn()) {
-        // Broadcast respawn event
+        // Broadcast respawn event with position
         this.io.emit('playerRespawned', {
           playerId: player.id,
           health: player.health,
+          position: player.position, // Add respawn position
           timestamp: Date.now()
         });
       }

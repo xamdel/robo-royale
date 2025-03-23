@@ -42,7 +42,7 @@ module.exports = {
   },
 
   WEAPON_COOLDOWN: {
-    cannon: 1000,  // 1 second between shots
+    cannon: 500,  // 0.5 second between shots
     default: 500   // 0.5 seconds between shots
   },
 

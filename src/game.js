@@ -178,22 +178,32 @@ export const Game = {
 
   handleDeath(killerPlayerId) {
     this.isDead = true;
+    
     // Store current position as respawn position
     this.respawnPosition.copy(this.player.position);
+    
     // Clear movement states
     this.moveForward = false;
     this.moveBackward = false;
     this.moveLeft = false;
     this.moveRight = false;
     this.isRunning = false;
+    
+    // Hide player model (actual hiding is done in the network handler 
+    // since we need to sync it with the explosion effect)
   },
 
   handleRespawn() {
     console.log('Player respawning!');
     this.isDead = false;
     this.health = this.maxHealth;
+    
     // Reset position to respawn point
     this.player.position.copy(this.respawnPosition);
+    
+    // Make player visible again (actual showing is done in the network handler
+    // to ensure proper synchronization)
+    
     // Clear any pending inputs
     this.inputBuffer = [];
     this.stateHistory = [];
