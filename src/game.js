@@ -28,6 +28,8 @@ export const Game = {
   maxAmmo: 50,
   lastFireTime: 0,
   cooldownTime: 250, // ms between shots
+  isDead: false,
+  respawnPosition: new THREE.Vector3(0, 0, 0),
   
   // Network and prediction properties
   inputBuffer: [],
@@ -166,10 +168,32 @@ export const Game = {
 
     // Add mouse click handler for shooting
     document.addEventListener('mousedown', (event) => {
-      if (event.button === 0 && this.cannonAttached) { // Left click
+      if (event.button === 0 && this.cannonAttached && !this.isDead) { // Left click
         WeaponManager.fireWeapon(this.player);
       }
     });
+  },
+
+  handleDeath(killerPlayerId) {
+    this.isDead = true;
+    // Store current position as respawn position
+    this.respawnPosition.copy(this.player.position);
+    // Clear movement states
+    this.moveForward = false;
+    this.moveBackward = false;
+    this.moveLeft = false;
+    this.moveRight = false;
+    this.isRunning = false;
+  },
+
+  handleRespawn() {
+    this.isDead = false;
+    this.health = this.maxHealth;
+    // Reset position to respawn point
+    this.player.position.copy(this.respawnPosition);
+    // Clear any pending inputs
+    this.inputBuffer = [];
+    this.stateHistory = [];
   },
 
   update(deltaTime) {
@@ -383,6 +407,11 @@ export const Game = {
   },
 
   processInput(cameraDirections, deltaTime) {
+    // Don't process input if player is dead
+    if (this.isDead) {
+      return null;
+    }
+
     const input = {
       id: this.inputSequence++,
       deltaTime: deltaTime,
@@ -399,7 +428,7 @@ export const Game = {
     const moveVector = this.applyInput(input, cameraDirections);
     let moved = false;
 
-    if (moveVector.lengthSq() > 0) {
+    if (moveVector.lengthSq() > 0 && !this.isDead) {
       moved = true;
       this.player.position.add(moveVector);
       this.player.position.setY(0);

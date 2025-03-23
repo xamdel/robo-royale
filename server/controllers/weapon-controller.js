@@ -1,12 +1,19 @@
 const ValidationService = require('../services/validation');
+const gameConfig = require('../config/game-config');
 
 class WeaponController {
-  constructor(io) {
+  constructor(io, playerManager) {
     this.io = io;
+    this.playerManager = playerManager;
+    this.playerWeapons = new Map(); // Track which weapons each player has
+    this.weaponCooldowns = new Map(); // Track weapon cooldowns
+    this.playerAmmo = new Map(); // Track ammo for each player's weapons
   }
 
   setupSocketHandlers(socket) {
     socket.on('weaponPickup', (data) => this.handleWeaponPickup(socket, data));
+    socket.on('weaponDrop', (data) => this.handleWeaponDrop(socket, data));
+    socket.on('weaponSwitch', (data) => this.handleWeaponSwitch(socket, data));
   }
 
   handleWeaponPickup(socket, data) {
@@ -16,6 +23,39 @@ class WeaponController {
       return;
     }
 
+    // Initialize player's weapons if needed
+    if (!this.playerWeapons.has(socket.id)) {
+      this.playerWeapons.set(socket.id, new Set());
+    }
+
+    // Add weapon to player's inventory
+    const playerWeapons = this.playerWeapons.get(socket.id);
+    playerWeapons.add({
+      id: data.weaponId,
+      type: data.weaponType,
+      socket: data.socketName
+    });
+
+    // Initialize weapon cooldown
+    if (!this.weaponCooldowns.has(socket.id)) {
+      this.weaponCooldowns.set(socket.id, new Map());
+    }
+    this.weaponCooldowns.get(socket.id).set(data.weaponId, 0);
+
+    // Initialize ammo for the weapon
+    if (!this.playerAmmo.has(socket.id)) {
+      this.playerAmmo.set(socket.id, new Map());
+    }
+    // Set initial ammo based on weapon type
+    const initialAmmo = data.weaponType === 'cannon' ? 10 : 20; // Default ammo values
+    this.playerAmmo.get(socket.id).set(data.weaponId, initialAmmo);
+
+    // Send initial ammo count to the player
+    socket.emit('ammoUpdate', {
+      weaponId: data.weaponId,
+      ammo: initialAmmo
+    });
+
     // Broadcast pickup to all players except the one who picked it up
     socket.broadcast.emit('weaponPickedUp', {
       weaponId: data.weaponId,
@@ -23,6 +63,106 @@ class WeaponController {
       socketName: data.socketName,
       playerId: socket.id
     });
+  }
+
+  handleWeaponDrop(socket, data) {
+    const playerWeapons = this.playerWeapons.get(socket.id);
+    if (!playerWeapons) return;
+
+    // Remove weapon from player's inventory
+    playerWeapons.delete(data.weaponId);
+
+    // Remove weapon cooldown and ammo tracking
+    const cooldowns = this.weaponCooldowns.get(socket.id);
+    if (cooldowns) {
+      cooldowns.delete(data.weaponId);
+    }
+
+    const ammo = this.playerAmmo.get(socket.id);
+    if (ammo) {
+      ammo.delete(data.weaponId);
+    }
+
+    // Broadcast weapon drop
+    this.io.emit('weaponDropped', {
+      weaponId: data.weaponId,
+      playerId: socket.id,
+      position: data.position
+    });
+  }
+
+  handleWeaponSwitch(socket, data) {
+    const playerWeapons = this.playerWeapons.get(socket.id);
+    if (!playerWeapons) return;
+
+    // Validate player has the weapon
+    const hasWeapon = Array.from(playerWeapons).some(w => w.id === data.weaponId);
+    if (!hasWeapon) {
+      console.warn(`Player ${socket.id} tried to switch to unowned weapon ${data.weaponId}`);
+      return;
+    }
+
+    // Broadcast weapon switch
+    this.io.emit('weaponSwitched', {
+      playerId: socket.id,
+      weaponId: data.weaponId
+    });
+  }
+
+  canPlayerShoot(socketId, weaponId) {
+    const playerWeapons = this.playerWeapons.get(socketId);
+    if (!playerWeapons) return false;
+
+    // Find the weapon in player's inventory
+    const weapon = Array.from(playerWeapons).find(w => w.id === weaponId);
+    if (!weapon) return false;
+
+    const cooldowns = this.weaponCooldowns.get(socketId);
+    if (!cooldowns) return false;
+
+    // Check ammo
+    const ammo = this.playerAmmo.get(socketId)?.get(weaponId);
+    if (ammo === undefined || ammo <= 0) {
+      return false;
+    }
+
+    const lastFireTime = cooldowns.get(weaponId) || 0;
+    const now = Date.now();
+    
+    // Get weapon-specific cooldown
+    const cooldownTime = gameConfig.WEAPON_COOLDOWN[weapon.type] || 
+                        gameConfig.WEAPON_COOLDOWN.default;
+    
+    // Check if enough time has passed since last shot
+    if (now - lastFireTime < cooldownTime) {
+      return false;
+    }
+
+    // Update last fire time and decrease ammo
+    cooldowns.set(weaponId, now);
+    this.playerAmmo.get(socketId).set(weaponId, ammo - 1);
+
+    // Notify client of ammo update
+    this.io.to(socketId).emit('ammoUpdate', {
+      weaponId: weaponId,
+      ammo: ammo - 1
+    });
+
+    return true;
+  }
+
+  getWeaponType(socketId, weaponId) {
+    const playerWeapons = this.playerWeapons.get(socketId);
+    if (!playerWeapons) return 'default';
+
+    const weapon = Array.from(playerWeapons).find(w => w.id === weaponId);
+    return weapon ? weapon.type : 'default';
+  }
+
+  removePlayer(socketId) {
+    this.playerWeapons.delete(socketId);
+    this.weaponCooldowns.delete(socketId);
+    this.playerAmmo.delete(socketId);
   }
 }
 

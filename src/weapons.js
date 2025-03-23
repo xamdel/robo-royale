@@ -284,6 +284,7 @@ export const WeaponManager = {
   weaponOwnership: new Map(), // Track which weapons are owned by which players
   lastFireTime: 0, // Track last weapon fire time for cooldown
   networkProjectiles: new Map(), // Track projectiles by server-assigned ID
+  weaponAmmo: new Map(), // Track ammo for each weapon
 
   weaponSockets: {
     leftArm: {
@@ -425,19 +426,42 @@ export const WeaponManager = {
     return true;
   },
 
+  handleAmmoUpdate(data) {
+    // Update weapon ammo count
+    this.weaponAmmo.set(data.weaponId, data.ammo);
+
+    // Update HUD if available
+    if (window.HUD) {
+      window.HUD.updateAmmo(data.ammo);
+    }
+  },
+
   fireWeapon(player, weaponType = 'cannon') {
     const now = Date.now();
-    const fireCooldown = Game.cooldownTime || 250; // Use Game's cooldown time
     
-    if (now - this.lastFireTime < fireCooldown) return;
-    
-    // Check ammo for local player
-    if (player === Game.player && Game.ammo <= 0) {
-      // Display "out of ammo" message using HUD if available
-      if (window.HUD) {
-        window.HUD.showAlert("OUT OF AMMO", "warning");
-      }
+    // Get weapon info
+    const weaponId = Array.from(this.weaponOwnership.entries())
+      .find(([_, ownerId]) => ownerId === player.uuid)?.[0];
+
+    if (!weaponId) {
+      console.warn('No weapon found for player');
       return;
+    }
+
+    // Check if player is dead
+    if (player === Game.player && Game.isDead) {
+      return;
+    }
+
+    // Check ammo for local player
+    if (player === Game.player) {
+      const ammo = this.weaponAmmo.get(weaponId);
+      if (ammo !== undefined && ammo <= 0) {
+        if (window.HUD) {
+          window.HUD.showAlert("OUT OF AMMO", "warning");
+        }
+        return;
+      }
     }
 
     const socketName = this.weaponTypes[weaponType].socket;
@@ -452,32 +476,32 @@ export const WeaponManager = {
     bone.getWorldDirection(worldDir);
 
     // Offset spawn position to avoid self-collision
-    const spawnOffset = 1.5; // Slightly larger than player body radius
+    const spawnOffset = 1.5;
     worldPos.add(worldDir.clone().multiplyScalar(spawnOffset));
 
-    const projectile = this.projectileManager.spawn(
-      weaponType,
-      worldPos,
-      worldDir,
-      player
-    );
+    // Only proceed if this is the local player
+    if (player === Game.player) {
+      // Send shot data to server first
+      Network.sendShot({
+        weaponId: weaponId,
+        type: weaponType,
+        position: worldPos,
+        direction: worldDir,
+      });
 
-    if (projectile) {
-      // Only send network event if this is the local player
-      if (player === Game.player) {
-        // Decrease ammo when firing
-        Game.ammo = Math.max(0, Game.ammo - 1);
-        
-        Network.sendShot({
-          type: weaponType,
-          position: worldPos,
-          direction: worldDir,
-        });
+      // Spawn projectile for client-side prediction
+      const projectile = this.projectileManager.spawn(
+        weaponType,
+        worldPos,
+        worldDir,
+        player
+      );
+
+      if (projectile) {
+        this.lastFireTime = now;
+        Game.lastFireTime = now;
       }
     }
-
-    this.lastFireTime = now;
-    Game.lastFireTime = now; // Update Game's fire time for HUD cooldown display
   },
 
   update(deltaTime) {
@@ -485,6 +509,9 @@ export const WeaponManager = {
   },
 
   handleRemoteShot(data) {
+    // Only spawn projectile if server confirmed the shot
+    if (!data.serverConfirmed) return;
+
     const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
     const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
     const sourcePlayer = Game.otherPlayers[data.playerId]?.mesh;
@@ -495,6 +522,38 @@ export const WeaponManager = {
       direction,
       sourcePlayer
     );
+
+    if (projectile) {
+      projectile.serverId = data.projectileId;
+    }
+  },
+
+  // Handle server hit confirmations
+  handleServerHit(data) {
+    // Show hit effect
+    if (data.position) {
+      this.createExplosion(new THREE.Vector3(data.position.x, data.position.y, data.position.z));
+    }
+
+    // Update HUD with damage numbers if this was our hit
+    if (Game.player && data.sourcePlayerId === Game.player.userData.id && window.HUD) {
+      window.HUD.showDamageNumber(data.damage, data.position);
+      
+      if (data.wasKilled) {
+        window.HUD.showKillFeed(data.hitPlayerId);
+      }
+    }
+  },
+
+  // Handle server health updates
+  handleHealthUpdate(data) {
+    // Only handle ammo updates here, health is handled by Game object
+    if (data.weaponId && data.ammo !== undefined) {
+      this.weaponAmmo.set(data.weaponId, data.ammo);
+      if (window.HUD) {
+        window.HUD.updateAmmo(data.ammo);
+      }
+    }
   },
 
   createExplosion(position) {

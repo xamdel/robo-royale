@@ -1,10 +1,12 @@
 const { ProjectileManager } = require('../models/projectile');
 const ValidationService = require('../services/validation');
+const gameConfig = require('../config/game-config');
 
 class ProjectileController {
-  constructor(io, playerManager) {
+  constructor(io, playerManager, weaponController) {
     this.io = io;
     this.playerManager = playerManager;
+    this.weaponController = weaponController;
     this.projectileManager = new ProjectileManager();
   }
 
@@ -20,8 +22,22 @@ class ProjectileController {
       return;
     }
 
-    // Get weapon configuration
-    const weaponType = data.weaponType || 'default';
+    // Validate weaponId exists
+    if (!data.weaponId) {
+      console.warn(`Player ${socket.id} attempted to shoot with undefined weaponId`);
+      socket.emit('shootError', { error: 'Invalid weapon' });
+      return;
+    }
+
+    // Validate weapon cooldown and ownership
+    if (!this.weaponController.canPlayerShoot(socket.id, data.weaponId)) {
+      console.warn(`Player ${socket.id} attempted to shoot weapon ${data.weaponId} too quickly or without ownership`);
+      socket.emit('shootError', { error: 'Weapon cooldown or ownership check failed' });
+      return;
+    }
+
+    // Get weapon type from weapon controller
+    const weaponType = this.weaponController.getWeaponType(socket.id, data.weaponId);
 
     // Create projectile
     const projectile = this.projectileManager.createProjectile({
@@ -55,6 +71,16 @@ class ProjectileController {
     if (validationResult.hit) {
       console.log(`Server validated client hit suggestion: projectile ${data.projectileId} hit player ${data.hitPlayerId} at distance ${validationResult.distance}`);
       
+      // Get weapon config for damage calculation
+      const weaponConfig = gameConfig.PROJECTILE_CONFIGS[projectile.weaponType] || 
+                          gameConfig.PROJECTILE_CONFIGS.default;
+      
+      // Apply damage to player
+      const wasKilled = hitPlayer.takeDamage(weaponConfig.damage, {
+        position: validationResult.position,
+        distanceFalloff: weaponConfig.distanceFalloff
+      });
+      
       // Mark projectile as inactive and remove
       this.projectileManager.removeProjectile(data.projectileId);
       
@@ -66,18 +92,48 @@ class ProjectileController {
         sourcePlayerId: projectile.ownerId,
         reason: 'hit',
         serverConfirmed: true,
+        damage: weaponConfig.damage,
         clientLatencyMs: Date.now() - (data.timeMs || Date.now())
       });
       
-      // Also send a specific player hit event for redundancy
+      // Send detailed player hit event
       this.io.emit('playerHit', {
         hitPlayerId: data.hitPlayerId,
         sourcePlayerId: projectile.ownerId,
-        position: validationResult.position
+        position: validationResult.position,
+        damage: weaponConfig.damage,
+        currentHealth: hitPlayer.health,
+        wasKilled: wasKilled
       });
+
+      // If player was killed, start respawn timer
+      if (wasKilled) {
+        this.handlePlayerKilled(hitPlayer, projectile.ownerId);
+      }
     } else {
       console.log(`Server rejected client hit suggestion for projectile ${data.projectileId}, validation failed`);
     }
+  }
+
+  handlePlayerKilled(player, killerSocketId) {
+    // Broadcast kill event
+    this.io.emit('playerKilled', {
+      playerId: player.id,
+      killerPlayerId: killerSocketId,
+      timestamp: Date.now()
+    });
+
+    // Set up respawn check
+    setTimeout(() => {
+      if (player.checkRespawn()) {
+        // Broadcast respawn event
+        this.io.emit('playerRespawned', {
+          playerId: player.id,
+          health: player.health,
+          timestamp: Date.now()
+        });
+      }
+    }, gameConfig.PLAYER_CONFIG.respawnDelay);
   }
 
   getProjectileManager() {

@@ -185,23 +185,56 @@ export const Network = {
     });
 
     this.socket.on('playerHit', (data) => {
-      // Handle player being hit by projectile
-      if (data.position) {
-        const hitPosition = new THREE.Vector3(
-          data.position.x,
-          data.position.y,
-          data.position.z
-        );
-        console.log('Player hit event received at position:', hitPosition);
-        // Always create explosion for playerHit events to ensure visual feedback
-        WeaponManager.createExplosion(hitPosition);
-      }
-
-      // If this client was hit, could trigger damage effects here
+      // Update local player health if we were hit
       if (data.hitPlayerId === this.socket.id) {
-        console.log('You were hit by player:', data.sourcePlayerId);
-        // TODO: Implement damage/health system
+        Game.health = data.currentHealth;
+        if (window.HUD) {
+          window.HUD.updateHealth(data.currentHealth);
+          if (data.damage > 0) {
+            window.HUD.showDamageIndicator(data.damage);
+          }
+        }
       }
+      // Handle visual effects for all hits
+      WeaponManager.handleServerHit(data);
+    });
+
+    this.socket.on('playerKilled', (data) => {
+      if (data.playerId === this.socket.id) {
+        // Local player was killed
+        Game.handleDeath(data.killerPlayerId);
+        if (window.HUD) {
+          window.HUD.showDeathScreen(data.killerPlayerId);
+        }
+      }
+    });
+
+    this.socket.on('playerRespawned', (data) => {
+      if (data.playerId === this.socket.id) {
+        // Local player respawned
+        Game.handleRespawn();
+        if (window.HUD) {
+          window.HUD.hideDeathScreen();
+          window.HUD.updateHealth(Game.health);
+        }
+      }
+    });
+
+    this.socket.on('healthUpdate', (data) => {
+      if (data.playerId === this.socket.id) {
+        Game.health = data.health;
+        if (window.HUD) {
+          window.HUD.updateHealth(data.health);
+          if (data.wasHit) {
+            window.HUD.showDamageIndicator(data.damage);
+          }
+        }
+      }
+      WeaponManager.handleHealthUpdate(data);
+    });
+
+    this.socket.on('ammoUpdate', (data) => {
+      WeaponManager.handleAmmoUpdate(data);
     });
 
     this.socket.on('weaponPickedUp', (data) => {
@@ -287,10 +320,10 @@ export const Network = {
   sendShot(data) {
     if (this.socket?.connected) {
       this.socket.emit('shootProjectile', {
+        weaponId: data.weaponId,
         weaponType: data.type,
         position: data.position,
-        direction: data.direction,
-        velocity: data.velocity
+        direction: data.direction
       });
     }
   },

@@ -23,6 +23,8 @@ class Projectile {
     this.radius = config.radius;
     this.maxDistance = config.maxDistance;
     this.maxLifetime = config.maxLifetime;
+    this.damage = config.damage;
+    this.distanceFalloff = config.distanceFalloff;
 
     this.createdAt = Date.now();
     this.lastUpdateTime = this.createdAt;
@@ -81,7 +83,9 @@ class Projectile {
       weaponType: this.weaponType,
       speed: this.speed,
       radius: this.radius,
-      active: this.active
+      active: this.active,
+      damage: this.damage,
+      distanceFalloff: this.distanceFalloff
     };
   }
 }

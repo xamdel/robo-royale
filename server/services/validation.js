@@ -28,6 +28,7 @@ class ValidationService {
 
   static isValidShootData(data) {
     return data &&
+           typeof data.weaponId === 'string' &&
            typeof data.position === 'object' &&
            typeof data.direction === 'object' &&
            typeof data.position.x === 'number' &&
@@ -36,6 +37,32 @@ class ValidationService {
            typeof data.direction.x === 'number' &&
            typeof data.direction.y === 'number' &&
            typeof data.direction.z === 'number';
+  }
+
+  static isValidAmmoData(data) {
+    return data &&
+           typeof data.weaponId === 'string' &&
+           typeof data.ammo === 'number' &&
+           data.ammo >= 0;
+  }
+
+  static isValidInitialAmmo(weaponType) {
+    return gameConfig.WEAPON_AMMO.hasOwnProperty(weaponType);
+  }
+
+  static getInitialAmmo(weaponType) {
+    return gameConfig.WEAPON_AMMO[weaponType]?.initial || 
+           gameConfig.WEAPON_AMMO.default.initial;
+  }
+
+  static getMaxAmmo(weaponType) {
+    return gameConfig.WEAPON_AMMO[weaponType]?.max || 
+           gameConfig.WEAPON_AMMO.default.max;
+  }
+
+  static getPickupAmount(weaponType) {
+    return gameConfig.WEAPON_AMMO[weaponType]?.pickupAmount || 
+           gameConfig.WEAPON_AMMO.default.pickupAmount;
   }
 
   static isValidWeaponPickupData(data) {

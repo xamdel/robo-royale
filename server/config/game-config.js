@@ -13,13 +13,49 @@ module.exports = {
       speed: 300,
       radius: 0.15,
       maxDistance: 100,
-      maxLifetime: 5000
+      maxLifetime: 5000,
+      damage: 35,
+      distanceFalloff: {
+        start: 50,  // Distance at which damage starts falling off
+        end: 100,   // Distance at which damage reaches minimum
+        minDamage: 20  // Minimum damage at maximum range
+      }
     },
     default: {
       speed: 25,
       radius: 0.3,
       maxDistance: 80,
-      maxLifetime: 5000
+      maxLifetime: 5000,
+      damage: 25,
+      distanceFalloff: {
+        start: 40,
+        end: 80,
+        minDamage: 15
+      }
+    }
+  },
+
+  PLAYER_CONFIG: {
+    maxHealth: 100,
+    spawnInvulnerabilityTime: 3000, // 3 seconds of invulnerability after spawn
+    respawnDelay: 5000  // 5 seconds before respawn
+  },
+
+  WEAPON_COOLDOWN: {
+    cannon: 1000,  // 1 second between shots
+    default: 500   // 0.5 seconds between shots
+  },
+
+  WEAPON_AMMO: {
+    cannon: {
+      initial: 10,      // Starting ammo when weapon is picked up
+      max: 20,          // Maximum ammo capacity
+      pickupAmount: 5   // Amount of ammo gained from ammo pickups
+    },
+    default: {
+      initial: 20,
+      max: 40,
+      pickupAmount: 10
     }
   }
 };

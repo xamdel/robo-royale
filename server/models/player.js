@@ -1,3 +1,5 @@
+const gameConfig = require('../config/game-config');
+
 class Player {
   constructor(socketId) {
     this.id = socketId;
@@ -13,6 +15,12 @@ class Player {
       moveRight: false,
       isRunning: false
     };
+    
+    // Health system
+    this.health = gameConfig.PLAYER_CONFIG.maxHealth;
+    this.isDead = false;
+    this.lastSpawnTime = Date.now();
+    this.respawnTime = null;
   }
 
   updatePosition(positionData, inputId) {
@@ -40,8 +48,72 @@ class Player {
       lastProcessedInput: this.lastProcessedInput,
       moveState: this.moveState,
       timestamp: Date.now(),
-      timeSinceLastUpdate: Date.now() - this.lastUpdateTime
+      timeSinceLastUpdate: Date.now() - this.lastUpdateTime,
+      health: this.health,
+      isDead: this.isDead
     };
+  }
+
+  takeDamage(amount, projectileData) {
+    const now = Date.now();
+    
+    // Check spawn invulnerability
+    if (now - this.lastSpawnTime < gameConfig.PLAYER_CONFIG.spawnInvulnerabilityTime) {
+      return false;
+    }
+
+    // If already dead, ignore damage
+    if (this.isDead) {
+      return false;
+    }
+
+    // Calculate damage with distance falloff
+    let finalDamage = amount;
+    if (projectileData.distanceFalloff) {
+      const distance = Math.sqrt(
+        Math.pow(this.position.x - projectileData.position.x, 2) +
+        Math.pow(this.position.y - projectileData.position.y, 2) +
+        Math.pow(this.position.z - projectileData.position.z, 2)
+      );
+
+      if (distance > projectileData.distanceFalloff.start) {
+        const falloffRange = projectileData.distanceFalloff.end - projectileData.distanceFalloff.start;
+        const falloffAmount = Math.min(1, (distance - projectileData.distanceFalloff.start) / falloffRange);
+        const damageRange = amount - projectileData.distanceFalloff.minDamage;
+        finalDamage = amount - (damageRange * falloffAmount);
+      }
+    }
+
+    // Apply damage
+    this.health = Math.max(0, this.health - finalDamage);
+
+    // Check for death
+    if (this.health === 0 && !this.isDead) {
+      this.die();
+      return true;
+    }
+
+    return false;
+  }
+
+  die() {
+    this.isDead = true;
+    this.respawnTime = Date.now() + gameConfig.PLAYER_CONFIG.respawnDelay;
+  }
+
+  checkRespawn() {
+    if (this.isDead && Date.now() >= this.respawnTime) {
+      this.respawn();
+      return true;
+    }
+    return false;
+  }
+
+  respawn() {
+    this.health = gameConfig.PLAYER_CONFIG.maxHealth;
+    this.isDead = false;
+    this.lastSpawnTime = Date.now();
+    this.respawnTime = null;
   }
 }
 

@@ -54,14 +54,15 @@ class GameServer {
     // Create player controller first
     this.playerController = new PlayerController(this.io, this.gameLoop);
     
-    // Create projectile controller with player manager
+    // Create weapon controller with player manager
+    this.weaponController = new WeaponController(this.io, this.playerController.getPlayerManager());
+
+    // Create projectile controller with player manager and weapon controller
     this.projectileController = new ProjectileController(
       this.io, 
-      this.playerController.getPlayerManager()
+      this.playerController.getPlayerManager(),
+      this.weaponController
     );
-    
-    // Create weapon controller
-    this.weaponController = new WeaponController(this.io);
 
     // Update game loop with managers
     this.gameLoop.playerManager = this.playerController.getPlayerManager();
@@ -78,6 +79,11 @@ class GameServer {
         // Setup event handlers for different controllers
         this.projectileController.setupSocketHandlers(socket);
         this.weaponController.setupSocketHandlers(socket);
+
+        // Handle weapon cleanup on disconnect
+        socket.on('disconnect', () => {
+          this.weaponController.removePlayer(socket.id);
+        });
       }
     });
   }
