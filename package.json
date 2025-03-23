@@ -1,18 +1,25 @@
 {
   "name": "robo-royale",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Multiplayer mech battle game",
+  "main": "server/index.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start:server": "node server/index.js",
+    "dev:server": "nodemon server/index.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xamdel/robo-royale.git"
   },
-  "keywords": [],
+  "keywords": [
+    "multiplayer",
+    "game",
+    "mech",
+    "socket.io"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
@@ -29,6 +36,7 @@
     "three": "^0.174.0"
   },
   "devDependencies": {
-    "vite": "^6.2.2"
+    "vite": "^6.2.2",
+    "nodemon": "^3.0.1"
   }
 }

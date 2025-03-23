@@ -1,0 +1,6 @@
+{
+  "watch": ["server"],
+  "ext": "js,json",
+  "ignore": ["server/node_modules"],
+  "exec": "node server/index.js"
+}
