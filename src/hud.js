@@ -51,6 +51,9 @@ export const HUD = {
     // Add resize event listener for responsive scaling
     window.addEventListener('resize', this.updateScale.bind(this));
     
+    // Make updateWeaponDisplay function accessible to weapon system
+    window.HUD.updateWeaponDisplay = this.updateWeaponDisplay.bind(this);
+    
     // Initial scale update
     this.updateScale();
   },
@@ -121,33 +124,95 @@ export const HUD = {
   },
 
   createWeaponSystem() {
-    // Weapon container - bottom right, horizontal
-    const weaponContainer = document.createElement('div');
-    weaponContainer.className = 'weapon-container bottom-element';
+    // Create a combined weapons container
+    const weaponsContainer = document.createElement('div');
+    weaponsContainer.className = 'weapons-container bottom-element';
+    
+    // Create a section for secondary weapon
+    const secondarySection = this.createWeaponSection('SECONDARY', 'R <span class="key-hint">Fire</span> | <span class="key-hint">Tab</span> Switch');
+    
+    // Add divider
+    const divider = document.createElement('div');
+    divider.className = 'weapon-divider';
+    
+    // Create a section for primary weapon
+    const primarySection = this.createWeaponSection('PRIMARY', 'LMB <span class="key-hint">Fire</span> | <span class="key-hint">Scroll</span> Switch');
+    
+    // Add all sections to the container
+    weaponsContainer.appendChild(secondarySection.container);
+    weaponsContainer.appendChild(divider);
+    weaponsContainer.appendChild(primarySection.container);
+    
+    // Add to HUD
+    this.elements.container.appendChild(weaponsContainer);
+    
+    // Store references to both weapon sections
+    this.elements.primaryWeapon = primarySection;
+    this.elements.secondaryWeapon = secondarySection;
+  },
+  
+  createWeaponSection(label, keyBindingText) {
+    // Create section container
+    const sectionContainer = document.createElement('div');
+    sectionContainer.className = `weapon-section ${label.toLowerCase()}-section`;
+    
+    // Container header with weapon type label
+    const containerHeader = document.createElement('div');
+    containerHeader.className = 'weapon-header';
+    containerHeader.textContent = label;
+    sectionContainer.appendChild(containerHeader);
+    
+    // Create weapon display row
+    const weaponRow = document.createElement('div');
+    weaponRow.className = 'weapon-row';
     
     // Weapon icon
     const weaponIcon = document.createElement('div');
     weaponIcon.className = 'status-icon weapon-icon';
     weaponIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7,5H23V9H22V10H16V9H15V5H7V9H6V10H2V9H1V5H7M6,13H7V17H8V22H4V17H5V13H6M16,13H17V17H18V22H14V17H15V13H16Z"></path></svg>';
-    weaponContainer.appendChild(weaponIcon);
+    weaponRow.appendChild(weaponIcon);
+    
+    // Weapon info container
+    const weaponInfo = document.createElement('div');
+    weaponInfo.className = 'weapon-info';
+    
+    // Weapon status and name
+    const statusAndNameRow = document.createElement('div');
+    statusAndNameRow.className = 'status-name-row';
     
     // Weapon status
-    this.elements.weaponStatus = document.createElement('div');
-    this.elements.weaponStatus.className = 'weapon-status';
-    this.elements.weaponStatus.innerHTML = '<span class="status-inactive">NO WEAPON</span>';
-    weaponContainer.appendChild(this.elements.weaponStatus);
+    const weaponStatus = document.createElement('div');
+    weaponStatus.className = 'weapon-status';
+    weaponStatus.innerHTML = '<span class="status-inactive">NO WEAPON</span>';
+    statusAndNameRow.appendChild(weaponStatus);
     
-    // Ammo display
-    const ammoDisplay = document.createElement('div');
-    ammoDisplay.className = 'ammo-display';
+    // Current weapon name
+    const weaponName = document.createElement('div');
+    weaponName.className = 'weapon-name';
+    weaponName.textContent = 'None';
+    statusAndNameRow.appendChild(weaponName);
+    
+    weaponInfo.appendChild(statusAndNameRow);
+    
+    // Next weapon info
+    const nextWeapon = document.createElement('div');
+    nextWeapon.className = 'next-weapon';
+    nextWeapon.innerHTML = '';
+    weaponInfo.appendChild(nextWeapon);
+    
+    weaponRow.appendChild(weaponInfo);
+    
+    // Ammo and cooldown container
+    const ammoContainer = document.createElement('div');
+    ammoContainer.className = 'ammo-cooldown-container';
     
     // Ammo counter
-    this.elements.ammoCounter = document.createElement('div');
-    this.elements.ammoCounter.className = 'ammo-counter';
-    this.elements.ammoCounter.textContent = '0/0';
-    ammoDisplay.appendChild(this.elements.ammoCounter);
+    const ammoCounter = document.createElement('div');
+    ammoCounter.className = 'ammo-counter';
+    ammoCounter.textContent = '0/0';
+    ammoContainer.appendChild(ammoCounter);
     
-    // Ammo segments - horizontal
+    // Ammo segments
     const ammoSegments = document.createElement('div');
     ammoSegments.className = 'ammo-segments';
     for (let i = 0; i < 10; i++) {
@@ -155,21 +220,34 @@ export const HUD = {
       segment.className = 'segment';
       ammoSegments.appendChild(segment);
     }
-    ammoDisplay.appendChild(ammoSegments);
+    ammoContainer.appendChild(ammoSegments);
     
-    weaponContainer.appendChild(ammoDisplay);
-    
-    // Cooldown indicator
-    const cooldownIndicator = document.createElement('div');
-    cooldownIndicator.className = 'cooldown-indicator';
-    
+    // Cooldown bar
     const cooldownBar = document.createElement('div');
     cooldownBar.className = 'cooldown-bar';
-    cooldownIndicator.appendChild(cooldownBar);
+    ammoContainer.appendChild(cooldownBar);
     
-    weaponContainer.appendChild(cooldownIndicator);
+    // Key binding indicator
+    const keyBinding = document.createElement('div');
+    keyBinding.className = 'key-binding';
+    keyBinding.innerHTML = keyBindingText;
+    ammoContainer.appendChild(keyBinding);
     
-    this.elements.container.appendChild(weaponContainer);
+    // Add elements to section
+    sectionContainer.appendChild(weaponRow);
+    sectionContainer.appendChild(ammoContainer);
+    
+    // Return an object with references to the elements
+    return {
+      container: sectionContainer,
+      status: weaponStatus,
+      name: weaponName,
+      nextWeapon: nextWeapon,
+      ammoCounter: ammoCounter,
+      ammoSegments: ammoSegments,
+      cooldownBar: cooldownBar,
+      icon: weaponIcon
+    };
   },
 
   createScannerSystem() {
@@ -335,37 +413,47 @@ export const HUD = {
   },
   
   updateWeaponStatus() {
-    // Check if player has any weapons
-    if (weaponSystem.activeWeapons.size > 0) {
-      this.status.weaponActive = true;
-      
-      // Get first weapon for status (assuming single weapon for now)
-      const weapon = weaponSystem.activeWeapons.values().next().value;
-      
+    // Update weapon displays
+    this.updateWeaponDisplay('primary');
+    this.updateWeaponDisplay('secondary');
+  },
+  
+  updateWeaponDisplay(mountType) {
+    // Get the correct weapon display based on type
+    const display = mountType === 'primary' ? this.elements.primaryWeapon : this.elements.secondaryWeapon;
+    
+    // Get currently selected weapon of this type
+    const weapon = weaponSystem.getSelectedWeapon(mountType);
+    
+    if (weapon) {
       // Get mount point and cooldown status
-      const mount = weaponSystem.mountManager.getAllMounts().find(m => m.getWeapon()?.id === weapon.id);
+      const mounts = weaponSystem.mountManager.getAllMounts();
+      const mount = mounts.find(m => m.getWeapon()?.id === weapon.id);
       if (!mount) return;
       
-      const now = performance.now();
+      const now = Date.now();
       const timeSinceLastFire = now - mount.lastFireTime;
       const cooldownTime = 1000 / weapon.config.fireRate;
       const cooldownPercent = Math.min(100, (timeSinceLastFire / cooldownTime) * 100);
       
+      // Update weapon name
+      display.name.textContent = weapon.config.displayName || weapon.type;
+      
       // Update weapon ready status
       if (weapon.ammo <= 0) {
-        this.elements.weaponStatus.innerHTML = '<span class="status-inactive">NO AMMO</span>';
+        display.status.innerHTML = '<span class="status-inactive">NO AMMO</span>';
       } else if (cooldownPercent < 100) {
-        this.elements.weaponStatus.innerHTML = '<span class="status-charging">CHARGING</span>';
+        display.status.innerHTML = '<span class="status-charging">CHARGING</span>';
       } else {
-        this.elements.weaponStatus.innerHTML = '<span class="status-active">READY</span>';
+        display.status.innerHTML = '<span class="status-active">READY</span>';
       }
       
-      // Update ammo counter with weapon's actual ammo
-      this.elements.ammoCounter.textContent = `${weapon.ammo}/${weapon.maxAmmo}`;
+      // Update ammo counter
+      display.ammoCounter.textContent = `${weapon.ammo}/${weapon.maxAmmo}`;
       
       // Update ammo segments
       const ammoPercent = (weapon.ammo / weapon.maxAmmo) * 100;
-      const segments = document.querySelectorAll('.ammo-segments .segment');
+      const segments = display.ammoSegments.querySelectorAll('.segment');
       const segmentCount = Math.ceil(ammoPercent / 10);
       
       segments.forEach((segment, index) => {
@@ -379,55 +467,53 @@ export const HUD = {
       });
       
       // Update cooldown bar
-      const cooldownBar = document.querySelector('.cooldown-bar');
-      if (cooldownBar) {
-        if (cooldownPercent < 100) {
-          cooldownBar.style.width = `${cooldownPercent}%`;
-          cooldownBar.style.backgroundColor = '#ff9900';
-        } else {
-          cooldownBar.style.width = '100%';
-          cooldownBar.style.backgroundColor = '#00aaff';
-        }
+      if (cooldownPercent < 100) {
+        display.cooldownBar.style.width = `${cooldownPercent}%`;
+        display.cooldownBar.style.backgroundColor = '#ff9900';
+      } else {
+        display.cooldownBar.style.width = '100%';
+        display.cooldownBar.style.backgroundColor = '#00aaff';
       }
       
-      // Only add a message when ammo value changes significantly
-      if (this.lastAmmoCount !== null && this.lastAmmoCount !== weapon.ammo && 
-          (weapon.ammo === 10 || weapon.ammo === 5 || weapon.ammo === 1)) {
-        this.addMessage(`Warning: Ammo low - ${weapon.ammo} remaining`);
+      // Update next weapon info
+      const nextWeapon = weaponSystem.getNextWeapon(mountType);
+      if (nextWeapon) {
+        const nextName = nextWeapon.config.displayName || nextWeapon.type;
+        display.nextWeapon.innerHTML = `NEXT: ${nextName}`;
+        display.nextWeapon.style.display = 'block';
+      } else {
+        display.nextWeapon.style.display = 'none';
       }
       
-      this.lastAmmoCount = weapon.ammo;
+      // Show ammo warnings
+      if (weapon.ammo === 10 || weapon.ammo === 5 || weapon.ammo === 1) {
+        this.addMessage(`Warning: ${mountType.toUpperCase()} weapon ammo low - ${weapon.ammo} remaining`);
+      }
       
       // Update weapon icon
-      const weaponIcon = document.querySelector('.weapon-icon');
-      if (weaponIcon) {
-        weaponIcon.style.color = weapon.ammo <= 0 ? '#ff0000' : '#00ff00';
-      }
+      display.icon.style.color = weapon.ammo <= 0 ? '#ff0000' : '#00ff00';
+      
+      // Show the section
+      display.container.style.display = 'block';
     } else {
-      this.status.weaponActive = false;
-      this.elements.weaponStatus.innerHTML = '<span class="status-inactive">NO WEAPON</span>';
-      this.elements.ammoCounter.textContent = `0/0`;
+      // No weapon available
+      display.name.textContent = 'None';
+      display.status.innerHTML = '<span class="status-inactive">NO WEAPON</span>';
+      display.ammoCounter.textContent = '0/0';
+      display.nextWeapon.style.display = 'none';
       
       // Reset ammo segments
-      const segments = document.querySelectorAll('.ammo-segments .segment');
+      const segments = display.ammoSegments.querySelectorAll('.segment');
       segments.forEach(segment => {
         segment.classList.remove('active');
         segment.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
       });
       
       // Reset cooldown bar
-      const cooldownBar = document.querySelector('.cooldown-bar');
-      if (cooldownBar) {
-        cooldownBar.style.width = '0%';
-      }
+      display.cooldownBar.style.width = '0%';
       
       // Update weapon icon
-      const weaponIcon = document.querySelector('.weapon-icon');
-      if (weaponIcon) {
-        weaponIcon.style.color = '#ff0000';
-      }
-      
-      this.lastAmmoCount = null;
+      display.icon.style.color = '#ff0000';
     }
   },
   
@@ -556,7 +642,6 @@ export const HUD = {
       /* Bottom elements - standard TPS health/ammo bars */
       .bottom-element {
         position: absolute;
-        bottom: calc(20px * var(--hud-scale));
         display: flex;
         align-items: center;
         background-color: rgba(0, 20, 40, 0.3);
@@ -568,13 +653,54 @@ export const HUD = {
       
       .health-container {
         left: calc(20px * var(--hud-scale));
+        bottom: calc(20px * var(--hud-scale));
         width: calc(260px * var(--hud-scale));
       }
       
       .weapon-container {
-        right: calc(20px * var(--hud-scale));
         width: calc(260px * var(--hud-scale));
         flex-direction: column;
+      }
+      
+      .weapons-container {
+        right: calc(20px * var(--hud-scale));
+        bottom: calc(20px * var(--hud-scale));
+        width: calc(300px * var(--hud-scale));
+        flex-direction: column;
+        padding: calc(10px * var(--hud-scale));
+      }
+      
+      .weapon-section {
+        width: 100%;
+        margin-bottom: calc(5px * var(--hud-scale));
+      }
+      
+      .weapon-row {
+        display: flex;
+        align-items: center;
+        width: 100%;
+      }
+      
+      .status-name-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+      }
+      
+      .weapon-divider {
+        width: 100%;
+        height: calc(1px * var(--hud-scale));
+        background-color: var(--hud-primary-color);
+        margin: calc(8px * var(--hud-scale)) 0;
+        box-shadow: var(--hud-glow);
+      }
+      
+      .ammo-cooldown-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        margin-top: calc(3px * var(--hud-scale));
       }
       
       /* Icon styling */
@@ -646,11 +772,55 @@ export const HUD = {
       }
       
       /* Weapon System */
-      .weapon-status {
-        font-size: calc(12px * var(--hud-scale));
-        margin-bottom: calc(5px * var(--hud-scale));
+      .weapon-header {
+        font-size: calc(10px * var(--hud-scale));
+        background-color: rgba(0, 40, 80, 0.6);
         text-align: center;
         width: 100%;
+        padding: calc(2px * var(--hud-scale));
+        margin-bottom: calc(5px * var(--hud-scale));
+        border-bottom: calc(1px * var(--hud-scale)) solid var(--hud-primary-color);
+        text-transform: uppercase;
+        letter-spacing: calc(1px * var(--hud-scale));
+      }
+      
+      .weapon-info {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+      }
+      
+      .weapon-status {
+        font-size: calc(12px * var(--hud-scale));
+        margin-right: calc(5px * var(--hud-scale));
+      }
+      
+      .weapon-name {
+        font-size: calc(14px * var(--hud-scale));
+        font-weight: bold;
+      }
+      
+      .next-weapon {
+        font-size: calc(10px * var(--hud-scale));
+        text-align: right;
+        color: rgba(0, 170, 255, 0.7);
+        margin-top: calc(2px * var(--hud-scale));
+        width: 100%;
+      }
+      
+      .key-binding {
+        font-size: calc(9px * var(--hud-scale));
+        text-align: center;
+        margin-top: calc(5px * var(--hud-scale));
+        color: rgba(255, 255, 255, 0.8);
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: calc(2px * var(--hud-scale));
+        border-radius: calc(2px * var(--hud-scale));
+      }
+      
+      .key-hint {
+        color: rgba(0, 170, 255, 0.8);
+        font-style: italic;
       }
       
       .ammo-display {
@@ -701,19 +871,13 @@ export const HUD = {
         text-shadow: 0 0 5px rgba(255, 153, 0, 0.7);
       }
       
-      .cooldown-indicator {
-        width: 100%;
-        height: calc(4px * var(--hud-scale));
-        background-color: rgba(0, 0, 0, 0.5);
-        border-radius: calc(2px * var(--hud-scale));
-        overflow: hidden;
-      }
-      
       .cooldown-bar {
-        height: 100%;
+        height: calc(4px * var(--hud-scale));
         width: 0%;
         background-color: var(--hud-primary-color);
         transition: width 0.2s linear, background-color 0.2s linear;
+        border-radius: calc(2px * var(--hud-scale));
+        margin-top: calc(3px * var(--hud-scale));
       }
       
       /* Corner elements */

@@ -204,6 +204,10 @@ export class MountManager {
   getMountByControlKey(controlKey) {
     return this.mountsByControl.get(controlKey);
   }
+  
+  getMountsByType(mountType) {
+    return this.getAllMounts().filter(mount => mount.config.mountType === mountType);
+  }
 
   findBestMountPoint(weaponType, preferredMounts = []) {
     // Try preferred mounts first

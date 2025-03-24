@@ -9,7 +9,8 @@ export const mountConfigs = [
   defaultRotation: new THREE.Euler(0, 0, 0),
   defaultScale: 1.0,
   side: 'left',
-  controlKey: 'mouse0' // Left mouse button
+  controlKey: 'mouse0', // Left mouse button
+  mountType: 'primary' // Primary weapon
 },
 {
   id: 'rightArm',
@@ -19,7 +20,8 @@ export const mountConfigs = [
   defaultRotation: new THREE.Euler(0, 0, 0),
   defaultScale: 1,
   side: 'right',
-  controlKey: 'mouse2' // Right mouse button
+  controlKey: 'mouse0', // Left mouse button (both arms use same control)
+  mountType: 'primary' // Primary weapon
 },
   {
     id: 'leftShoulder',
@@ -29,7 +31,8 @@ export const mountConfigs = [
     defaultRotation: new THREE.Euler(0, 0, 0),
     defaultScale: 1,
     side: 'left',
-    controlKey: 'keyQ' // Q key
+    controlKey: 'keyR', // R key
+    mountType: 'secondary' // Secondary weapon
   },
   {
     id: 'rightShoulder',
@@ -39,6 +42,7 @@ export const mountConfigs = [
     defaultRotation: new THREE.Euler(0, 0, 0),
     defaultScale: 1,
     side: 'right',
-    controlKey: 'keyE' // E key
+    controlKey: 'keyR', // R key (both shoulders use same control)
+    mountType: 'secondary' // Secondary weapon
   }
 ];

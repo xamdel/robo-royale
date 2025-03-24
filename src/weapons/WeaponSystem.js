@@ -29,24 +29,36 @@ export class WeaponSystem {
   }
 
   setupInputListeners() {
-    // Mouse controls
+    // Track selected weapon indexes
+    this.selectedPrimaryIndex = 0;
+    this.selectedSecondaryIndex = 0;
+    
+    // Mouse controls for primary weapons (arms)
     document.addEventListener('mousedown', (event) => {
       if (event.button === 0) { // Left click
         this.fireWeaponByControl('mouse0');
-      } else if (event.button === 2) { // Right click
-        this.fireWeaponByControl('mouse2');
       }
     });
 
-    // Keyboard controls
+    // Keyboard controls for secondary weapons (shoulders)
     document.addEventListener('keydown', (event) => {
       switch (event.code) {
-        case 'KeyQ':
-          this.fireWeaponByControl('keyQ');
+        case 'KeyR':
+          this.fireWeaponByControl('keyR');
           break;
-        case 'KeyE':
-          this.fireWeaponByControl('keyE');
+        case 'Tab':
+          event.preventDefault(); // Prevent tab from changing focus
+          this.cycleSecondaryWeapon();
           break;
+      }
+    });
+    
+    // Mouse wheel for cycling primary weapons
+    document.addEventListener('wheel', (event) => {
+      if (event.deltaY < 0) {
+        this.cyclePrimaryWeapon('prev');
+      } else {
+        this.cyclePrimaryWeapon('next');
       }
     });
   }
@@ -72,10 +84,19 @@ export class WeaponSystem {
     if (success) {
       this.activeWeapons.set(weapon.id, weapon);
       
+      // Determine mount type for appropriate notification
+      const mountType = mountPoint.config.mountType;
+      const displayName = weapon.config.displayName || weapon.type;
+      
       // Show weapon pickup message in HUD
       if (window.HUD) {
-        window.HUD.showAlert(`${weaponType.toUpperCase()} EQUIPPED`, "info");
-        window.HUD.addMessage(`${weaponType} equipped. Ammo: ${weapon.ammo}/${weapon.maxAmmo}`);
+        window.HUD.showAlert(`${mountType.toUpperCase()}: ${displayName.toUpperCase()} EQUIPPED`, "info");
+        window.HUD.addMessage(`${displayName} equipped as ${mountType} weapon. Ammo: ${weapon.ammo}/${weapon.maxAmmo}`);
+        
+        // Update HUD display for this weapon type
+        if (window.HUD.updateWeaponDisplay) {
+          window.HUD.updateWeaponDisplay(mountType);
+        }
       }
 
       // Notify other players about weapon pickup
@@ -92,15 +113,31 @@ export class WeaponSystem {
   fireWeaponByControl(controlKey) {
     console.log(`[WEAPON SYSTEM] Fire attempt for control key: ${controlKey}`);
     
-    const mount = this.mountManager.getMountByControlKey(controlKey);
-    if (!mount) {
-      console.log(`[WEAPON SYSTEM] No mount found for control key: ${controlKey}`);
+    // Get all mounts for this control key
+    const mounts = this.mountManager.getAllMounts().filter(mount => mount.config.controlKey === controlKey);
+    if (mounts.length === 0) {
+      console.log(`[WEAPON SYSTEM] No mounts found for control key: ${controlKey}`);
       return false;
     }
     
-    console.log(`[WEAPON SYSTEM] Found mount ${mount.id} for control key: ${controlKey}`);
-    const result = mount.fire();
-    console.log(`[WEAPON SYSTEM] Fire result for ${mount.id}: ${result}`);
+    // Filter by mount type
+    const mountType = mounts[0].config.mountType; // Get mount type from first mount
+    const selectedIndex = mountType === 'primary' ? this.selectedPrimaryIndex : this.selectedSecondaryIndex;
+    
+    // Only use mounts that have weapons
+    const mountsWithWeapons = mounts.filter(mount => mount.hasWeapon());
+    if (mountsWithWeapons.length === 0) {
+      console.log(`[WEAPON SYSTEM] No armed mounts found for control key: ${controlKey}`);
+      return false;
+    }
+    
+    // Select the active mount based on selection index (clamped to valid range)
+    const activeIndex = Math.min(selectedIndex, mountsWithWeapons.length - 1);
+    const activeMount = mountsWithWeapons[activeIndex];
+    
+    console.log(`[WEAPON SYSTEM] Firing mount ${activeMount.id} for control key: ${controlKey}`);
+    const result = activeMount.fire();
+    console.log(`[WEAPON SYSTEM] Fire result for ${activeMount.id}: ${result}`);
     return result;
   }
 
@@ -119,6 +156,70 @@ export class WeaponSystem {
       weapon.deactivate();
       this.activeWeapons.delete(weaponId);
     }
+  }
+
+  cyclePrimaryWeapon(direction = 'next') {
+    const primaryMounts = this.mountManager.getMountsByType('primary');
+    const mountsWithWeapons = primaryMounts.filter(mount => mount.hasWeapon());
+    
+    if (mountsWithWeapons.length <= 1) return; // Nothing to cycle
+    
+    if (direction === 'next') {
+      this.selectedPrimaryIndex = (this.selectedPrimaryIndex + 1) % mountsWithWeapons.length;
+    } else {
+      this.selectedPrimaryIndex = (this.selectedPrimaryIndex - 1 + mountsWithWeapons.length) % mountsWithWeapons.length;
+    }
+    
+    // Update HUD to show the newly selected weapon
+    if (window.HUD) {
+      const weapon = mountsWithWeapons[this.selectedPrimaryIndex].getWeapon();
+      const displayName = weapon.config.displayName || weapon.type;
+      window.HUD.showAlert(`PRIMARY: ${displayName}`, "info");
+      window.HUD.updateWeaponDisplay('primary');
+    }
+  }
+  
+  cycleSecondaryWeapon() {
+    const secondaryMounts = this.mountManager.getMountsByType('secondary');
+    const mountsWithWeapons = secondaryMounts.filter(mount => mount.hasWeapon());
+    
+    if (mountsWithWeapons.length <= 1) return; // Nothing to cycle
+    
+    this.selectedSecondaryIndex = (this.selectedSecondaryIndex + 1) % mountsWithWeapons.length;
+    
+    // Update HUD to show the newly selected weapon
+    if (window.HUD) {
+      const weapon = mountsWithWeapons[this.selectedSecondaryIndex].getWeapon();
+      const displayName = weapon.config.displayName || weapon.type;
+      window.HUD.showAlert(`SECONDARY: ${displayName}`, "info");
+      window.HUD.updateWeaponDisplay('secondary');
+    }
+  }
+
+  // Get the currently selected weapon of a specific type (primary/secondary)
+  getSelectedWeapon(mountType) {
+    const mounts = this.mountManager.getMountsByType(mountType);
+    const mountsWithWeapons = mounts.filter(mount => mount.hasWeapon());
+    
+    if (mountsWithWeapons.length === 0) return null;
+    
+    const selectedIndex = mountType === 'primary' ? this.selectedPrimaryIndex : this.selectedSecondaryIndex;
+    const activeIndex = Math.min(selectedIndex, mountsWithWeapons.length - 1);
+    
+    return mountsWithWeapons[activeIndex].getWeapon();
+  }
+  
+  // Get the next weapon in cycle (for HUD display)
+  getNextWeapon(mountType) {
+    const mounts = this.mountManager.getMountsByType(mountType);
+    const mountsWithWeapons = mounts.filter(mount => mount.hasWeapon());
+    
+    if (mountsWithWeapons.length <= 1) return null;
+    
+    const selectedIndex = mountType === 'primary' ? this.selectedPrimaryIndex : this.selectedSecondaryIndex;
+    const nextIndex = (selectedIndex + 1) % mountsWithWeapons.length;
+    
+    return mountsWithWeapons[nextIndex].getWeapon();
   }
 
   handleRemoteWeaponPickup(data) {
