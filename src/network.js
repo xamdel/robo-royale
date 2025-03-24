@@ -2,7 +2,7 @@ import { io } from 'socket.io-client';
 import { Game } from './game.js';
 import { SceneManager } from './scene.js';
 import { Debug } from './main.js';
-import { WeaponManager } from './weapons.js';
+import { weaponSystem } from './weapons/index.js';
 import * as THREE from 'three';
 
 export const Network = {
@@ -368,7 +368,7 @@ export const Network = {
       console.log('Sending shot to server:', data);
       this.socket.emit('shootProjectile', {
         weaponId: data.weaponId,
-        weaponType: data.type,
+        weaponType: data.weaponType || data.type,
         position: data.position,
         direction: data.direction
       });

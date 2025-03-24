@@ -1,5 +1,5 @@
 import { Game } from './game.js';
-import { WeaponManager } from './weapons.js';
+import { weaponSystem } from './weapons/index.js';
 
 export const HUD = {
   elements: {
@@ -335,17 +335,24 @@ export const HUD = {
   },
   
   updateWeaponStatus() {
-    // Check if player has a weapon
-    if (Game.cannonAttached) {
+    // Check if player has any weapons
+    if (weaponSystem.activeWeapons.size > 0) {
       this.status.weaponActive = true;
       
-      // Get cooldown status
+      // Get first weapon for status (assuming single weapon for now)
+      const weapon = weaponSystem.activeWeapons.values().next().value;
+      
+      // Get mount point and cooldown status
+      const mount = weaponSystem.mountManager.getAllMounts().find(m => m.getWeapon()?.id === weapon.id);
+      if (!mount) return;
+      
       const now = performance.now();
-      const timeSinceLastFire = now - Game.lastFireTime;
-      const cooldownPercent = Math.min(100, (timeSinceLastFire / Game.cooldownTime) * 100);
+      const timeSinceLastFire = now - mount.lastFireTime;
+      const cooldownTime = 1000 / weapon.config.fireRate;
+      const cooldownPercent = Math.min(100, (timeSinceLastFire / cooldownTime) * 100);
       
       // Update weapon ready status
-      if (Game.ammo <= 0) {
+      if (weapon.ammo <= 0) {
         this.elements.weaponStatus.innerHTML = '<span class="status-inactive">NO AMMO</span>';
       } else if (cooldownPercent < 100) {
         this.elements.weaponStatus.innerHTML = '<span class="status-charging">CHARGING</span>';
@@ -353,11 +360,11 @@ export const HUD = {
         this.elements.weaponStatus.innerHTML = '<span class="status-active">READY</span>';
       }
       
-      // Update ammo counter with game's actual ammo
-      this.elements.ammoCounter.textContent = `${Game.ammo}/${Game.maxAmmo}`;
+      // Update ammo counter with weapon's actual ammo
+      this.elements.ammoCounter.textContent = `${weapon.ammo}/${weapon.maxAmmo}`;
       
       // Update ammo segments
-      const ammoPercent = (Game.ammo / Game.maxAmmo) * 100;
+      const ammoPercent = (weapon.ammo / weapon.maxAmmo) * 100;
       const segments = document.querySelectorAll('.ammo-segments .segment');
       const segmentCount = Math.ceil(ammoPercent / 10);
       
@@ -384,17 +391,17 @@ export const HUD = {
       }
       
       // Only add a message when ammo value changes significantly
-      if (this.lastAmmoCount !== null && this.lastAmmoCount !== Game.ammo && 
-          (Game.ammo === 10 || Game.ammo === 5 || Game.ammo === 1)) {
-        this.addMessage(`Warning: Ammo low - ${Game.ammo} remaining`);
+      if (this.lastAmmoCount !== null && this.lastAmmoCount !== weapon.ammo && 
+          (weapon.ammo === 10 || weapon.ammo === 5 || weapon.ammo === 1)) {
+        this.addMessage(`Warning: Ammo low - ${weapon.ammo} remaining`);
       }
       
-      this.lastAmmoCount = Game.ammo;
+      this.lastAmmoCount = weapon.ammo;
       
       // Update weapon icon
       const weaponIcon = document.querySelector('.weapon-icon');
       if (weaponIcon) {
-        weaponIcon.style.color = Game.ammo <= 0 ? '#ff0000' : '#00ff00';
+        weaponIcon.style.color = weapon.ammo <= 0 ? '#ff0000' : '#00ff00';
       }
     } else {
       this.status.weaponActive = false;

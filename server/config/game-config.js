@@ -14,11 +14,24 @@ module.exports = {
       radius: 0.15,
       maxDistance: 100,
       maxLifetime: 5000,
-      damage: 35,
+      damage: 20,
       distanceFalloff: {
         start: 50,  // Distance at which damage starts falling off
         end: 100,   // Distance at which damage reaches minimum
         minDamage: 20  // Minimum damage at maximum range
+      }
+      
+    },
+    rocket: {
+      speed: 25,
+      radius: 0.3,
+      maxDistance: 80,
+      maxLifetime: 5000,
+      damage: 40,
+      distanceFalloff: {
+        start: 40,
+        end: 80,
+        minDamage: 20
       }
     },
     default: {
@@ -43,14 +56,20 @@ module.exports = {
 
   WEAPON_COOLDOWN: {
     cannon: 500,  // 0.5 second between shots
+    rocketLauncher: 1000,
     default: 500   // 0.5 seconds between shots
   },
 
   WEAPON_AMMO: {
     cannon: {
-      initial: 10,      // Starting ammo when weapon is picked up
+      initial: 20,      // Starting ammo when weapon is picked up
       max: 20,          // Maximum ammo capacity
       pickupAmount: 5   // Amount of ammo gained from ammo pickups
+    },
+    rocketLauncher: {
+      initial: 4,      // Starting ammo when weapon is picked up
+      max: 8,         // Maximum ammo capacity 
+      pickupAmount: 4   // Amount of ammo gained from ammo pickups
     },
     default: {
       initial: 20,

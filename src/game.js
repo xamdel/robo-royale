@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SceneManager } from './scene.js';
-import { WeaponManager } from './weapons.js';
+import { weaponSystem } from './weapons/index.js';
 import { PlayerAnimations } from './player-animations.js';
 import { DebugTools } from './debug-tools.js';
+import { WeaponOrientationDebugger } from './debug-tools/weapon-orientation-debugger.js';
 
 export const Game = {
   player: null,
@@ -17,17 +18,12 @@ export const Game = {
   mixer: null,
   actions: {},
   currentAction: null,
-  leftArm: null,
-  cannonAttached: false,
   previousPosition: null,
+  weaponOrientationDebugger: null,
   
   // Player stats for HUD
   health: 100,
   maxHealth: 100,
-  ammo: 50, 
-  maxAmmo: 50,
-  lastFireTime: 0,
-  cooldownTime: 250, // ms between shots
   isDead: false,
   respawnPosition: new THREE.Vector3(0, 0, 0),
   
@@ -46,35 +42,6 @@ export const Game = {
         const model = gltf.scene;
         console.log('Loaded mech model with animations:', gltf.animations);
 
-        console.log('COMPLETE MODEL HIERARCHY:');
-        function inspectHierarchy(object, indent = '') {
-          console.log(`${indent}${object.name} [${object.type}]`);
-          
-          // Inspect all properties in case ArmL is stored in an unusual property
-          if (object.name.includes('Arm') || object.name.includes('arm')) {
-            console.log(`${indent}POTENTIAL ARM FOUND: ${object.name}`);
-          }
-          
-          // Recursively inspect all children
-          if (object.children && object.children.length > 0) {
-            object.children.forEach(child => {
-              inspectHierarchy(child, indent + '  ');
-            });
-          }
-        }
-        inspectHierarchy(model);
-
-        // Find left arm using debug tools
-        this.leftArm = DebugTools.findLeftArm(model);
-        console.log('Left arm search result:', this.leftArm ? this.leftArm.name : 'Not Found');
-
-        // Debug: Log all bones in the model to find the correct naming
-        console.log('Debugging all bones in model:');
-        model.traverse((child) => {
-          if (child.isBone || child.type === 'Bone') {
-            console.log('Bone found:', child.name);
-          }
-        });
         
         // Set up animations
         this.mixer = new THREE.AnimationMixer(model);
@@ -106,6 +73,9 @@ export const Game = {
     this.player = playerData.mesh;
     // In Game.init() after creating player:
     this.player.userData = { id: socket.id };
+
+    // Initialize weapon orientation debugger
+    // this.weaponOrientationDebugger = new WeaponOrientationDebugger();
     // Add colliders to the local player's mesh
     this.player.colliders = {
         body: new Collider('capsule', {
@@ -126,9 +96,11 @@ export const Game = {
     this.previousPosition = this.player.position.clone();
     SceneManager.add(this.player);
     
+    // Initialize weapon system
+    await weaponSystem.init(this.player);
+
     // Initialize player stats for HUD
     this.health = this.maxHealth;
-    this.ammo = this.maxAmmo;
     
     // Show welcome messages after a short delay
     setTimeout(() => {
@@ -168,12 +140,6 @@ export const Game = {
       }
     });
 
-    // Add mouse click handler for shooting
-    document.addEventListener('mousedown', (event) => {
-      if (event.button === 0 && this.cannonAttached && !this.isDead) { // Left click
-        WeaponManager.fireWeapon(this.player);
-      }
-    });
   },
 
   handleDeath(killerPlayerId) {
@@ -223,9 +189,8 @@ export const Game = {
     // Update local player's animation mixer
     this.mixer.update(deltaTime);
 
-    const now = Date.now();
-    // Check for cannon pickup
-    if (SceneManager.cannon && SceneManager.cannonCollider && !this.cannonAttached) {
+    // Check for weapon pickups
+    if (SceneManager.cannon && SceneManager.cannonCollider) {
       const playerWorldPos = new THREE.Vector3();
       this.player.getWorldPosition(playerWorldPos);
       
@@ -234,31 +199,30 @@ export const Game = {
       const distanceToPlayer = playerWorldPos.distanceTo(cannonWorldPos);
       
       if (distanceToPlayer <= distanceThreshold) {
-        console.log('Player in range of cannon, attempting to attach...');
-        if (this.leftArm) {
-          // Check if weapon is already owned by another player
-          const weaponOwner = WeaponManager.weaponOwnership.get(SceneManager.cannon.uuid);
-          if (!weaponOwner) {
-            SceneManager.cannonAttached = true;
-            const success = WeaponManager.attachWeaponToSocket(
-              this.player, 
-              SceneManager.cannon, 
-              'leftArm', 
-              'cannon',
-              false // Local pickup
-            );
+        weaponSystem.pickupWeapon(this.player, SceneManager.cannon, 'cannon')
+          .then(success => {
             if (success) {
               SceneManager.cannonCollider = null;
-              this.cannonAttached = true;
-              
-              // Show weapon pickup message in HUD
-              if (window.HUD) {
-                window.HUD.showAlert("CANNON ARMED AND READY", "info");
-                window.HUD.addMessage("Cannon equipped. Ammo: " + this.ammo + "/" + this.maxAmmo);
-              }
             }
-          }
-        }
+          });
+      }
+    }
+
+    if (SceneManager.rocketLauncher && SceneManager.rocketLauncherCollider) {
+      const playerWorldPos = new THREE.Vector3();
+      this.player.getWorldPosition(playerWorldPos);
+      
+      const rocketWorldPos = SceneManager.rocketLauncherCollider.center.clone();
+      const distanceThreshold = SceneManager.rocketLauncherCollider.radius * 1.2;
+      const distanceToPlayer = playerWorldPos.distanceTo(rocketWorldPos);
+      
+      if (distanceToPlayer <= distanceThreshold) {
+        weaponSystem.pickupWeapon(this.player, SceneManager.rocketLauncher, 'rocketLauncher')
+          .then(success => {
+            if (success) {
+              SceneManager.rocketLauncherCollider = null;
+            }
+          });
       }
     }
 
@@ -305,7 +269,7 @@ export const Game = {
       }
     });
     
-    WeaponManager.update(deltaTime);
+    weaponSystem.update(deltaTime);
 
     // Update camera and process input
     const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
