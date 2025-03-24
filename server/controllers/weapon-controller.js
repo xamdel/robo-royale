@@ -46,8 +46,8 @@ class WeaponController {
     if (!this.playerAmmo.has(socket.id)) {
       this.playerAmmo.set(socket.id, new Map());
     }
-    // Set initial ammo based on weapon type
-    const initialAmmo = data.weaponType === 'cannon' ? 10 : 20; // Default ammo values
+    // Get initial ammo using validation service
+    const initialAmmo = ValidationService.getInitialAmmo(data.weaponType);
     this.playerAmmo.get(socket.id).set(data.weaponId, initialAmmo);
 
     // Send initial ammo count to the player

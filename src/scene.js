@@ -7,10 +7,6 @@ export const SceneManager = {
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
   cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
-  weaponModels: new Map(), // Store original weapon models
-  weaponTypes: {
-    'cannon': '/assets/models/Cannon.glb'
-  },
   cameraDistance: 5, // Distance from player
   cameraHeight: 4, // Height offset
   freeLookActive: false, // Free look mode toggle
@@ -40,14 +36,14 @@ export const SceneManager = {
     const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
     directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.width = 4096;
+    directionalLight.shadow.mapSize.width = 4096;
     directionalLight.shadow.mapSize.height = 4096; // Increased resolution
     directionalLight.shadow.camera.near = 1; // Adjusted near plane
-directionalLight.shadow.camera.far = 100; // Adjusted far plane
-directionalLight.shadow.camera.left = -50; // Added left plane
-directionalLight.shadow.camera.right = 50; // Added right plane
-directionalLight.shadow.camera.top = 50; // Added top plane
-directionalLight.shadow.camera.bottom = -50; // Added bottom plane
+    directionalLight.shadow.camera.far = 100; // Adjusted far plane
+    directionalLight.shadow.camera.left = -50; // Added left plane
+    directionalLight.shadow.camera.right = 50; // Added right plane
+    directionalLight.shadow.camera.top = 50; // Added top plane
+    directionalLight.shadow.camera.bottom = -50; // Added bottom plane
     directionalLight.shadow.bias = -0.001; // Reduce shadow acne
     this.scene.add(directionalLight);
 
@@ -70,21 +66,31 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
     terrain.receiveShadow = true;
     this.scene.add(terrain);
 
-    // Load cannon model
+    // Load weapon pickups
     const loader = new GLTFLoader();
+    
+    // Load cannon pickup
     loader.load('/assets/models/Cannon.glb', (gltf) => {
-      // Store the original model for cloning
-      this.weaponModels.set('cannon', gltf.scene);
-      
-      // Create the pickup-able instance
-      this.cannon = gltf.scene.clone();
+      this.cannon = gltf.scene;
       this.cannon.position.set(0, 0, -10);
       this.cannon.castShadow = true;
       this.scene.add(this.cannon);
       
-      // Set up collision sphere for pickup
       this.cannonCollider = new THREE.Sphere(
         this.cannon.position.clone(),
+        2.5 // Pickup radius
+      );
+    });
+
+    // Load rocket launcher pickup
+    loader.load('/assets/models/RocketLauncher.glb', (gltf) => {
+      this.rocketLauncher = gltf.scene;
+      this.rocketLauncher.position.set(10, 0, -10);
+      this.rocketLauncher.castShadow = true;
+      this.scene.add(this.rocketLauncher);
+      
+      this.rocketLauncherCollider = new THREE.Sphere(
+        this.rocketLauncher.position.clone(),
         2.5 // Pickup radius
       );
     });
@@ -103,22 +109,6 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
 
   add(object) {
     this.scene.add(object);
-  },
-
-  cloneWeapon(type) {
-    const originalModel = this.weaponModels.get(type);
-    if (!originalModel) {
-      console.warn(`No weapon model found for type: ${type}`);
-      return null;
-    }
-    const clone = originalModel.clone();
-    clone.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.material = child.material.clone(); // Clone materials to allow independent modifications
-      }
-    });
-    return clone;
   },
 
   remove(object) {
@@ -170,28 +160,19 @@ directionalLight.shadow.camera.bottom = -50; // Added bottom plane
     const deltaTime = this.lastRenderTime ? (now - this.lastRenderTime)/1000 : 0;
     this.lastRenderTime = now;
 
-    if (this.cannon) {
-      // Only rotate the cannon if it's not attached to the player
-      if (!this.cannonAttached) {
-        this.cannon.rotation.y += deltaTime * 0.5; // 0.5 radians/sec rotation
-      }
-      
-      // Update collider position to match cannon (only if not attached)
-      if (this.cannonCollider) {
-        const worldPos = new THREE.Vector3();
-        this.cannon.getWorldPosition(worldPos);
-        this.cannonCollider.center.copy(worldPos);
-        
-        // Only log in debug mode to avoid flooding the console
-        if (playerPosition && window.Debug && window.Debug.state && window.Debug.state.enabled) {
-          console.log('Cannon collider updated:', {
-            worldPosition: worldPos, 
-            radius: this.cannonCollider.radius,
-            playerPosition: playerPosition,
-            distance: playerPosition ? worldPos.distanceTo(playerPosition) : null
-          });
-        }
-      }
+    // Rotate pickups for visual effect
+    if (this.cannon && this.cannonCollider) {
+      this.cannon.rotation.y += deltaTime * 0.5;
+      const worldPos = new THREE.Vector3();
+      this.cannon.getWorldPosition(worldPos);
+      this.cannonCollider.center.copy(worldPos);
+    }
+    
+    if (this.rocketLauncher && this.rocketLauncherCollider) {
+      this.rocketLauncher.rotation.y += deltaTime * 0.5;
+      const worldPos = new THREE.Vector3();
+      this.rocketLauncher.getWorldPosition(worldPos);
+      this.rocketLauncherCollider.center.copy(worldPos);
     }
     
     this.renderer.render(this.scene, this.camera);
