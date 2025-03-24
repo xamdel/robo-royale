@@ -1,8 +1,8 @@
 import { io } from 'socket.io-client';
 import { Game } from './game.js';
 import { SceneManager } from './scene.js';
-import { Debug } from './main.js';
 import { weaponSystem } from './weapons/index.js';
+import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
 import * as THREE from 'three';
 
 export const Network = {
@@ -91,7 +91,7 @@ export const Network = {
     this.socket.on('projectilesUpdate', (data) => {
       if (data.projectiles && data.projectiles.length > 0) {
         data.projectiles.forEach(projectileData => {
-          const projectile = WeaponManager.networkProjectiles.get(projectileData.id);
+          const projectile = weaponSystem.getWeaponById(projectileData.weaponId)?.projectiles?.get(projectileData.id);
           
           if (projectile) {
             // For all projectiles, update from server authority
@@ -109,45 +109,19 @@ export const Network = {
     this.socket.on('projectileCreated', (data) => {
       // Only spawn projectiles for other players - our own are created when we shoot
       if (data.ownerId !== this.socket.id) {
-        const sourcePlayer = Game.otherPlayers[data.ownerId]?.mesh;
-        
-        const projectile = WeaponManager.projectileManager.spawn(
-          data.weaponType,
-          new THREE.Vector3(data.position.x, data.position.y, data.position.z),
-          new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z),
-          sourcePlayer
-        );
-        
-        if (projectile) {
-          projectile.serverId = data.id;
-          WeaponManager.networkProjectiles.set(data.id, projectile);
-        }
-      } else {
-        // This is for our own projectiles that we've already created
-        // We need to assign the server ID
-        const localProjectiles = Array.from(WeaponManager.networkProjectiles.values())
-          .filter(p => p.sourcePlayer === Game.player && !p.serverId);
-        
-        if (localProjectiles.length > 0) {
-          // Assume the most recent one is the one the server is confirming
-          const projectile = localProjectiles[localProjectiles.length - 1];
-          projectile.serverId = data.id;
-          
-          // Update our tracking Map
-          const oldId = [...WeaponManager.networkProjectiles.entries()]
-            .find(([_, p]) => p === projectile)?.[0];
-            
-          if (oldId) {
-            WeaponManager.networkProjectiles.delete(oldId);
-            WeaponManager.networkProjectiles.set(data.id, projectile);
-          }
+        const weapon = weaponSystem.getWeaponById(data.weaponId);
+        if (weapon) {
+          const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+          const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
+          weapon.createProjectile(position, direction);
         }
       }
+      
     });
 
     // Handle projectile destruction
     this.socket.on('projectileDestroyed', (data) => {
-      const projectile = WeaponManager.networkProjectiles.get(data.id);
+      const weapon = weaponSystem.getWeaponById(data.weaponId);
       
       // Show hit effect if projectile was destroyed due to hit
       if (data.reason === 'hit' && data.position) {
@@ -158,13 +132,10 @@ export const Network = {
         );
         
         console.log('Server confirmed hit at position:', hitPosition);
-        WeaponManager.createExplosion(hitPosition, data.weaponType === 'cannon' ? 0xffff00 : 0xff4400);
-      }
-      
-      // Clean up the projectile from our scene
-      if (projectile) {
-        projectile.deactivate();
-        WeaponManager.networkProjectiles.delete(data.id);
+        
+        if (weapon) {
+          weapon.handleHit(hitPosition);
+        }
       }
     });
 
@@ -242,8 +213,10 @@ export const Network = {
         }
       }
       
-      // Create explosion at player position
-      WeaponManager.createPlayerExplosion(position);
+      // Create explosion at player position using the particle effect system
+      if (window.particleEffectSystem) {
+        window.particleEffectSystem.addExplosion(position, 10, 0xff4400);
+      }
       
       // Play explosion sound
       if (window.AudioManager) {
@@ -323,13 +296,16 @@ export const Network = {
         return;
       }
       
-      WeaponManager.attachWeaponToSocket(
-        remotePlayer.mesh,
-        weaponClone,
-        data.socketName,
-        data.weaponType,
-        true // Mark as remote pickup
-      );
+      // Create a weapon and attach it to the remote player
+      weaponSystem.weaponFactory.createWeapon(data.weaponType, weaponClone).then(weapon => {
+        if (weapon) {
+          // Find the right mount point on the remote player
+          const mountPoint = weaponSystem.mountManager.getAllMounts().find(m => m.socketName === data.socketName);
+          if (mountPoint) {
+            mountPoint.attachWeapon(weapon);
+          }
+        }
+      });
     });
 
     // Handle position corrections

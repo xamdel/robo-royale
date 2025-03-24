@@ -94,6 +94,11 @@ export const Game = {
     
     this.player.position.set(0, this.player.position.y, 0);
     this.previousPosition = this.player.position.clone();
+    
+    // Add identifying properties to help with weapon parent checks
+    this.player.isPlayerModel = true;
+    this.player.name = "PlayerMech";
+    
     SceneManager.add(this.player);
     
     // Initialize weapon system

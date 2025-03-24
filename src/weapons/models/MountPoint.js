@@ -144,17 +144,35 @@ export class MountPoint {
   }
 
   fire() {
-    if (!this.canFire()) return false;
-
-    if (this.weapon) {
-      const success = this.weapon.fire(this.getWorldPosition(), this.getWorldDirection());
-      if (success) {
-        this.lastFireTime = Date.now();
-      }
-      return success;
+    console.log(`[WEAPON] Mount point ${this.id} fire attempt`);
+    
+    if (!this.canFire()) {
+      console.log(`[WEAPON] Mount point ${this.id} cannot fire - cooldown not ready`);
+      return false;
     }
 
-    return false;
+    if (!this.weapon) {
+      console.log(`[WEAPON] Mount point ${this.id} has no weapon attached`);
+      return false;
+    }
+    
+    const worldPosition = this.getWorldPosition();
+    const worldDirection = this.getWorldDirection();
+    
+    console.log(`[WEAPON] Firing weapon ${this.weapon.type} from position`, 
+                worldPosition.toArray(), 
+                "in direction", 
+                worldDirection.toArray());
+    
+    const success = this.weapon.fire(worldPosition, worldDirection);
+    if (success) {
+      console.log(`[WEAPON] Fire successful for ${this.weapon.type}`);
+      this.lastFireTime = Date.now();
+    } else {
+      console.log(`[WEAPON] Fire failed for ${this.weapon.type}`);
+    }
+    
+    return success;
   }
 
   update(deltaTime) {

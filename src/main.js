@@ -3,7 +3,7 @@ import { Game } from './game.js';
 import { Network } from './network.js';
 import { DebugTools } from './debug-tools.js';
 import { HUD } from './hud.js';
-import { WeaponManager } from './weapons.js';
+import { weaponSystem } from './weapons/index.js';
 import * as THREE from 'three';
 
 // Debug variables
@@ -76,7 +76,7 @@ async function init() {
   HUD.init();
   
   // Initialize weapon particle systems
-  await WeaponManager.init();
+  // (note: weapon system is already initialized in Game.init())
   
   // Start the game loop
   lastTime = performance.now();
@@ -116,9 +116,8 @@ function gameLoop(timestamp) {
     DebugTools.updateNetworkDebugUI();
   }
   
-  // Update HUD and weapon systems
+  // Update HUD
   HUD.update(deltaTime);
-  WeaponManager.update(deltaTime);
   
   // Render the scene
   SceneManager.render(Game.player?.position);

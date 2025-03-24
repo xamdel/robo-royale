@@ -193,6 +193,42 @@ export class ParticleEffectSystem {
     }
   }
 
+  addMuzzleFlash(position, color = 0xff4400) {
+    // Create small fire particles for muzzle flash
+    for (let i = 0; i < 10; i++) {
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 3,
+        Math.random() * 2,
+        (Math.random() - 0.5) * 3
+      );
+      const particle = this.pools.smallFire.acquire(position, velocity, 300);
+      if (particle) {
+        particle.material.color.setHex(color);
+      }
+    }
+
+    // Add flash effect
+    this.flash.position.copy(position);
+    this.flash.visible = true;
+    this.flash.intensity = 3;
+    this.flash.userData = {
+      startTime: performance.now(),
+      duration: 150
+    };
+  }
+
+  addSmoke(position) {
+    // Create smoke particles
+    for (let i = 0; i < 5; i++) {
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 2,
+        0.5 + Math.random() * 1.5,
+        (Math.random() - 0.5) * 2
+      );
+      this.pools.smoke.acquire(position, velocity, 1000);
+    }
+  }
+
   update() {
     const currentTime = performance.now();
 
@@ -215,3 +251,6 @@ export class ParticleEffectSystem {
 
 // Export singleton instance
 export const particleEffectSystem = new ParticleEffectSystem();
+
+// Make the particle system globally available
+window.particleEffectSystem = particleEffectSystem;

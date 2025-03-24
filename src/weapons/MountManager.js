@@ -13,6 +13,15 @@ export class MountManager {
     this.mounts.clear();
     this.mountsByControl.clear();
 
+    // Log critical player model info
+    console.log('[PLAYER MODEL] Details:', {
+      name: playerModel.name,
+      type: playerModel.type,
+      hasUserData: !!playerModel.userData,
+      childCount: playerModel.children.length,
+      isGamePlayer: window.Game && playerModel === window.Game.player
+    });
+
     // Create mount points based on configuration
     for (const config of mountConfigs) {
       const bone = this.findBoneByName(playerModel, config.boneName);
@@ -34,9 +43,11 @@ export class MountManager {
         
         console.log(`[Mount ${config.id}] Mount point bone details:`, {
           name: bone.name,
+          type: bone.type,
           localPosition: bonePos.toArray(),
           localRotation: boneRot.toArray(),
-          matrixWorld: bone.matrixWorld.toArray()
+          matrixWorld: bone.matrixWorld.toArray(),
+          isPartOfPlayer: this.isPartOfPlayer(bone, playerModel)
         });
         
         // Then get the full hierarchy
@@ -48,6 +59,7 @@ export class MountManager {
           
           hierarchy.unshift({
             name: currentBone.name,
+            type: currentBone.type,
             localPosition: pos.toArray(),
             localRotation: rot.toArray(),
             matrixWorld: currentBone.matrixWorld.toArray()
@@ -67,6 +79,22 @@ export class MountManager {
     }
 
     return this.mounts.size > 0;
+  }
+  
+  // Helper to check if a bone is part of the player model
+  isPartOfPlayer(bone, playerModel) {
+    let current = bone;
+    let depth = 0;
+    const maxDepth = 10;
+    
+    while (current && depth < maxDepth) {
+      if (current === playerModel) {
+        return true;
+      }
+      current = current.parent;
+      depth++;
+    }
+    return false;
   }
 
   findBoneByName(model, boneName) {

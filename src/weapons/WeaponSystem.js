@@ -90,10 +90,18 @@ export class WeaponSystem {
   }
 
   fireWeaponByControl(controlKey) {
+    console.log(`[WEAPON SYSTEM] Fire attempt for control key: ${controlKey}`);
+    
     const mount = this.mountManager.getMountByControlKey(controlKey);
-    if (mount) {
-      mount.fire();
+    if (!mount) {
+      console.log(`[WEAPON SYSTEM] No mount found for control key: ${controlKey}`);
+      return false;
     }
+    
+    console.log(`[WEAPON SYSTEM] Found mount ${mount.id} for control key: ${controlKey}`);
+    const result = mount.fire();
+    console.log(`[WEAPON SYSTEM] Fire result for ${mount.id}: ${result}`);
+    return result;
   }
 
   getWeaponById(weaponId) {
