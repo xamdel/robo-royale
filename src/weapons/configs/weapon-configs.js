@@ -15,7 +15,7 @@ export const weaponConfigs = {
       color: 0xdae640
     },
     effects: {
-      muzzleFlash: false,
+      muzzleFlash: true,
       sound: 'cannon-shot.mp3'
     }
   },
@@ -33,7 +33,7 @@ export const weaponConfigs = {
       color: 0xff4400
     },
     effects: {
-      muzzleFlash: false,
+      muzzleFlash: true,
       smoke: true,
       sound: 'rocket-launch.mp3'
     }

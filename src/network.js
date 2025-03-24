@@ -215,7 +215,7 @@ export const Network = {
       
       // Create explosion at player position using the particle effect system
       if (window.particleEffectSystem) {
-        window.particleEffectSystem.addExplosion(position, 10, 0xff4400);
+        window.particleEffectSystem.createPlayerExplosion(position);
       }
       
       // Play explosion sound

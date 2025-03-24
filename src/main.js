@@ -4,6 +4,7 @@ import { Network } from './network.js';
 import { DebugTools } from './debug-tools.js';
 import { HUD } from './hud.js';
 import { weaponSystem } from './weapons/index.js';
+import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
 import * as THREE from 'three';
 
 // Debug variables
@@ -118,6 +119,9 @@ function gameLoop(timestamp) {
   
   // Update HUD
   HUD.update(deltaTime);
+  
+  // Update particle effects
+  particleEffectSystem.update();
   
   // Render the scene
   SceneManager.render(Game.player?.position);
