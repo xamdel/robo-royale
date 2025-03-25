@@ -123,11 +123,7 @@ export const Network = {
     });
 
     // Handle projectile destruction
-    this.socket.on('projectileDestroyed', (data) => {
-      // Find weapon of matching type
-      const weapons = Array.from(weaponSystem.activeWeapons.values());
-      const matchingWeapon = weapons.find(w => w.type === data.weaponType);
-      
+    this.socket.on('projectileDestroyed', async (data) => {
       // Show hit effect if projectile was destroyed due to hit
       if (data.reason === 'hit' && data.position) {
         const hitPosition = new THREE.Vector3(
@@ -138,8 +134,14 @@ export const Network = {
         
         console.log('Server confirmed hit at position:', hitPosition);
         
-        if (matchingWeapon) {
-          matchingWeapon.handleHit(hitPosition);
+        // Get weapon config to determine projectile color
+        const { getWeaponConfig } = await import('./weapons/configs/weapon-configs.js');
+        const config = getWeaponConfig(data.weaponType);
+        const color = config?.projectileConfig?.color || 0xffff00; // Fallback to yellow
+        
+        // Create hit effect directly using particle system
+        if (window.particleEffectSystem) {
+          window.particleEffectSystem.addCollisionEffect(hitPosition, color);
         }
       }
     });
