@@ -109,16 +109,18 @@ export class Weapon {
         projectile.add(fin);
       }
       
-      // Create a small flame effect at the back of the rocket (visual only)
-      const flameGeometry = new THREE.ConeGeometry(rocketRadius * 0.8, rocketLength * 0.5, 8);
+      // Create a large initial flame effect at the back of the rocket (visual only)
+      const flameGeometry = new THREE.ConeGeometry(rocketRadius * 1.2, rocketLength * 1.0, 8);
       flameGeometry.rotateX(-Math.PI / 2);
       const flameMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xff7700,
+        color: 0xff5500,
         transparent: true,
-        opacity: 0.8
+        opacity: 0.9,
+        emissive: 0xff3300,
+        emissiveIntensity: 1.0
       });
       const flame = new THREE.Mesh(flameGeometry, flameMaterial);
-      flame.position.z = -rocketLength * 0.7; // Position at back
+      flame.position.z = -rocketLength * 0.8; // Position at back
       projectile.add(flame);
       
     } else {
@@ -129,7 +131,15 @@ export class Weapon {
     }
     
     projectile.position.copy(position);
-    projectile.velocity = direction.clone().multiplyScalar(projectileConfig.speed);
+    
+    // For rockets, apply initial slower velocity, otherwise use standard speed
+    if (this.config.projectileType === 'rocket') {
+      const initialSpeed = 30; // Start faster but still not at full speed
+      projectile.velocity = direction.clone().multiplyScalar(initialSpeed);
+    } else {
+      projectile.velocity = direction.clone().multiplyScalar(projectileConfig.speed);
+    }
+    
     projectile.startPosition = position.clone();
     projectile.prevPosition = position.clone();
     projectile.maxDistance = projectileConfig.maxDistance;
@@ -138,14 +148,25 @@ export class Weapon {
     // Add userData for tracking
     projectile.userData = projectile.userData || {};
     
-      // Set up the rocket to always face its direction of travel
-      if (this.config.projectileType === 'rocket') {
+    // Set up the rocket to always face its direction of travel
+    if (this.config.projectileType === 'rocket') {
         projectile.lookAt(position.clone().add(direction));
         
-        // Set up particle emitter for trail
+        // Set up rocket acceleration
         projectile.isRocket = true;
-        projectile.lastTrailTime = 0;
-        projectile.trailInterval = 50; // ms between trail particles
+        projectile.initialSpeed = 30; // Moderate initial speed 
+        projectile.maxSpeed = projectileConfig.speed; // Max speed of 150
+        projectile.currentSpeed = projectile.initialSpeed;
+        projectile.accelerationRate = 60; // Extreme acceleration for near-instant top speed
+        projectile.initialFlare = true; // Flag for initial flare effect
+        projectile.flareEndTime = performance.now() + 150; // Flare lasts for 150ms
+        
+        // Create bigger initial flame effect for the flame we just created
+        const flameElement = projectile.children.find(child => 
+          child.material && child.material.color.getHex() === 0xff5500);
+        if (flameElement) {
+          flameElement.scale.set(3.0, 3.0, 3.0); // Make initial flare very large
+        }
       }
     
     this.projectiles.add(projectile);
@@ -158,10 +179,27 @@ export class Weapon {
     if (this.config.effects) {
       if (this.config.effects.muzzleFlash) {
         particleEffectSystem.addMuzzleFlash(position, this.config.projectileConfig.color);
+        
+        // Add larger muzzle flash for rocket launcher
+        if (this.config.projectileType === 'rocket') {
+          // Create intense launch effect for rocket
+          if (particleEffectSystem) {
+            // Add a big initial flash
+            particleEffectSystem.addMuzzleFlash(position, 0xff5500, 3.0); // Bigger flash
+            
+            // Create staggered smaller flashes for lingering effect
+            for (let i = 1; i < 4; i++) {
+              setTimeout(() => {
+                if (particleEffectSystem) {
+                  particleEffectSystem.addMuzzleFlash(position, 0xff5500, 2.0 - (i * 0.5));
+                }
+              }, i * 40); // Stagger the flashes
+            }
+          }
+        }
       }
-      if (this.config.effects.smoke) {
-        particleEffectSystem.addSmoke(position);
-      }
+      
+      // We've removed smoke effects since they didn't look good
     }
   }
 
@@ -176,26 +214,37 @@ export class Weapon {
       
       // If it's a rocket, make it face its direction of travel
       if (projectile.isRocket) {
+        // Handle initial flare effect timing
+        const currentTime = performance.now();
+        if (projectile.initialFlare && currentTime > projectile.flareEndTime) {
+          // Turn off the initial flare after the time period
+          projectile.initialFlare = false;
+          
+          // Hide large flame after initial flare
+          if (projectile.children.length > 0) {
+            const flame = projectile.children.find(child => 
+              child.material && (child.material.color.getHex() === 0xff5500 || child.material.color.getHex() === 0xff7700));
+            if (flame) {
+              flame.visible = false; // Hide large flame completely
+            }
+          }
+        }
+        
+        // Accelerate the rocket over time (very quickly)
+        if (projectile.currentSpeed < projectile.maxSpeed) {
+          projectile.currentSpeed += projectile.accelerationRate * deltaTime;
+          if (projectile.currentSpeed > projectile.maxSpeed) {
+            projectile.currentSpeed = projectile.maxSpeed;
+          }
+          // Update velocity magnitude while preserving direction
+          const direction = projectile.velocity.clone().normalize();
+          projectile.velocity.copy(direction.multiplyScalar(projectile.currentSpeed));
+        }
+        
         // Make rocket always face its direction of travel
         if (projectile.velocity.lengthSq() > 0.00001) {
           const lookAtPos = projectile.position.clone().add(projectile.velocity.clone().normalize());
           projectile.lookAt(lookAtPos);
-        }
-        
-        // Create smoke trail behind rocket
-        const currentTime = performance.now();
-        if (currentTime - projectile.lastTrailTime > projectile.trailInterval) {
-          // Calculate position behind the rocket
-          const trailPosition = projectile.position.clone().sub(
-            projectile.velocity.clone().normalize().multiplyScalar(0.4)
-          );
-          
-          // Add smoke particle
-          if (particleEffectSystem) {
-            particleEffectSystem.addSmoke(trailPosition);
-          }
-          
-          projectile.lastTrailTime = currentTime;
         }
       }
       

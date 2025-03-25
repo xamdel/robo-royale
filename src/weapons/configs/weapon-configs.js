@@ -28,7 +28,7 @@ export const weaponConfigs = {
     damage: 50,
     projectileConfig: {
       radius: 0.3,
-      speed: 25,
+      speed: 150, // Significantly increased max speed
       maxDistance: 80,
       color: 0xff4400
     },

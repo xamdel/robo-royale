@@ -249,32 +249,37 @@ export class ParticleEffectSystem {
     }
   }
 
-  addMuzzleFlash(position, color = 0xff4400) {
+  addMuzzleFlash(position, color = 0xff4400, sizeMultiplier = 1.0) {
     if (!this.initialized) {
       console.warn('[PARTICLE SYSTEM] Attempted to add muzzle flash but system is not initialized');
       return;
     }
     
-    // Create small fire particles for muzzle flash
-    for (let i = 0; i < 10; i++) {
+    // Create fire particles for muzzle flash, size based on multiplier
+    const particleCount = Math.round(10 * sizeMultiplier);
+    for (let i = 0; i < particleCount; i++) {
+      const spreadFactor = 3 * sizeMultiplier;
       const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 3,
-        Math.random() * 2,
-        (Math.random() - 0.5) * 3
+        (Math.random() - 0.5) * spreadFactor,
+        Math.random() * 2 * sizeMultiplier,
+        (Math.random() - 0.5) * spreadFactor
       );
-      const particle = this.pools.smallFire.acquire(position, velocity, 300);
+      const particle = this.pools.smallFire.acquire(position, velocity, 300 * sizeMultiplier);
       if (particle) {
         particle.material.color.setHex(color);
+        // Scale particle based on size multiplier
+        particle.scale.set(sizeMultiplier, sizeMultiplier, sizeMultiplier);
       }
     }
 
     // Add flash effect
     this.flash.position.copy(position);
     this.flash.visible = true;
-    this.flash.intensity = 3;
+    this.flash.intensity = 3 * sizeMultiplier;
+    this.flash.color.setHex(color);
     this.flash.userData = {
       startTime: performance.now(),
-      duration: 150
+      duration: 150 * sizeMultiplier
     };
   }
 

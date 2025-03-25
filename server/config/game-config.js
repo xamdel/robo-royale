@@ -23,7 +23,7 @@ module.exports = {
       
     },
     rocket: {
-      speed: 25,
+      speed: 150, // Significantly increased max speed
       radius: 0.3,
       maxDistance: 80,
       maxLifetime: 5000,

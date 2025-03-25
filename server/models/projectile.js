@@ -28,6 +28,14 @@ class Projectile {
     
     // Flag for rockets - they should explode when hitting targets or terrain
     this.isRocket = weaponType === 'rocket';
+    
+    // Set up rocket acceleration on the server side
+    if (this.isRocket) {
+      this.initialSpeed = 30; // Moderate initial speed
+      this.maxSpeed = this.speed; // Max speed of 150
+      this.speed = this.initialSpeed; // Start with the initial speed
+      this.accelerationRate = 60; // Extreme acceleration for near-instant top speed
+    }
 
     this.createdAt = Date.now();
     this.lastUpdateTime = this.createdAt;
@@ -40,6 +48,14 @@ class Projectile {
 
     // Store previous position
     this.prevPosition = { ...this.position };
+    
+    // Apply rocket acceleration if applicable
+    if (this.isRocket && this.speed < this.maxSpeed) {
+      this.speed += this.accelerationRate * deltaTime;
+      if (this.speed > this.maxSpeed) {
+        this.speed = this.maxSpeed;
+      }
+    }
 
     // Update position based on direction and speed
     const newPosition = {
