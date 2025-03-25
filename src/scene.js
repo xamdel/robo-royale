@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'; //for metallic reflections
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { weaponSystem } from './weapons';
 
 export const SceneManager = {
   scene: new THREE.Scene(),
@@ -54,10 +55,6 @@ export const SceneManager = {
 
     // Add a simple terrain
     const terrainGeometry = new THREE.PlaneGeometry(200, 200);
-    const textureLoader = new THREE.TextureLoader();
-    // const terrainTexture = textureLoader.load('/assets/grid.png');
-    // terrainTexture.wrapS = terrainTexture.wrapT = THREE.RepeatWrapping;
-    // terrainTexture.repeat.set(10, 10);
     const terrainMaterial = new THREE.MeshPhongMaterial({
       color: '#008000', // Green color
     });
@@ -65,35 +62,6 @@ export const SceneManager = {
     terrain.rotation.x = -Math.PI / 2;
     terrain.receiveShadow = true;
     this.scene.add(terrain);
-
-    // Load weapon pickups
-    const loader = new GLTFLoader();
-    
-    // Load cannon pickup
-    loader.load('/assets/models/Cannon.glb', (gltf) => {
-      this.cannon = gltf.scene;
-      this.cannon.position.set(0, 0, -10);
-      this.cannon.castShadow = true;
-      this.scene.add(this.cannon);
-      
-      this.cannonCollider = new THREE.Sphere(
-        this.cannon.position.clone(),
-        2.5 // Pickup radius
-      );
-    });
-
-    // Load rocket launcher pickup
-    loader.load('/assets/models/RocketLauncher.glb', (gltf) => {
-      this.rocketLauncher = gltf.scene;
-      this.rocketLauncher.position.set(10, 0, -10);
-      this.rocketLauncher.castShadow = true;
-      this.scene.add(this.rocketLauncher);
-      
-      this.rocketLauncherCollider = new THREE.Sphere(
-        this.rocketLauncher.position.clone(),
-        2.5 // Pickup radius
-      );
-    });
 
     // Set initial camera position
     this.camera.position.set(0, 10, 10);
@@ -120,33 +88,24 @@ export const SceneManager = {
     }
   },
   
-  cloneWeapon(weaponType) {
+  async cloneWeapon(weaponType) {
     console.log(`[SceneManager] Attempting to clone weapon: ${weaponType}`);
     
-    // Initialize model cache if it doesn't exist
-    if (!this.weaponModels) {
-      this.weaponModels = {};
-    }
-    
-    if (weaponType === 'cannon' && this.cannon) {
-      if (!this.weaponModels.cannon) {
-        // Clone and store the original model
-        this.weaponModels.cannon = this.cannon.clone();
-        console.log('[SceneManager] Cannon model cloned and cached');
+    try {
+      if (!weaponSystem?.weaponFactory) {
+        throw new Error('Weapon system not initialized');
       }
-      return this.weaponModels.cannon.clone();
-    } 
-    else if (weaponType === 'rocketLauncher' && this.rocketLauncher) {
-      if (!this.weaponModels.rocketLauncher) {
-        // Clone and store the original model
-        this.weaponModels.rocketLauncher = this.rocketLauncher.clone();
-        console.log('[SceneManager] Rocket Launcher model cloned and cached');
+      
+      const model = await weaponSystem.weaponFactory.loadWeaponModel(weaponType);
+      if (!model) {
+        throw new Error(`Failed to load model for ${weaponType}`);
       }
-      return this.weaponModels.rocketLauncher.clone();
+      
+      return model.clone();
+    } catch (error) {
+      console.error(`[SceneManager] Failed to clone weapon ${weaponType}:`, error);
+      return null;
     }
-    
-    console.error(`[SceneManager] Failed to clone weapon: ${weaponType} - model not found`);
-    return null;
   },
   
   // Add debug visualization for interpolation
@@ -247,6 +206,34 @@ export const SceneManager = {
         this.freeLookActive = false;
       }
     });
+  },
+
+  async addWeaponPickups() {
+    try {
+      const cannonWeapon = await weaponSystem.weaponFactory.createWeapon('cannon');
+      this.cannon = cannonWeapon.model;
+      this.cannon.position.set(0, 0, -10);
+      this.cannon.castShadow = true;
+      this.scene.add(this.cannon);
+      
+      this.cannonCollider = new THREE.Sphere(
+        this.cannon.position.clone(),
+        2.5 // Pickup radius
+      );
+
+      const rocketWeapon = await weaponSystem.weaponFactory.createWeapon('rocketLauncher');
+      this.rocketLauncher = rocketWeapon.model;
+      this.rocketLauncher.position.set(10, 0, -10);
+      this.rocketLauncher.castShadow = true;
+      this.scene.add(this.rocketLauncher);
+      
+      this.rocketLauncherCollider = new THREE.Sphere(
+        this.rocketLauncher.position.clone(),
+        2.5 // Pickup radius
+      );
+    } catch (error) {
+      console.error('Error adding weapon pickups:', error);
+    }
   },
 
   updateCamera(playerPosition, playerModel) {

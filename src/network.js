@@ -299,7 +299,7 @@ export const Network = {
     });
 
     // Handle weapon pickups
-    this.socket.on('weaponPickedUp', (data) => {
+    this.socket.on('weaponPickedUp', async (data) => {
       // Always remove the original weapon from the scene
       if (SceneManager.cannon) {
         SceneManager.scene.remove(SceneManager.cannon);
@@ -335,7 +335,7 @@ export const Network = {
         return;
       }
       
-      const weaponClone = SceneManager.cloneWeapon(data.weaponType);
+      const weaponClone = await SceneManager.cloneWeapon(data.weaponType);
       if (!weaponClone) {
         console.error('Failed to clone weapon of type:', data.weaponType);
         return;
