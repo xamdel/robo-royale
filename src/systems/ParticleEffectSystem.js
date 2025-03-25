@@ -31,6 +31,7 @@ class ParticlePool {
         }
       });
     }
+    this.pendingAdd = [];
   }
 
   acquire(position, velocity, duration) {
@@ -88,6 +89,9 @@ class ParticlePool {
 
 export class ParticleEffectSystem {
   constructor() {
+    // Flag to track initialization
+    this.initialized = false;
+    
     // Shared geometries
     this.smallGeometry = new THREE.SphereGeometry(0.1, 8, 8);
     this.mediumGeometry = new THREE.SphereGeometry(0.3, 8, 8);
@@ -124,6 +128,11 @@ export class ParticleEffectSystem {
   }
 
   createExplosion(position, color = 0xff4400) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to create explosion but system is not initialized');
+      return;
+    }
+    
     // Fire particles (use small fire pool for smaller particles)
     for (let i = 0; i < 20; i++) {
       const velocity = new THREE.Vector3(
@@ -145,6 +154,11 @@ export class ParticleEffectSystem {
   }
 
   createPlayerExplosion(position) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to create player explosion but system is not initialized');
+      return;
+    }
+    
     // Fire colors
     const explosionColors = [0xff4400, 0xff8800, 0xffcc00];
 
@@ -190,6 +204,11 @@ export class ParticleEffectSystem {
   }
 
   addCollisionEffect(position, color = 0xffff00) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to add collision effect but system is not initialized');
+      return;
+    }
+    
     for (let i = 0; i < 15; i++) {
       const velocity = new THREE.Vector3(
         (Math.random() - 0.5) * 5,
@@ -204,6 +223,11 @@ export class ParticleEffectSystem {
   }
 
   addMuzzleFlash(position, color = 0xff4400) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to add muzzle flash but system is not initialized');
+      return;
+    }
+    
     // Create small fire particles for muzzle flash
     for (let i = 0; i < 10; i++) {
       const velocity = new THREE.Vector3(
@@ -228,6 +252,11 @@ export class ParticleEffectSystem {
   }
 
   addSmoke(position) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to add smoke but system is not initialized');
+      return;
+    }
+    
     // Create smoke particles
     for (let i = 0; i < 5; i++) {
       const velocity = new THREE.Vector3(
@@ -240,6 +269,11 @@ export class ParticleEffectSystem {
   }
 
   update() {
+    if (!this.initialized) {
+      // Skip update if not initialized, but don't warn as this is called frequently
+      return;
+    }
+    
     const currentTime = performance.now();
 
     // Update all particle pools

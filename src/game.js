@@ -106,10 +106,14 @@ export const Game = {
     await weaponSystem.init(this.player);
     
     // Preload all weapon models
+    console.log('[GAME] Preloading weapon models...');
     await weaponSystem.weaponFactory.preloadWeaponModels();
+    console.log('[GAME] Weapon models preloaded successfully');
 
     // Add weapon pickups now that weapon system is initialized
-    SceneManager.addWeaponPickups();
+    console.log('[GAME] Adding weapon pickups to scene...');
+    await SceneManager.addWeaponPickups();
+    console.log('[GAME] Weapon pickups added to scene');
 
     // Initialize player stats for HUD
     this.health = this.maxHealth;

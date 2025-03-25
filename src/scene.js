@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'; //for metallic reflections
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { weaponSystem } from './weapons';
+import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
 
 export const SceneManager = {
   scene: new THREE.Scene(),
@@ -66,6 +67,10 @@ export const SceneManager = {
     // Set initial camera position
     this.camera.position.set(0, 10, 10);
     this.camera.lookAt(0, 0, 0);
+
+    // Initialize the particle effect system
+    console.log('[SCENE] Initializing particle effect system');
+    particleEffectSystem.init(this);
 
     // Handle window resize
     window.addEventListener('resize', () => {
@@ -210,22 +215,72 @@ export const SceneManager = {
 
   async addWeaponPickups() {
     try {
+      console.log('[WEAPON PICKUP] Creating cannon pickup');
       const cannonWeapon = await weaponSystem.weaponFactory.createWeapon('cannon');
+      
+      if (!cannonWeapon) {
+        console.error('[WEAPON PICKUP] Failed to create cannon weapon');
+        return;
+      }
+      
+      console.log('[WEAPON PICKUP] Cannon created, adding to scene', cannonWeapon);
       this.cannon = cannonWeapon.model;
+      
+      if (!this.cannon) {
+        console.error('[WEAPON PICKUP] Cannon weapon has no model property');
+        return;
+      }
+      
       this.cannon.position.set(0, 0, -10);
       this.cannon.castShadow = true;
+      
+      // Ensure the model is visible
+      this.cannon.visible = true;
+      this.cannon.traverse(child => {
+        if (child.isMesh) {
+          child.visible = true;
+          child.castShadow = true;
+        }
+      });
+      
       this.scene.add(this.cannon);
+      console.log('[WEAPON PICKUP] Cannon added to scene at position', this.cannon.position.toArray());
       
       this.cannonCollider = new THREE.Sphere(
         this.cannon.position.clone(),
         2.5 // Pickup radius
       );
 
+      console.log('[WEAPON PICKUP] Creating rocket launcher pickup');
       const rocketWeapon = await weaponSystem.weaponFactory.createWeapon('rocketLauncher');
+      
+      if (!rocketWeapon) {
+        console.error('[WEAPON PICKUP] Failed to create rocket launcher weapon');
+        return;
+      }
+      
+      console.log('[WEAPON PICKUP] Rocket launcher created, adding to scene', rocketWeapon);
       this.rocketLauncher = rocketWeapon.model;
+      
+      if (!this.rocketLauncher) {
+        console.error('[WEAPON PICKUP] Rocket launcher weapon has no model property');
+        return;
+      }
+      
       this.rocketLauncher.position.set(10, 0, -10);
       this.rocketLauncher.castShadow = true;
+      
+      // Ensure the model is visible
+      this.rocketLauncher.visible = true;
+      this.rocketLauncher.traverse(child => {
+        if (child.isMesh) {
+          child.visible = true;
+          child.castShadow = true;
+        }
+      });
+      
       this.scene.add(this.rocketLauncher);
+      console.log('[WEAPON PICKUP] Rocket launcher added to scene at position', this.rocketLauncher.position.toArray());
       
       this.rocketLauncherCollider = new THREE.Sphere(
         this.rocketLauncher.position.clone(),

@@ -10,17 +10,44 @@ export class WeaponFactory {
   }
 
   async loadWeaponModel(type) {
+    console.log(`[WEAPON FACTORY] Loading weapon model for type: ${type}`);
     const config = getWeaponConfig(type);
-    if (!config) return null;
+    if (!config) {
+      console.error(`[WEAPON FACTORY] No config found for type: ${type}`);
+      return null;
+    }
 
     // Check if we already have this model loaded
     if (this.loadedModels.has(type)) {
-      return this.loadedModels.get(type).clone();
+      console.log(`[WEAPON FACTORY] Using cached model for type: ${type}`);
+      const cachedModel = this.loadedModels.get(type);
+      const clonedModel = cachedModel.clone();
+      
+      // Ensure model clone is set up correctly
+      console.log(`[WEAPON FACTORY] Cloned model from cache:`, {
+        originalVisible: cachedModel.visible,
+        cloneVisible: clonedModel.visible
+      });
+      
+      // Make sure the clone is visible
+      clonedModel.visible = true;
+      
+      return clonedModel;
     }
 
     try {
+      console.log(`[WEAPON FACTORY] Loading new model from path: ${config.modelPath}`);
       const gltf = await this.loadModel(config.modelPath);
+      if (!gltf || !gltf.scene) {
+        console.error(`[WEAPON FACTORY] Failed to load GLTF for ${type} from ${config.modelPath}`);
+        return null;
+      }
+      
       const model = gltf.scene;
+      console.log(`[WEAPON FACTORY] Loaded GLTF scene for ${type}:`, {
+        childCount: model.children.length,
+        visible: model.visible
+      });
 
       // Capture original transforms
       const originalPosition = new THREE.Vector3();
@@ -36,6 +63,8 @@ export class WeaponFactory {
       model.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
+          child.receiveShadow = true;
+          child.visible = true; // Ensure all meshes are visible
           child.material = child.material.clone(); // Clone materials to allow independent modifications
         }
 
@@ -43,20 +72,26 @@ export class WeaponFactory {
         hierarchyLog.push({
           name: child.name,
           type: child.type,
+          visible: child.visible,
           position: child.position.toArray(),
           rotation: child.rotation.toArray(),
           scale: child.scale.toArray()
         });
       });
 
+      // Ensure the model is visible
+      model.visible = true;
+
       // Detailed logging of model transforms
-      console.log(`[MODEL PROCESSING] Weapon Model ${type} Details:`, {
+      console.log(`[WEAPON FACTORY] Weapon Model ${type} Details:`, {
         originalPosition: originalPosition.toArray(),
         originalRotation: originalRotation.toArray(),
         originalScale: originalScale.toArray(),
         finalPosition: model.position.toArray(),
         finalRotation: model.rotation.toArray(),
         finalScale: model.scale.toArray(),
+        modelVisible: model.visible,
+        childrenCount: model.children.length,
         hierarchy: hierarchyLog
       });
 
@@ -64,9 +99,24 @@ export class WeaponFactory {
       this.loadedModels.set(type, model);
 
       // Return a clone for this instance
-      return model.clone();
+      const clonedModel = model.clone();
+      
+      // Ensure the clone has visibility set properly
+      clonedModel.visible = true;
+      clonedModel.traverse(child => {
+        if (child.isMesh) {
+          child.visible = true;
+        }
+      });
+      
+      console.log(`[WEAPON FACTORY] Returning cloned model for ${type}:`, {
+        visible: clonedModel.visible,
+        childCount: clonedModel.children.length
+      });
+      
+      return clonedModel;
     } catch (error) {
-      console.error(`Error loading weapon model for type ${type}:`, error);
+      console.error(`[WEAPON FACTORY] Error loading weapon model for type ${type}:`, error);
       return null;
     }
   }
@@ -83,45 +133,93 @@ export class WeaponFactory {
   }
 
   async createWeapon(type, existingModel = null) {
+    console.log(`[WEAPON FACTORY] Creating weapon of type: ${type}, existingModel:`, !!existingModel);
+    
     const config = getWeaponConfig(type);
     if (!config) {
-      console.error(`Invalid weapon type: ${type}`);
+      console.error(`[WEAPON FACTORY] Invalid weapon type: ${type}`);
       return null;
     }
 
     let model;
     if (existingModel) {
       // If we're given an existing model (e.g., from scene pickup), use it
+      console.log(`[WEAPON FACTORY] Using existing model for ${type}`);
       model = existingModel;
     } else {
       // Load a new model
+      console.log(`[WEAPON FACTORY] Loading new model for ${type}`);
       model = await this.loadWeaponModel(type);
       if (!model) {
-        console.error(`Failed to load model for weapon type: ${type}`);
+        console.error(`[WEAPON FACTORY] Failed to load model for weapon type: ${type}`);
         return null;
       }
+      console.log(`[WEAPON FACTORY] Successfully loaded model for ${type}:`, model);
     }
 
-    // Create and return the weapon instance
-    return new Weapon(type, model, config);
+    // Create the weapon instance
+    const weapon = new Weapon(type, model, config);
+    console.log(`[WEAPON FACTORY] Created weapon instance:`, {
+      id: weapon.id,
+      type: weapon.type,
+      hasModel: !!weapon.model,
+      modelVisible: weapon.model ? weapon.model.visible : false,
+      modelPosition: weapon.model ? weapon.model.position.toArray() : null
+    });
+    
+    return weapon;
   }
 
   // Utility method to preload all weapon models
   async preloadWeaponModels() {
+    console.log(`[WEAPON FACTORY] Starting preload of all weapon models...`);
     const loadPromises = [];
     
     // Get types from weaponConfigs object
-    for (const type of Object.keys(weaponConfigs)) {
+    const weaponTypes = Object.keys(weaponConfigs);
+    console.log(`[WEAPON FACTORY] Found ${weaponTypes.length} weapon types to preload:`, weaponTypes);
+    
+    for (const type of weaponTypes) {
       if (!this.loadedModels.has(type)) {
+        console.log(`[WEAPON FACTORY] Scheduling preload of weapon model: ${type}`);
         loadPromises.push(
           this.loadWeaponModel(type)
-            .then(() => console.log(`Preloaded weapon model: ${type}`))
-            .catch(error => console.error(`Failed to preload weapon model ${type}:`, error))
+            .then(model => {
+              if (model) {
+                console.log(`[WEAPON FACTORY] Successfully preloaded weapon model: ${type}`);
+                // Verify model is visible
+                console.log(`[WEAPON FACTORY] Preloaded model visibility:`, {
+                  type: type,
+                  visible: model.visible,
+                  childrenCount: model.children.length
+                });
+                return model;
+              } else {
+                throw new Error(`Model is null for ${type}`);
+              }
+            })
+            .catch(error => console.error(`[WEAPON FACTORY] Failed to preload weapon model ${type}:`, error))
         );
+      } else {
+        console.log(`[WEAPON FACTORY] Model for ${type} already loaded, skipping preload`);
       }
     }
 
-    await Promise.all(loadPromises);
-    console.log('All weapon models preloaded');
+    const results = await Promise.all(loadPromises);
+    console.log(`[WEAPON FACTORY] All weapon models preloaded:`, {
+      requestedModels: loadPromises.length,
+      successfullyLoaded: results.filter(Boolean).length
+    });
+    
+    // Log the cached models
+    console.log(`[WEAPON FACTORY] Cached models after preload:`, 
+      Array.from(this.loadedModels.entries()).map(([type, model]) => ({
+        type,
+        hasModel: !!model,
+        isVisible: model ? model.visible : false
+      }))
+    );
+    
+    return results;
   }
 }
