@@ -287,9 +287,11 @@ export class WeaponSystem {
       const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
       const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
       console.log(`[WeaponSystem] Creating projectile at`, position, 'direction', direction);
-      weapon.createProjectile(position, direction);
+      const projectile = weapon.createProjectile(position, direction);
+      return projectile;
     } else {
       console.error(`[WeaponSystem] Could not find weapon template for type: ${data.weaponType}`);
+      return null;
     }
   }
 

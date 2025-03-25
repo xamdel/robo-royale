@@ -25,6 +25,9 @@ class Projectile {
     this.maxLifetime = config.maxLifetime;
     this.damage = config.damage;
     this.distanceFalloff = config.distanceFalloff;
+    
+    // Flag for rockets - they should explode when hitting targets or terrain
+    this.isRocket = weaponType === 'rocket';
 
     this.createdAt = Date.now();
     this.lastUpdateTime = this.createdAt;

@@ -153,7 +153,8 @@ class ProjectileController {
           reason: 'hit',
           serverConfirmed: true,
           damage: weaponConfig.damage,
-          weaponType: projectile.weaponType
+          weaponType: projectile.weaponType,
+          isRocket: projectile.isRocket // Add flag for rockets to trigger explosion effect
         });
         
         // Send detailed player hit event
@@ -163,7 +164,8 @@ class ProjectileController {
           position: hitResult.hitPosition,
           damage: weaponConfig.damage,
           currentHealth: player.health,
-          wasKilled: wasKilled
+          wasKilled: wasKilled,
+          weaponType: projectile.weaponType // Include weapon type for hit effect
         });
         
         // If player was killed, start respawn timer

@@ -134,22 +134,44 @@ export class ParticleEffectSystem {
     }
     
     // Fire particles (use small fire pool for smaller particles)
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 5,
-        Math.random() * 5,
-        (Math.random() - 0.5) * 5
+        (Math.random() - 0.5) * 8,  // Wider spread
+        Math.random() * 7,          // Higher vertical velocity
+        (Math.random() - 0.5) * 8   // Wider spread
       );
-      this.pools.smallFire.acquire(position, velocity, 500);
+      const particle = this.pools.smallFire.acquire(position, velocity, 800);
+      
+      // Vary the color of particles
+      if (particle) {
+        // Apply passed color but randomize a bit
+        const colorVariation = Math.random() * 0.2 - 0.1; // -0.1 to +0.1
+        const colorObj = new THREE.Color(color);
+        
+        // Adjust the color's hue slightly
+        colorObj.offsetHSL(colorVariation, 0, 0);
+        particle.material.color.copy(colorObj);
+      }
+    }
+    
+    // Add smoke particles
+    for (let i = 0; i < 10; i++) {
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 3,
+        1 + Math.random() * 2,
+        (Math.random() - 0.5) * 3
+      );
+      this.pools.smoke.acquire(position, velocity, 1200);
     }
 
-    // Flash effect
+    // Flash effect - brighter and longer duration
     this.flash.position.copy(position);
     this.flash.visible = true;
-    this.flash.intensity = 5;
+    this.flash.intensity = 8;
+    this.flash.color.set(color);  // Set light color to match explosion
     this.flash.userData = {
       startTime: performance.now(),
-      duration: 300
+      duration: 500
     };
   }
 

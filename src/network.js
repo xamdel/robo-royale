@@ -114,16 +114,64 @@ export const Network = {
       // Only spawn projectiles for other players - our own are created when we shoot
       if (data.ownerId !== this.socket.id) {
         // Use weapon system to handle the remote shot
-        weaponSystem.handleRemoteShot({
+        const projectile = weaponSystem.handleRemoteShot({
           weaponType: data.weaponType,
           position: data.position,
-          direction: data.direction
+          direction: data.direction,
+          id: data.id  // Pass the server-assigned ID
         });
+        
+        // Store the server ID in the projectile for tracking
+        if (projectile && projectile.userData) {
+          projectile.userData.serverId = data.id;
+        }
+      } else {
+        // For our own projectiles, we need to find them and assign the server ID
+        // This will allow us to remove them correctly when the server says they hit something
+        for (const weapon of weaponSystem.activeWeapons.values()) {
+          for (const projectile of weapon.projectiles) {
+            // If the projectile was just created, it's likely the one the server is confirming
+            // We can match by approximate position
+            const serverPos = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+            if (projectile.position.distanceTo(serverPos) < 2.0) {
+              projectile.userData = projectile.userData || {};
+              projectile.userData.serverId = data.id;
+              break;
+            }
+          }
+        }
       }
     });
 
     // Handle projectile destruction
     this.socket.on('projectileDestroyed', async (data) => {
+      // First, find and remove the projectile from all weapons
+      if (data.id) {
+        // Try to find and remove the projectile from any active weapon that has it
+        for (const weapon of weaponSystem.activeWeapons.values()) {
+          // Find projectile in this weapon's projectiles
+          for (const projectile of weapon.projectiles) {
+            if (projectile.userData && projectile.userData.serverId === data.id) {
+              // Remove this projectile
+              weapon.removeProjectile(projectile);
+              break;
+            }
+          }
+        }
+        
+        // Also check template weapons (for remote projectiles)
+        for (const weapon of weaponSystem.weaponTemplates.values()) {
+          // Find projectile in this weapon's projectiles
+          for (const projectile of weapon.projectiles) {
+            if (projectile.userData && projectile.userData.serverId === data.id) {
+              // Remove this projectile
+              weapon.removeProjectile(projectile);
+              break;
+            }
+          }
+        }
+      }
+      
       // Show hit effect if projectile was destroyed due to hit
       if (data.reason === 'hit' && data.position) {
         const hitPosition = new THREE.Vector3(
@@ -139,9 +187,21 @@ export const Network = {
         const config = getWeaponConfig(data.weaponType);
         const color = config?.projectileConfig?.color || 0xffff00; // Fallback to yellow
         
-        // Create hit effect directly using particle system
+        // Create appropriate effect based on projectile type
         if (window.particleEffectSystem) {
-          window.particleEffectSystem.addCollisionEffect(hitPosition, color);
+          // Rockets should create explosions rather than simple collision effects
+          if (data.isRocket || data.weaponType === 'rocket' || data.weaponType === 'rocketLauncher') {
+            // Create a more dramatic explosion for rockets
+            window.particleEffectSystem.createExplosion(hitPosition, color);
+            
+            // Play explosion sound if audio manager exists
+            if (window.AudioManager) {
+              window.AudioManager.playSound('explosion', hitPosition);
+            }
+          } else {
+            // Regular projectiles just get a simple collision effect
+            window.particleEffectSystem.addCollisionEffect(hitPosition, color);
+          }
         }
       }
     });
