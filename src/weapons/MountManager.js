@@ -21,6 +21,11 @@ export class MountManager {
       childCount: playerModel.children.length,
       isGamePlayer: window.Game && playerModel === window.Game.player
     });
+    
+    // Identify whether this is a local or remote player for debugging
+    const isLocalPlayer = window.Game && playerModel === window.Game.player;
+    const playerType = isLocalPlayer ? 'Local' : 'Remote';
+    console.log(`[MOUNT SYSTEM] Initializing mounts for ${playerType} player model`);
 
     // Create mount points based on configuration
     for (const config of mountConfigs) {

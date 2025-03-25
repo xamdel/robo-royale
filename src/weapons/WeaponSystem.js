@@ -120,6 +120,16 @@ export class WeaponSystem {
       return false;
     }
     
+    // Debug log all mount points for this control key
+    console.log(`[WEAPON SYSTEM] Found ${mounts.length} mounts for control key ${controlKey}:`, 
+      mounts.map(m => ({
+        id: m.id,
+        socketName: m.socketName,
+        hasWeapon: m.hasWeapon(),
+        weaponType: m.hasWeapon() ? m.getWeapon().type : 'none'
+      }))
+    );
+    
     // Filter by mount type
     const mountType = mounts[0].config.mountType; // Get mount type from first mount
     const selectedIndex = mountType === 'primary' ? this.selectedPrimaryIndex : this.selectedSecondaryIndex;
@@ -136,6 +146,18 @@ export class WeaponSystem {
     const activeMount = mountsWithWeapons[activeIndex];
     
     console.log(`[WEAPON SYSTEM] Firing mount ${activeMount.id} for control key: ${controlKey}`);
+    
+    // Make sure the weapon is visible before firing
+    const weapon = activeMount.getWeapon();
+    if (weapon && weapon.model) {
+      weapon.model.visible = true;
+      weapon.model.traverse(child => {
+        if (child.isMesh) {
+          child.visible = true;
+        }
+      });
+    }
+    
     const result = activeMount.fire();
     console.log(`[WEAPON SYSTEM] Fire result for ${activeMount.id}: ${result}`);
     return result;

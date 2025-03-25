@@ -21,6 +21,37 @@ export class MountPoint {
     // Store the weapon
     this.weapon = weapon;
 
+    // Get parent object info for debugging
+    const parentInfo = this.bone.parent ? {
+      name: this.bone.parent.name,
+      type: this.bone.parent.type,
+      isScene: this.bone.parent.type === 'Scene',
+      isPlayerModel: this.bone.parent.isPlayerModel || false,
+      uuid: this.bone.parent.uuid
+    } : 'No parent';
+    
+    // Find player info if available
+    let playerInfo = 'Unknown';
+    let currentObj = this.bone;
+    while (currentObj) {
+      if (currentObj.isPlayerModel || currentObj.playerId) {
+        playerInfo = {
+          isPlayerModel: currentObj.isPlayerModel || false,
+          isRemotePlayer: currentObj.isRemotePlayer || false,
+          playerId: currentObj.playerId || 'unknown',
+          name: currentObj.name || 'unknown'
+        };
+        break;
+      }
+      currentObj = currentObj.parent;
+    }
+
+    console.log(`[MOUNT] Attaching weapon ${weapon.type} to mount ${this.id} on bone ${this.bone.name}`, {
+      parentInfo,
+      playerInfo,
+      boneMatrixWorld: this.bone.matrixWorld ? this.bone.matrixWorld.toArray() : 'No matrix'
+    });
+
     // Remove from current parent if any
     if (weapon.model.parent) {
       weapon.model.parent.remove(weapon.model);
@@ -55,16 +86,35 @@ export class MountPoint {
     weapon.model.rotation.copy(rotation);
     weapon.model.scale.set(scale, scale, scale);
 
-    // Add coordinate system visualization
-    // const addAxesHelper = (obj, name) => {
-    //   const axesHelper = new THREE.AxesHelper(0.5);
-    //   axesHelper.name = `${name}_axes`;
-    //   obj.add(axesHelper);
-    // };
+    // Ensure the model is visible
+    weapon.model.visible = true;
+    
+    // Make sure all materials are visible
+    weapon.model.traverse(child => {
+      if (child.isMesh) {
+        child.visible = true;
+        child.castShadow = true;
+        // Clone material to avoid sharing issues
+        child.material = child.material.clone();
+      }
+    });
 
-    // Add axes helpers to both weapon and mount
-    // addAxesHelper(weapon.model, `${weapon.type}_weapon`);
-    // addAxesHelper(this.bone, `${this.id}_mount`);
+    // Add coordinate system visualization for debugging
+    const addAxesHelper = (obj, name) => {
+      // Remove previous helper if exists
+      const existingHelper = obj.children.find(c => c.isAxesHelper);
+      if (existingHelper) obj.remove(existingHelper);
+      
+      // Add new helper
+      const axesHelper = new THREE.AxesHelper(0.5);
+      axesHelper.name = `${name}_axes`;
+      axesHelper.isAxesHelper = true;
+      obj.add(axesHelper);
+    };
+
+    // Add axes helpers to both weapon and mount (helpful for debugging)
+    addAxesHelper(weapon.model, `${weapon.type}_weapon`);
+    addAxesHelper(this.bone, `${this.id}_mount`);
 
     // Detailed logging of attachment process
     console.log(`[WEAPON ATTACHMENT] Mounted ${weapon.type} to ${this.id}`, {

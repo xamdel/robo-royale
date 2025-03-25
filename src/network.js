@@ -2,6 +2,7 @@ import { io } from 'socket.io-client';
 import { Game } from './game.js';
 import { SceneManager } from './scene.js';
 import { weaponSystem } from './weapons/index.js';
+import { MountManager } from './weapons/MountManager.js';
 import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
 import * as THREE from 'three';
 
@@ -226,7 +227,7 @@ export const Network = {
 
     this.socket.on('playerRespawned', (data) => {
       if (data.playerId === this.socket.id) {
-        console.log('Player respawning!');
+        console.log('Local player respawning!');
         Game.handleRespawn();
         
         // Make player visible again
@@ -235,6 +236,40 @@ export const Network = {
         if (window.HUD) {
           window.HUD.showAlert("SYSTEMS REBOOT COMPLETE", "success");
         }
+        
+        // When local player respawns, clear all other players and request updates
+        // This ensures we can see all other players after respawning with proper mounts
+        console.log('Refreshing all other players after local respawn');
+        
+        // Clean up existing other players
+        Object.keys(Game.otherPlayers).forEach(playerId => {
+          const player = Game.otherPlayers[playerId];
+          if (player && player.mesh) {
+            console.log(`Cleaning up player ${playerId} after local respawn`);
+            
+            // Remove player's mesh from scene
+            if (player.mesh.parent) {
+              player.mesh.parent.remove(player.mesh);
+            }
+            
+            // Clear any weapon references
+            if (player.mountManager) {
+              player.mountManager.detachAllWeapons();
+            }
+          }
+          
+          // Remove player from our memory
+          delete Game.otherPlayers[playerId];
+          
+          // Clear interpolation buffers for this player
+          this.interpolationBuffer.delete(playerId);
+          this.playerVelocities.delete(playerId);
+        });
+        
+        // Request a fresh gameState update from the server
+        // This will trigger creation of new players with proper mount managers
+        console.log('Requesting fresh game state after respawn');
+        this.socket.emit('requestGameState');
       } else {
         // Make remote player visible again
         const remotePlayer = Game.otherPlayers[data.playerId];
@@ -290,19 +325,64 @@ export const Network = {
         return;
       }
       
+      console.log(`Attaching ${data.weaponType} to remote player ${data.playerId}`);
+      
+      // Make sure the remote player's mesh is visible
+      if (remotePlayer.mesh) {
+        remotePlayer.mesh.visible = true;
+      } else {
+        console.error('Remote player has no mesh for weapon attachment');
+        return;
+      }
+      
       const weaponClone = SceneManager.cloneWeapon(data.weaponType);
       if (!weaponClone) {
         console.error('Failed to clone weapon of type:', data.weaponType);
         return;
       }
       
+      // Create a separate mount manager for each remote player
+      if (!remotePlayer.mountManager) {
+        console.log('Creating dedicated mount manager for remote player');
+        remotePlayer.mountManager = new MountManager();
+        const mountsInitialized = remotePlayer.mountManager.initMounts(remotePlayer.mesh);
+        console.log(`Remote player mount initialization result: ${mountsInitialized}`);
+      }
+      
       // Create a weapon and attach it to the remote player
       weaponSystem.weaponFactory.createWeapon(data.weaponType, weaponClone).then(weapon => {
         if (weapon) {
-          // Find the right mount point on the remote player
-          const mountPoint = weaponSystem.mountManager.getAllMounts().find(m => m.socketName === data.socketName);
+          // Assign the weapon ID from server
+          weapon.id = data.weaponId;
+          
+          // Find the right mount point on the remote player using player's dedicated mount manager
+          const mountPoint = remotePlayer.mountManager.getAllMounts().find(m => m.socketName === data.socketName);
           if (mountPoint) {
-            mountPoint.attachWeapon(weapon);
+            console.log(`Attaching ${data.weaponType} to socket ${data.socketName}`);
+            const success = mountPoint.attachWeapon(weapon);
+            console.log(`Weapon attachment result: ${success}`);
+          } else {
+            console.error(`Mount point with socket ${data.socketName} not found on remote player ${data.playerId}`);
+            
+                  // Debug: log all available mount points for this remote player
+            const allMounts = remotePlayer.mountManager.getAllMounts();
+            console.log(`Available mounts for remote player ${data.playerId}:`, allMounts.map(m => ({
+              id: m.id,
+              socketName: m.socketName
+            })));
+            
+            // Try reinitializing this player's mount points as a fallback
+            console.log('Attempting to reinitialize mount points for remote player');
+            
+            // Create a new mount manager if needed
+            if (!remotePlayer.mountManager) {
+              console.log('Creating new mount manager for remote player');
+              remotePlayer.mountManager = new MountManager();
+            }
+            
+            // Reinitialize the mount points
+            const success = remotePlayer.mountManager.initMounts(remotePlayer.mesh);
+            console.log(`Mount reinitialization result: ${success}`);
           }
         }
       });

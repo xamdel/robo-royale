@@ -120,6 +120,35 @@ export const SceneManager = {
     }
   },
   
+  cloneWeapon(weaponType) {
+    console.log(`[SceneManager] Attempting to clone weapon: ${weaponType}`);
+    
+    // Initialize model cache if it doesn't exist
+    if (!this.weaponModels) {
+      this.weaponModels = {};
+    }
+    
+    if (weaponType === 'cannon' && this.cannon) {
+      if (!this.weaponModels.cannon) {
+        // Clone and store the original model
+        this.weaponModels.cannon = this.cannon.clone();
+        console.log('[SceneManager] Cannon model cloned and cached');
+      }
+      return this.weaponModels.cannon.clone();
+    } 
+    else if (weaponType === 'rocketLauncher' && this.rocketLauncher) {
+      if (!this.weaponModels.rocketLauncher) {
+        // Clone and store the original model
+        this.weaponModels.rocketLauncher = this.rocketLauncher.clone();
+        console.log('[SceneManager] Rocket Launcher model cloned and cached');
+      }
+      return this.weaponModels.rocketLauncher.clone();
+    }
+    
+    console.error(`[SceneManager] Failed to clone weapon: ${weaponType} - model not found`);
+    return null;
+  },
+  
   // Add debug visualization for interpolation
   addDebugHelper(playerId, mesh, targetPosition) {
     // Create a line between current position and target position

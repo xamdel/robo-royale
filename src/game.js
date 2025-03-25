@@ -302,6 +302,10 @@ export const Game = {
       })
     };
     
+    // Store player ID on mesh for debugging
+    playerData.mesh.playerId = id;
+    playerData.mesh.isRemotePlayer = true;
+    
     // Add to scene
     SceneManager.add(playerData.mesh);
     
@@ -320,6 +324,21 @@ export const Game = {
       player.previousPosition = new THREE.Vector3();
       player.isMoving = false;
       player.lastMovementTime = 0; // Initialize movement timestamp
+      
+      // Create a dedicated mount manager for this remote player
+      console.log(`Creating dedicated mount manager for remote player ${playerData.id}`);
+      const MountManager = weaponSystem.mountManager.constructor; // Get the MountManager class
+      player.mountManager = new MountManager();
+      const mountsInitialized = player.mountManager.initMounts(player.mesh);
+      console.log(`Mount initialization for remote player result: ${mountsInitialized}`);
+      
+      // Request weapon data for this player
+      if (Network.socket && Network.socket.connected) {
+        console.log(`Requesting weapon data for player ${playerData.id}`);
+        Network.socket.emit('requestPlayerWeapons', {
+          playerId: playerData.id
+        });
+      }
     }
     
     // Store previous position for movement detection

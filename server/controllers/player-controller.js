@@ -57,6 +57,16 @@ class PlayerController {
         });
       }
     });
+    
+    // Handle request for full game state (used after respawn)
+    socket.on('requestGameState', () => {
+      console.log(`Player ${socket.id} requested full game state refresh`);
+      // Send current game state to the player
+      socket.emit('gameState', {
+        timestamp: Date.now(),
+        players: this.playerManager.getAllPlayers().map(p => p.toJSON())
+      });
+    });
   }
 
   setupDisconnectHandler(socket) {

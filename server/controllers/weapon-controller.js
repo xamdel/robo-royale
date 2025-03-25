@@ -14,6 +14,35 @@ class WeaponController {
     socket.on('weaponPickup', (data) => this.handleWeaponPickup(socket, data));
     socket.on('weaponDrop', (data) => this.handleWeaponDrop(socket, data));
     socket.on('weaponSwitch', (data) => this.handleWeaponSwitch(socket, data));
+    socket.on('requestPlayerWeapons', (data) => this.handlePlayerWeaponsRequest(socket, data));
+  }
+
+  handlePlayerWeaponsRequest(socket, data) {
+    // Validate request data
+    if (!data || !data.playerId) {
+      console.warn(`Invalid player weapons request from ${socket.id}`);
+      return;
+    }
+
+    const targetPlayerId = data.playerId;
+    const playerWeapons = this.playerWeapons.get(targetPlayerId);
+    
+    if (!playerWeapons || playerWeapons.size === 0) {
+      console.log(`No weapons found for player ${targetPlayerId}`);
+      return;
+    }
+
+    // Send each weapon to the requesting client
+    Array.from(playerWeapons).forEach(weapon => {
+      socket.emit('weaponPickedUp', {
+        weaponId: weapon.id,
+        weaponType: weapon.type,
+        socketName: weapon.socket,
+        playerId: targetPlayerId
+      });
+    });
+    
+    console.log(`Sent ${playerWeapons.size} weapons for player ${targetPlayerId} to ${socket.id}`);
   }
 
   handleWeaponPickup(socket, data) {
