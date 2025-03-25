@@ -23,7 +23,20 @@ module.exports = {
       
     },
     rocket: {
-      speed: 150, // Significantly increased max speed
+      speed: 200, // Matched with client perception for fast rockets
+      radius: 0.3,
+      maxDistance: 80,
+      maxLifetime: 5000,
+      damage: 40,
+      distanceFalloff: {
+        start: 40,
+        end: 80,
+        minDamage: 20
+      }
+    },
+    // Duplicated for rocketLauncher weapon type for consistency
+    rocketLauncher: {
+      speed: 200, // Matched with client perception for fast rockets
       radius: 0.3,
       maxDistance: 80,
       maxLifetime: 5000,
@@ -57,6 +70,7 @@ module.exports = {
   WEAPON_COOLDOWN: {
     cannon: 500,  // 0.5 second between shots
     rocketLauncher: 1000,
+    rocket: 1000, // Match rocketLauncher cooldown for consistency
     default: 500   // 0.5 seconds between shots
   },
 

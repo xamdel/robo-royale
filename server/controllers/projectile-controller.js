@@ -54,6 +54,13 @@ class ProjectileController {
     
     console.log(`Created projectile ${projectile.id} of type ${weaponType} from player ${socket.id}`);
     
+    // Debug projectile velocity
+    if (projectile.isRocket) {
+      console.log(`Rocket velocity: [${projectile.velocity?.x}, ${projectile.velocity?.y}, ${projectile.velocity?.z}], speed: ${projectile.speed}`);
+    } else {
+      console.log(`Projectile speed: ${projectile.speed}`);
+    }
+    
     // Broadcast projectile creation to all clients (including shooter)
     this.io.emit('projectileCreated', {
       id: projectile.id,

@@ -10,7 +10,13 @@ class Projectile {
       weaponType = 'default' 
     } = options;
 
-    const config = gameConfig.PROJECTILE_CONFIGS[weaponType] || 
+    // Map rocketLauncher to rocket for projectile config
+    let configType = weaponType;
+    if (weaponType === 'rocketLauncher') {
+      configType = 'rocket';
+    }
+    
+    const config = gameConfig.PROJECTILE_CONFIGS[configType] || 
                    gameConfig.PROJECTILE_CONFIGS.default;
 
     this.id = id;
@@ -27,7 +33,7 @@ class Projectile {
     this.distanceFalloff = config.distanceFalloff;
     
     // Flag for rockets - they should explode when hitting targets or terrain
-    this.isRocket = weaponType === 'rocket';
+    this.isRocket = configType === 'rocket' || weaponType === 'rocketLauncher';
     
     // Store initial velocity for rockets
     if (this.isRocket) {

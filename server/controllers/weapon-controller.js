@@ -185,7 +185,13 @@ class WeaponController {
     if (!playerWeapons) return 'default';
 
     const weapon = Array.from(playerWeapons).find(w => w.id === weaponId);
-    return weapon ? weapon.type : 'default';
+    
+    // If no weapon found, return default
+    if (!weapon) return 'default';
+    
+    // For clarity, map rocketLauncher to rocket projectile type consistently
+    // This ensures all rocket weapons use the same projectile behavior
+    return weapon.type;
   }
 
   removePlayer(socketId) {
