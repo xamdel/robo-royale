@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { SceneManager } from '../scene.js';
 
 class ParticlePool {
   constructor(geometry, material, poolSize) {
@@ -7,6 +6,7 @@ class ParticlePool {
     this.material = material;
     this.particles = [];
     this.active = new Set();
+    this.sceneManager = null;
 
     // Pre-allocate pool
     for (let i = 0; i < poolSize; i++) {
@@ -18,7 +18,18 @@ class ParticlePool {
         duration: 0,
       };
       this.particles.push(particle);
-      SceneManager.add(particle);
+    }
+  }
+
+  setSceneManager(sceneManager) {
+    this.sceneManager = sceneManager;
+    // Add all particles to scene if they weren't added before
+    if (this.sceneManager) {
+      this.particles.forEach(particle => {
+        if (!particle.parent) {
+          this.sceneManager.add(particle);
+        }
+      });
     }
   }
 
@@ -110,7 +121,6 @@ export class ParticleEffectSystem {
     // Flash effect
     this.flash = new THREE.PointLight(0xff8800, 5, 10);
     this.flash.visible = false;
-    SceneManager.add(this.flash);
   }
 
   createExplosion(position, color = 0xff4400) {
@@ -250,7 +260,13 @@ export class ParticleEffectSystem {
 }
 
 // Export singleton instance
-export const particleEffectSystem = new ParticleEffectSystem();
+// Export the class but don't instantiate it here
+export let particleEffectSystem = null;
 
-// Make the particle system globally available
-window.particleEffectSystem = particleEffectSystem;
+export function initParticleEffectSystem() {
+  if (!particleEffectSystem) {
+    particleEffectSystem = new ParticleEffectSystem();
+    window.particleEffectSystem = particleEffectSystem;
+  }
+  return particleEffectSystem;
+}

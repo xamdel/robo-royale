@@ -39,11 +39,15 @@ export class Weapon {
     const spawnPosition = position.clone().add(direction.clone().multiplyScalar(spawnOffset));
     console.log(`[WEAPON] ${this.type} spawning projectile at`, spawnPosition.toArray());
 
-    // Only proceed if this is attached to the local player
+    // Always create projectile for visual representation
+    const projectile = this.createProjectile(spawnPosition, direction);
+    console.log(`[WEAPON] ${this.type} created projectile`, projectile);
+
+    // Only send to server and manage ammo for local player weapons
     if (this.isLocalPlayerWeapon()) {
       console.log(`[WEAPON] ${this.type} confirmed as local player weapon`);
       
-      // Send shot data to server first
+      // Send shot data to server
       console.log(`[WEAPON] ${this.type} sending shot data to server, weapon ID: ${this.id}`);
       Network.sendShot({
         weaponId: this.id,
@@ -52,22 +56,16 @@ export class Weapon {
         direction: direction,
       });
 
-      // Create projectile for client-side prediction
-      const projectile = this.createProjectile(spawnPosition, direction);
-      console.log(`[WEAPON] ${this.type} created projectile`, projectile);
-
       // Decrease ammo
       this.ammo--;
       console.log(`[WEAPON] ${this.type} ammo decreased to ${this.ammo}`);
       if (window.HUD) {
         window.HUD.updateAmmo(this.ammo);
       }
-
-      // Create effects
-      this.createFireEffects(spawnPosition);
-    } else {
-      console.log(`[WEAPON] ${this.type} not attached to local player, skipping`);
     }
+
+    // Create effects for all projectiles
+    this.createFireEffects(spawnPosition);
 
     return true;
   }

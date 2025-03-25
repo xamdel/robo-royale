@@ -262,11 +262,31 @@ export class WeaponSystem {
   }
 
   handleRemoteShot(data) {
-    const weapon = this.activeWeapons.get(data.weaponId);
+    console.log(`[WeaponSystem] Handling remote shot for weapon ID: ${data.weaponId}`);
+    console.log(`[WeaponSystem] Active weapons:`, Array.from(this.activeWeapons.keys()));
+    
+    // Try to find weapon by ID first
+    let weapon = this.activeWeapons.get(data.weaponId);
+    
+    // If not found, try to find any weapon of the same type
+    if (!weapon) {
+      console.log(`[WeaponSystem] Weapon ${data.weaponId} not found, searching by type ${data.weaponType}`);
+      for (const [id, w] of this.activeWeapons) {
+        if (w.type === data.weaponType) {
+          weapon = w;
+          console.log(`[WeaponSystem] Found matching weapon type: ${w.type} (ID: ${id})`);
+          break;
+        }
+      }
+    }
+    
     if (weapon) {
       const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
       const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
+      console.log(`[WeaponSystem] Creating projectile at`, position, 'direction', direction);
       weapon.createProjectile(position, direction);
+    } else {
+      console.error(`[WeaponSystem] Could not find weapon for remote shot:`, data);
     }
   }
 

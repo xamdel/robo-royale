@@ -5,6 +5,7 @@ import { weaponSystem } from './weapons/index.js';
 import { PlayerAnimations } from './player-animations.js';
 import { DebugTools } from './debug-tools.js';
 import { WeaponOrientationDebugger } from './debug-tools/weapon-orientation-debugger.js';
+import { Network } from './network.js';
 
 export const Game = {
   player: null,
