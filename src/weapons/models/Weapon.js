@@ -132,13 +132,8 @@ export class Weapon {
     
     projectile.position.copy(position);
     
-    // For rockets, apply initial slower velocity, otherwise use standard speed
-    if (this.config.projectileType === 'rocket') {
-      const initialSpeed = 30; // Start faster but still not at full speed
-      projectile.velocity = direction.clone().multiplyScalar(initialSpeed);
-    } else {
-      projectile.velocity = direction.clone().multiplyScalar(projectileConfig.speed);
-    }
+    // All projectiles use their configured speed immediately
+    projectile.velocity = direction.clone().multiplyScalar(projectileConfig.speed);
     
     projectile.startPosition = position.clone();
     projectile.prevPosition = position.clone();
@@ -152,20 +147,15 @@ export class Weapon {
     if (this.config.projectileType === 'rocket') {
         projectile.lookAt(position.clone().add(direction));
         
-        // Set up rocket acceleration
         projectile.isRocket = true;
-        projectile.initialSpeed = 30; // Moderate initial speed 
-        projectile.maxSpeed = projectileConfig.speed; // Max speed of 150
-        projectile.currentSpeed = projectile.initialSpeed;
-        projectile.accelerationRate = 60; // Extreme acceleration for near-instant top speed
         projectile.initialFlare = true; // Flag for initial flare effect
         projectile.flareEndTime = performance.now() + 150; // Flare lasts for 150ms
         
-        // Create bigger initial flame effect for the flame we just created
+        // Scale up initial flame effect
         const flameElement = projectile.children.find(child => 
           child.material && child.material.color.getHex() === 0xff5500);
         if (flameElement) {
-          flameElement.scale.set(3.0, 3.0, 3.0); // Make initial flare very large
+          flameElement.scale.set(3.0, 3.0, 3.0);
         }
       }
     
@@ -212,33 +202,20 @@ export class Weapon {
       // Update position
       projectile.position.addScaledVector(projectile.velocity, deltaTime);
       
-      // If it's a rocket, make it face its direction of travel
+      // If it's a rocket, handle flare effects and orientation
       if (projectile.isRocket) {
         // Handle initial flare effect timing
         const currentTime = performance.now();
         if (projectile.initialFlare && currentTime > projectile.flareEndTime) {
-          // Turn off the initial flare after the time period
           projectile.initialFlare = false;
-          
           // Hide large flame after initial flare
           if (projectile.children.length > 0) {
             const flame = projectile.children.find(child => 
               child.material && (child.material.color.getHex() === 0xff5500 || child.material.color.getHex() === 0xff7700));
             if (flame) {
-              flame.visible = false; // Hide large flame completely
+              flame.visible = false;
             }
           }
-        }
-        
-        // Accelerate the rocket over time (very quickly)
-        if (projectile.currentSpeed < projectile.maxSpeed) {
-          projectile.currentSpeed += projectile.accelerationRate * deltaTime;
-          if (projectile.currentSpeed > projectile.maxSpeed) {
-            projectile.currentSpeed = projectile.maxSpeed;
-          }
-          // Update velocity magnitude while preserving direction
-          const direction = projectile.velocity.clone().normalize();
-          projectile.velocity.copy(direction.multiplyScalar(projectile.currentSpeed));
         }
         
         // Make rocket always face its direction of travel

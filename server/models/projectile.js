@@ -29,12 +29,13 @@ class Projectile {
     // Flag for rockets - they should explode when hitting targets or terrain
     this.isRocket = weaponType === 'rocket';
     
-    // Set up rocket acceleration on the server side
+    // Store initial velocity for rockets
     if (this.isRocket) {
-      this.initialSpeed = 30; // Moderate initial speed
-      this.maxSpeed = this.speed; // Max speed of 150
-      this.speed = this.initialSpeed; // Start with the initial speed
-      this.accelerationRate = 60; // Extreme acceleration for near-instant top speed
+      this.velocity = {
+        x: this.direction.x * config.speed,
+        y: this.direction.y * config.speed,
+        z: this.direction.z * config.speed
+      };
     }
 
     this.createdAt = Date.now();
@@ -49,19 +50,13 @@ class Projectile {
     // Store previous position
     this.prevPosition = { ...this.position };
     
-    // Apply rocket acceleration if applicable
-    if (this.isRocket && this.speed < this.maxSpeed) {
-      this.speed += this.accelerationRate * deltaTime;
-      if (this.speed > this.maxSpeed) {
-        this.speed = this.maxSpeed;
-      }
-    }
+    // No acceleration - speed remains constant
 
-    // Update position based on direction and speed
+    // Update position based on velocity
     const newPosition = {
-      x: this.position.x + this.direction.x * this.speed * deltaTime,
-      y: this.position.y + this.direction.y * this.speed * deltaTime,
-      z: this.position.z + this.direction.z * this.speed * deltaTime
+      x: this.position.x + (this.velocity?.x || this.direction.x * this.speed) * deltaTime,
+      y: this.position.y + (this.velocity?.y || this.direction.y * this.speed) * deltaTime,
+      z: this.position.z + (this.velocity?.z || this.direction.z * this.speed) * deltaTime
     };
 
     // Calculate distance traveled in this step
