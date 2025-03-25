@@ -50,7 +50,15 @@ async function init() {
     }
   });
   
-  SceneManager.init();
+  try {
+    if (!SceneManager || typeof SceneManager.init !== 'function') {
+      throw new Error('SceneManager not properly initialized');
+    }
+    SceneManager.init();
+  } catch (error) {
+    console.error('Failed to initialize SceneManager:', error);
+    return;
+  }
   Network.init();
 
   // --- Network Event Handlers for Debugging ---
@@ -77,10 +85,15 @@ async function init() {
   HUD.init();
   
   // Initialize particle effect system
-  initParticleEffectSystem();
-  
-  // Initialize weapon particle systems
-  // (note: weapon system is already initialized in Game.init())
+  const particleSystem = initParticleEffectSystem();
+  if (particleSystem) {
+    particleSystem.initialized = true;
+    particleSystem.pools.impact.setSceneManager(SceneManager);
+    particleSystem.pools.fire.setSceneManager(SceneManager);
+    particleSystem.pools.smoke.setSceneManager(SceneManager);
+    particleSystem.pools.smallFire.setSceneManager(SceneManager);
+    SceneManager.add(particleSystem.flash);
+  }
   
   // Start the game loop
   lastTime = performance.now();

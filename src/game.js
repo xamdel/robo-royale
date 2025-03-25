@@ -93,16 +93,8 @@ export const Game = {
     this.actions = playerData.actions;
     this.currentAction = null;
     
-    this.player.position.set(0, this.player.position.y, 0);
-    this.previousPosition = this.player.position.clone();
-    
-    // Add identifying properties to help with weapon parent checks
-    this.player.isPlayerModel = true;
-    this.player.name = "PlayerMech";
-    
-    SceneManager.add(this.player);
-    
-    // Initialize weapon system
+    // Initialize weapon system first
+    console.log('[GAME] Initializing weapon system...');
     await weaponSystem.init(this.player);
     
     // Preload all weapon models
@@ -110,7 +102,17 @@ export const Game = {
     await weaponSystem.weaponFactory.preloadWeaponModels();
     console.log('[GAME] Weapon models preloaded successfully');
 
-    // Add weapon pickups now that weapon system is initialized
+    this.player.position.set(0, this.player.position.y, 0);
+    this.previousPosition = this.player.position.clone();
+    
+    // Add identifying properties to help with weapon parent checks
+    this.player.isPlayerModel = true;
+    this.player.name = "PlayerMech";
+    
+    // Add player to scene after weapon system is initialized
+    SceneManager.add(this.player);
+
+    // Add weapon pickups after weapon system and player are initialized
     console.log('[GAME] Adding weapon pickups to scene...');
     await SceneManager.addWeaponPickups();
     console.log('[GAME] Weapon pickups added to scene');

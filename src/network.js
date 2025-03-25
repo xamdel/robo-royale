@@ -88,19 +88,22 @@ export const Network = {
       });
     });
 
-    // NEW: Handle projectile position updates from server
+    // Handle projectile position updates from server
     this.socket.on('projectilesUpdate', (data) => {
       if (data.projectiles && data.projectiles.length > 0) {
         data.projectiles.forEach(projectileData => {
-          const projectile = weaponSystem.getWeaponById(projectileData.weaponId)?.projectiles?.get(projectileData.id);
-          
-          if (projectile) {
-            // For all projectiles, update from server authority
-            projectile.serverPosition = new THREE.Vector3(
-              projectileData.position.x,
-              projectileData.position.y,
-              projectileData.position.z
-            );
+          // Try to find projectile in any weapon's projectiles
+          for (const weapon of weaponSystem.activeWeapons.values()) {
+            const projectile = weapon.projectiles?.get(projectileData.id);
+            if (projectile) {
+              // Update projectile position from server authority
+              projectile.serverPosition = new THREE.Vector3(
+                projectileData.position.x,
+                projectileData.position.y,
+                projectileData.position.z
+              );
+              break;
+            }
           }
         });
       }
@@ -110,19 +113,20 @@ export const Network = {
     this.socket.on('projectileCreated', (data) => {
       // Only spawn projectiles for other players - our own are created when we shoot
       if (data.ownerId !== this.socket.id) {
-        const weapon = weaponSystem.getWeaponById(data.weaponId);
-        if (weapon) {
-          const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
-          const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
-          weapon.createProjectile(position, direction);
-        }
+        // Use weapon system to handle the remote shot
+        weaponSystem.handleRemoteShot({
+          weaponType: data.weaponType,
+          position: data.position,
+          direction: data.direction
+        });
       }
-      
     });
 
     // Handle projectile destruction
     this.socket.on('projectileDestroyed', (data) => {
-      const weapon = weaponSystem.getWeaponById(data.weaponId);
+      // Find weapon of matching type
+      const weapons = Array.from(weaponSystem.activeWeapons.values());
+      const matchingWeapon = weapons.find(w => w.type === data.weaponType);
       
       // Show hit effect if projectile was destroyed due to hit
       if (data.reason === 'hit' && data.position) {
@@ -134,8 +138,8 @@ export const Network = {
         
         console.log('Server confirmed hit at position:', hitPosition);
         
-        if (weapon) {
-          weapon.handleHit(hitPosition);
+        if (matchingWeapon) {
+          matchingWeapon.handleHit(hitPosition);
         }
       }
     });

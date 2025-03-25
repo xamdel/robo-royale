@@ -1,13 +1,14 @@
+import * as THREE from 'three';
 import { WeaponFactory } from './WeaponFactory.js';
 import { MountManager } from './MountManager.js';
 import { Network } from '../network.js';
-import { SceneManager } from '../scene.js';
 
 export class WeaponSystem {
   constructor() {
     this.weaponFactory = new WeaponFactory();
     this.mountManager = new MountManager();
     this.activeWeapons = new Map(); // Track all active weapons by ID
+    this.weaponTemplates = new Map(); // Track weapon templates by type
     this.setupInputListeners();
   }
 
@@ -24,8 +25,23 @@ export class WeaponSystem {
     // Preload weapon models
     await this.weaponFactory.preloadWeaponModels();
 
+    // Create weapon templates for all configured weapon types
+    await this.createWeaponTemplates();
+
     console.log('Weapon system initialized');
     return true;
+  }
+
+  async createWeaponTemplates() {
+    const { weaponConfigs } = await import('./configs/weapon-configs.js');
+    
+    for (const [weaponType, config] of Object.entries(weaponConfigs)) {
+      const weapon = await this.weaponFactory.createWeapon(weaponType);
+      if (weapon) {
+        this.weaponTemplates.set(weaponType, weapon);
+        console.log(`Created weapon template for ${weaponType}`);
+      }
+    }
   }
 
   setupInputListeners() {
@@ -262,23 +278,10 @@ export class WeaponSystem {
   }
 
   handleRemoteShot(data) {
-    console.log(`[WeaponSystem] Handling remote shot for weapon ID: ${data.weaponId}`);
-    console.log(`[WeaponSystem] Active weapons:`, Array.from(this.activeWeapons.keys()));
+    console.log(`[WeaponSystem] Handling remote shot for weapon type: ${data.weaponType}`);
     
-    // Try to find weapon by ID first
-    let weapon = this.activeWeapons.get(data.weaponId);
-    
-    // If not found, try to find any weapon of the same type
-    if (!weapon) {
-      console.log(`[WeaponSystem] Weapon ${data.weaponId} not found, searching by type ${data.weaponType}`);
-      for (const [id, w] of this.activeWeapons) {
-        if (w.type === data.weaponType) {
-          weapon = w;
-          console.log(`[WeaponSystem] Found matching weapon type: ${w.type} (ID: ${id})`);
-          break;
-        }
-      }
-    }
+    // Try to find weapon template for this type
+    const weapon = this.weaponTemplates.get(data.weaponType);
     
     if (weapon) {
       const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
@@ -286,7 +289,7 @@ export class WeaponSystem {
       console.log(`[WeaponSystem] Creating projectile at`, position, 'direction', direction);
       weapon.createProjectile(position, direction);
     } else {
-      console.error(`[WeaponSystem] Could not find weapon for remote shot:`, data);
+      console.error(`[WeaponSystem] Could not find weapon template for type: ${data.weaponType}`);
     }
   }
 
@@ -301,5 +304,10 @@ export class WeaponSystem {
   update(deltaTime) {
     // Update all mount points (which in turn update their weapons)
     this.mountManager.update(deltaTime);
+    
+    // Also update weapon templates to handle remote projectiles
+    for (const weapon of this.weaponTemplates.values()) {
+      weapon.update(deltaTime);
+    }
   }
 }

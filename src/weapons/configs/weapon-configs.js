@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 export const weaponConfigs = {
   cannon: {
-    modelPath: '/assets/models/Cannon.glb',
+    modelPath: 'assets/models/Cannon.glb',
     preferredMounts: ['leftArm', 'rightArm'], // Preference, not restriction
     naturalSide: 'left',  // The side the model is naturally oriented for
     projectileType: 'cannonball',
@@ -20,7 +20,7 @@ export const weaponConfigs = {
     }
   },
   rocketLauncher: {
-    modelPath: '/assets/models/RocketLauncher.glb',
+    modelPath: 'assets/models/RocketLauncher.glb',
     preferredMounts: ['rightShoulder', 'rightArm'],
     naturalSide: 'right',
     projectileType: 'rocket',

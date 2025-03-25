@@ -83,7 +83,8 @@ class ProjectileController {
       if (projectile.active) {
         updatedProjectiles.push({
           id: projectile.id,
-          position: projectile.position
+          position: projectile.position,
+          weaponType: projectile.weaponType
         });
         
         // Check for collisions with players

@@ -68,10 +68,6 @@ export const SceneManager = {
     this.camera.position.set(0, 10, 10);
     this.camera.lookAt(0, 0, 0);
 
-    // Initialize the particle effect system
-    console.log('[SCENE] Initializing particle effect system');
-    particleEffectSystem.init(this);
-
     // Handle window resize
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
