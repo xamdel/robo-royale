@@ -78,8 +78,13 @@ class ParticlePool {
         particle.userData.velocity.clone().multiplyScalar(0.016)
       );
       
-      // Apply gravity
-      particle.userData.velocity.y -= 0.1;
+      // For smoke particles, add slight upward drift instead of gravity
+      if (particle.material.color.equals(new THREE.Color(0x555555))) { // Check if it's smoke
+        particle.userData.velocity.y += 0.05; // Gentle upward drift
+      } else {
+        // Apply gravity to non-smoke particles
+        particle.userData.velocity.y -= 0.1;
+      }
 
       // Fade out
       particle.material.opacity = 1 - progress;
@@ -279,15 +284,13 @@ export class ParticleEffectSystem {
       return;
     }
     
-    // Create smoke particles
-    for (let i = 0; i < 5; i++) {
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        0.5 + Math.random() * 1.5,
-        (Math.random() - 0.5) * 2
-      );
-      this.pools.smoke.acquire(position, velocity, 1000);
-    }
+    // Create single minimal smoke particle
+    const velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 0.5, // Minimal spread
+      0.2 + Math.random() * 0.3, // Gentle upward drift
+      (Math.random() - 0.5) * 0.5
+    );
+    this.pools.smoke.acquire(position, velocity, 300); // Very short duration
   }
 
   update() {

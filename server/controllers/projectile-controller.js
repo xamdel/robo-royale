@@ -124,7 +124,7 @@ class ProjectileController {
       // Skip dead players
       if (player.isDead) continue;
       
-      // Simple distance-based collision check
+      // Check for collision with continuous detection
       const hitResult = this.checkHitDetection(projectile, player);
       
       if (hitResult.hit) {
@@ -134,13 +134,16 @@ class ProjectileController {
         const weaponConfig = gameConfig.PROJECTILE_CONFIGS[projectile.weaponType] || 
                             gameConfig.PROJECTILE_CONFIGS.default;
         
+        // Update projectile position to exact hit point before deactivating
+        projectile.position = hitResult.hitPosition;
+        
         // Apply damage to player
         const wasKilled = player.takeDamage(weaponConfig.damage, {
           position: hitResult.hitPosition,
           distanceFalloff: weaponConfig.distanceFalloff
         });
         
-        // Deactivate projectile
+        // Deactivate projectile at hit position
         projectile.active = false;
         this.projectileManager.removeProjectile(projectile.id);
         
@@ -180,48 +183,67 @@ class ProjectileController {
   }
 
   checkHitDetection(projectile, player) {
-    // Get ray origin and direction
+    // Ensure we have both current and previous positions
     const rayOrigin = projectile.prevPosition || projectile.position;
-    const rayDirection = {
-      x: projectile.position.x - rayOrigin.x,
-      y: projectile.position.y - rayOrigin.y,
-      z: projectile.position.z - rayOrigin.z
+    const rayEnd = projectile.position;
+    
+    // Calculate movement vector
+    const movement = {
+      x: rayEnd.x - rayOrigin.x,
+      y: rayEnd.y - rayOrigin.y,
+      z: rayEnd.z - rayOrigin.z
     };
     
     // Calculate ray length
     const rayLength = Math.sqrt(
-      rayDirection.x * rayDirection.x +
-      rayDirection.y * rayDirection.y +
-      rayDirection.z * rayDirection.z
+      movement.x * movement.x +
+      movement.y * movement.y +
+      movement.z * movement.z
     );
     
     // Skip if no movement
     if (rayLength < 0.0001) return { hit: false };
     
-    // Normalize ray direction
-    rayDirection.x /= rayLength;
-    rayDirection.y /= rayLength;
-    rayDirection.z /= rayLength;
+    // Normalize movement vector
+    const rayDirection = {
+      x: movement.x / rayLength,
+      y: movement.y / rayLength,
+      z: movement.z / rayLength
+    };
     
     // Create compound collider for player
     const spheres = this.createPlayerColliderSpheres(player.position);
     
+    // Track closest hit
+    let closestHit = null;
+    let closestDistance = Infinity;
+    
     // Check each sphere for collision
     for (const sphere of spheres) {
       const result = this.checkSphereIntersection(
-        rayOrigin, 
-        projectile.position, 
-        rayLength, 
-        sphere, 
+        rayOrigin,
+        rayEnd,
+        rayLength,
+        sphere,
         projectile.radius
       );
       
-      if (result.hit) {
-        return {
-          hit: true,
-          hitPosition: result.position
-        };
+      if (result.hit && result.distance < closestDistance) {
+        closestHit = result;
+        closestDistance = result.distance;
       }
+    }
+    
+    if (closestHit) {
+      // Calculate exact hit position
+      return {
+        hit: true,
+        hitPosition: {
+          x: rayOrigin.x + rayDirection.x * closestDistance,
+          y: rayOrigin.y + rayDirection.y * closestDistance,
+          z: rayOrigin.z + rayDirection.z * closestDistance
+        }
+      };
     }
     
     return { hit: false };
@@ -290,12 +312,16 @@ class ProjectileController {
     const discriminant = b * b - 4 * a * c;
     
     if (discriminant >= 0) {
-      // Calculate intersection distance
-      const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+      // Calculate both intersection points
+      const sqrtDisc = Math.sqrt(discriminant);
+      const t1 = (-b - sqrtDisc) / (2 * a);
+      const t2 = (-b + sqrtDisc) / (2 * a);
       
-      // Check if intersection is within ray length and in front of ray
-      if (t >= 0 && t <= segLength) {
-        // Calculate hit position
+      // Check if either intersection point is within the segment
+      if ((t1 >= 0 && t1 <= segLength) || (t2 >= 0 && t2 <= segLength)) {
+        // Use the earliest valid intersection
+        const t = (t1 >= 0 && t1 <= segLength) ? t1 : t2;
+        
         return {
           hit: true,
           position: {

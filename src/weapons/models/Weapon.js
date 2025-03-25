@@ -80,16 +80,18 @@ export class Weapon {
       const rocketLength = 0.8;
       const rocketRadius = 0.15;
       
-      // Create rocket body (cylinder)
+      // Create rocket body (cylinder) - oriented along Z axis for forward direction
       const bodyGeometry = new THREE.CylinderGeometry(rocketRadius, rocketRadius, rocketLength, 8);
+      bodyGeometry.rotateX(Math.PI / 2); // Rotate geometry to align with forward direction
       const bodyMaterial = new THREE.MeshBasicMaterial({ color: projectileConfig.color });
       projectile = new THREE.Mesh(bodyGeometry, bodyMaterial);
       
       // Create rocket nose cone
       const noseGeometry = new THREE.ConeGeometry(rocketRadius, rocketLength * 0.4, 8);
+      noseGeometry.rotateX(Math.PI / 2);
       const noseMaterial = new THREE.MeshBasicMaterial({ color: projectileConfig.color });
       const noseCone = new THREE.Mesh(noseGeometry, noseMaterial);
-      noseCone.position.y = rocketLength * 0.7; // Position at top of body
+      noseCone.position.z = rocketLength * 0.7; // Position at front
       projectile.add(noseCone);
       
       // Create rocket fins (simple planes)
@@ -102,25 +104,22 @@ export class Weapon {
       for (let i = 0; i < 4; i++) {
         const finGeometry = new THREE.PlaneGeometry(rocketRadius * 2, rocketRadius * 2);
         const fin = new THREE.Mesh(finGeometry, finMaterial);
-        fin.position.y = -rocketLength * 0.4; // Position at bottom of body
+        fin.position.z = -rocketLength * 0.4; // Position at back
         fin.rotation.y = Math.PI / 4 + (i * Math.PI / 2); // Position around cylinder
         projectile.add(fin);
       }
       
       // Create a small flame effect at the back of the rocket (visual only)
       const flameGeometry = new THREE.ConeGeometry(rocketRadius * 0.8, rocketLength * 0.5, 8);
+      flameGeometry.rotateX(-Math.PI / 2);
       const flameMaterial = new THREE.MeshBasicMaterial({ 
         color: 0xff7700,
         transparent: true,
         opacity: 0.8
       });
       const flame = new THREE.Mesh(flameGeometry, flameMaterial);
-      flame.position.y = -rocketLength * 0.7; // Position at bottom of body
-      flame.rotation.x = Math.PI; // Flip so cone points backward
+      flame.position.z = -rocketLength * 0.7; // Position at back
       projectile.add(flame);
-      
-      // Rotate the rocket to point in the direction of travel
-      projectile.rotation.x = Math.PI / 2; // Adjust for cylinder's default orientation
       
     } else {
       // Default to sphere for other projectile types
@@ -139,15 +138,15 @@ export class Weapon {
     // Add userData for tracking
     projectile.userData = projectile.userData || {};
     
-    // Set up the rocket to always face its direction of travel
-    if (this.config.projectileType === 'rocket') {
-      projectile.lookAt(position.clone().add(direction));
-      
-      // Set up particle emitter for trail
-      projectile.isRocket = true;
-      projectile.lastTrailTime = 0;
-      projectile.trailInterval = 50; // ms between trail particles
-    }
+      // Set up the rocket to always face its direction of travel
+      if (this.config.projectileType === 'rocket') {
+        projectile.lookAt(position.clone().add(direction));
+        
+        // Set up particle emitter for trail
+        projectile.isRocket = true;
+        projectile.lastTrailTime = 0;
+        projectile.trailInterval = 50; // ms between trail particles
+      }
     
     this.projectiles.add(projectile);
     // Add projectile to scene so it can be rendered
