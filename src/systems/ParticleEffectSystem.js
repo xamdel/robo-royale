@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { SceneManager } from '../scene.js';
+// Remove the SceneManager import to avoid circular dependency
+// import { SceneManager } from '../scene.js';
 
 class ParticlePool {
   constructor(geometry, material, poolSize) {
@@ -7,6 +8,7 @@ class ParticlePool {
     this.material = material;
     this.particles = [];
     this.active = new Set();
+    this.pendingAdd = []; // Store particles that need to be added to the scene
 
     // Pre-allocate pool
     for (let i = 0; i < poolSize; i++) {
@@ -18,8 +20,16 @@ class ParticlePool {
         duration: 0,
       };
       this.particles.push(particle);
-      SceneManager.add(particle);
+      this.pendingAdd.push(particle); // Mark for adding to scene later
     }
+  }
+  
+  // Add a method to add all particles to the scene
+  addToScene(scene) {
+    for (const particle of this.pendingAdd) {
+      scene.add(particle);
+    }
+    this.pendingAdd = [];
   }
 
   acquire(position, velocity, duration) {
@@ -77,6 +87,9 @@ class ParticlePool {
 
 export class ParticleEffectSystem {
   constructor() {
+    // Flag to track initialization
+    this.initialized = false;
+    
     // Shared geometries
     this.smallGeometry = new THREE.SphereGeometry(0.1, 8, 8);
     this.mediumGeometry = new THREE.SphereGeometry(0.3, 8, 8);
@@ -110,10 +123,30 @@ export class ParticleEffectSystem {
     // Flash effect
     this.flash = new THREE.PointLight(0xff8800, 5, 10);
     this.flash.visible = false;
-    SceneManager.add(this.flash);
+  }
+  
+  // Initialize the system with the scene
+  init(sceneManager) {
+    if (this.initialized) return;
+    
+    console.log('[PARTICLE SYSTEM] Initializing with scene manager');
+    
+    // Add all particles to the scene
+    Object.values(this.pools).forEach(pool => pool.addToScene(sceneManager.scene));
+    
+    // Add the flash light
+    sceneManager.add(this.flash);
+    
+    this.initialized = true;
+    console.log('[PARTICLE SYSTEM] Initialization complete');
   }
 
   createExplosion(position, color = 0xff4400) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to create explosion but system is not initialized');
+      return;
+    }
+    
     // Fire particles (use small fire pool for smaller particles)
     for (let i = 0; i < 20; i++) {
       const velocity = new THREE.Vector3(
@@ -135,6 +168,11 @@ export class ParticleEffectSystem {
   }
 
   createPlayerExplosion(position) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to create player explosion but system is not initialized');
+      return;
+    }
+    
     // Fire colors
     const explosionColors = [0xff4400, 0xff8800, 0xffcc00];
 
@@ -180,6 +218,11 @@ export class ParticleEffectSystem {
   }
 
   addCollisionEffect(position, color = 0xffff00) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to add collision effect but system is not initialized');
+      return;
+    }
+    
     for (let i = 0; i < 15; i++) {
       const velocity = new THREE.Vector3(
         (Math.random() - 0.5) * 5,
@@ -194,6 +237,11 @@ export class ParticleEffectSystem {
   }
 
   addMuzzleFlash(position, color = 0xff4400) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to add muzzle flash but system is not initialized');
+      return;
+    }
+    
     // Create small fire particles for muzzle flash
     for (let i = 0; i < 10; i++) {
       const velocity = new THREE.Vector3(
@@ -218,6 +266,11 @@ export class ParticleEffectSystem {
   }
 
   addSmoke(position) {
+    if (!this.initialized) {
+      console.warn('[PARTICLE SYSTEM] Attempted to add smoke but system is not initialized');
+      return;
+    }
+    
     // Create smoke particles
     for (let i = 0; i < 5; i++) {
       const velocity = new THREE.Vector3(
@@ -230,6 +283,11 @@ export class ParticleEffectSystem {
   }
 
   update() {
+    if (!this.initialized) {
+      // Skip update if not initialized, but don't warn as this is called frequently
+      return;
+    }
+    
     const currentTime = performance.now();
 
     // Update all particle pools
@@ -254,3 +312,5 @@ export const particleEffectSystem = new ParticleEffectSystem();
 
 // Make the particle system globally available
 window.particleEffectSystem = particleEffectSystem;
+
+// We'll initialize this later from scene.js or game.js after SceneManager is fully initialized
