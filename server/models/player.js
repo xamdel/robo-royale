@@ -1,9 +1,14 @@
 const gameConfig = require('../config/game-config');
 
+const SPAWN_X = 10;
+const SPAWN_Z = 10;
+const SPAWN_Y_ABOVE_GROUND = 100; // Spawn high and let collision detection place player
+
 class Player {
   constructor(socketId) {
     this.id = socketId;
-    this.position = { x: 0, y: 0, z: 0 };
+    // Spawn high above the chosen X, Z point
+    this.position = { x: SPAWN_X, y: SPAWN_Y_ABOVE_GROUND, z: SPAWN_Z };
     this.rotation = { x: 0, y: 0, z: 0, w: 1 };
     this.lastProcessedInput = 0;
     this.lastActive = Date.now();

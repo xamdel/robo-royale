@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'; //for metallic reflections
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'; // Import VertexNormalsHelper instead
 import { weaponSystem } from './weapons';
 import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
 
@@ -8,6 +9,9 @@ export const SceneManager = {
   scene: new THREE.Scene(),
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
   renderer: new THREE.WebGLRenderer({ antialias: true }),
+  gltfLoader: new GLTFLoader(),
+  collisionMesh: null, // Reference to the world collision mesh
+  worldMesh: null, // Reference to the visual world mesh
   cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
   cameraDistance: 5, // Distance from player
   cameraHeight: 4, // Height offset
@@ -17,7 +21,11 @@ export const SceneManager = {
   pitch: -0.3, // Vertical camera rotation (slightly looking down)
   minPitch: -0.8, // Limit looking down
   maxPitch: 0.8, // Limit looking up
-  debugHelpers: {}, // Store debug helpers
+  debugHelpers: {
+    groundRay: null, // For visualizing ground check ray
+    collisionNormals: null, // For visualizing collision mesh normals
+    // existing helpers...
+  }, // Store debug helpers
 
   init() {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -54,18 +62,11 @@ export const SceneManager = {
     this.scene.add(this.debugHelpers.shadowCamera);
     this.debugHelpers.shadowCamera.visible = false;
 
-    // Add a simple terrain
-    const terrainGeometry = new THREE.PlaneGeometry(200, 200);
-    const terrainMaterial = new THREE.MeshPhongMaterial({
-      color: '#008000', // Green color
-    });
-    const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
-    terrain.rotation.x = -Math.PI / 2;
-    terrain.receiveShadow = true;
-    this.scene.add(terrain);
+    // Load the world model instead of the plane
+    this.loadWorldModel();
 
-    // Set initial camera position
-    this.camera.position.set(0, 10, 10);
+    // Set initial camera position (adjust if needed based on map)
+    this.camera.position.set(0, 10, 10); // Keep initial for now
     this.camera.lookAt(0, 0, 0);
 
     // Handle window resize
@@ -75,6 +76,237 @@ export const SceneManager = {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     });
   },
+
+  async loadWorldModel() {
+    try {
+      const gltf = await this.gltfLoader.loadAsync('/assets/models/world.glb');
+      console.log("World GLB loaded", gltf);
+
+      // Debug: List all meshes in the file for verification
+      console.log("World GLB contents:");
+      gltf.scene.traverse((child) => {
+        if (child.isMesh) {
+          console.log(`- Mesh: ${child.name}, Vertices: ${child.geometry.attributes.position.count}`);
+        }
+      });
+
+      gltf.scene.traverse((child) => {
+        if (child.isMesh) {
+          if (child.name === 'World_Collision') {
+            this.collisionMesh = child;
+            // Debug: Make the collision mesh visible but semi-transparent for debugging
+            // this.collisionMesh.visible = true;
+            // // Ensure material exists and is modifiable
+            // if (!this.collisionMesh.material) {
+            //   this.collisionMesh.material = new THREE.MeshBasicMaterial();
+            // } else if (Array.isArray(this.collisionMesh.material)) {
+            //   // Handle multi-material case if necessary, for now just use the first
+            //   this.collisionMesh.material = this.collisionMesh.material[0];
+            // }
+            // this.collisionMesh.material.transparent = true;
+            // this.collisionMesh.material.opacity = 0.3;
+            // this.collisionMesh.material.color.set(0xff0000); // Red for visibility
+            // this.collisionMesh.material.needsUpdate = true; // Important for changes to take effect
+
+            // Ensure raycaster hits both sides of the faces
+            if (this.collisionMesh.material) {
+                this.collisionMesh.material.side = THREE.DoubleSide;
+                this.collisionMesh.material.needsUpdate = true;
+            } else {
+                 // If no material, create one set to DoubleSide
+                 this.collisionMesh.material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, visible: false }); // Keep it invisible unless debugging visibility
+            }
+            console.log("Set collision mesh material to DoubleSide for raycasting.");
+
+            // console.log("Found collision mesh:", this.collisionMesh);
+
+            // // Debug: Output collision mesh bounding box
+            // const box = new THREE.Box3().setFromObject(this.collisionMesh);
+            // const size = box.getSize(new THREE.Vector3());
+            // const center = box.getCenter(new THREE.Vector3());
+            // console.log("Collision mesh bounds:", {
+            //   min: box.min,
+            //   max: box.max,
+            //   size: size,
+            //   center: center
+            // });
+
+            // Debug: Add normal helpers to visualize face normals
+            if (this.debugHelpers.collisionNormals) {
+              this.scene.remove(this.debugHelpers.collisionNormals); // Remove old one if exists
+            }
+            // Use VertexNormalsHelper for collision mesh
+            // Ensure geometry has normals computed (GLTFLoader usually handles this)
+            if (this.collisionMesh.geometry.attributes.normal) {
+              this.debugHelpers.collisionNormals = new VertexNormalsHelper( this.collisionMesh, 0.5, 0x00ff00 ); // Green lines for vertex normals
+              this.scene.add( this.debugHelpers.collisionNormals );
+              console.log("Added collision mesh vertex normal helper");
+            } else {
+              console.warn("Collision mesh geometry missing normals, cannot add helper.");
+            }
+
+          } else if (child.name === 'World_Visual') {
+            this.worldMesh = child;
+            // Apply shadows recursively to visual mesh parts
+            this.worldMesh.traverse(visualPart => {
+              if (visualPart.isMesh) {
+                visualPart.castShadow = true;
+                visualPart.receiveShadow = true;
+              }
+            });
+            this.scene.add(this.worldMesh);
+            console.log("Added visual world mesh to scene:", this.worldMesh);
+          } else {
+             // Handle other meshes in the GLB if necessary
+             // For now, assume only World_Visual and World_Collision are top-level relevant meshes
+             // If they are nested, this logic needs adjustment.
+             // Let's ensure nested visual parts also get shadows:
+             if (child.parent && child.parent.name === 'World_Visual') {
+                child.castShadow = true;
+                child.receiveShadow = true;
+             }
+          }
+        }
+      });
+
+      if (!this.worldMesh) {
+         console.warn("World_Visual mesh not found in world.glb. Adding entire scene.");
+         // Fallback: add the whole scene, apply shadows broadly
+         gltf.scene.traverse( node => {
+            if (node.isMesh) {
+               node.castShadow = true;
+               node.receiveShadow = true;
+            }
+         });
+         this.scene.add(gltf.scene);
+         // Attempt to find collision mesh anyway
+         if (!this.collisionMesh) {
+            gltf.scene.traverse( node => {
+               if (node.name === 'World_Collision') {
+                  this.collisionMesh = node;
+                  this.collisionMesh.visible = false;
+               }
+            });
+         }
+      }
+      if (!this.collisionMesh) {
+         console.error("CRITICAL: World_Collision mesh not found in world.glb!");
+      }
+
+      // Adjust shadow camera bounds based on the loaded world model if needed
+      // Example: Calculate bounding box and adjust light.shadow.camera
+      // const box = new THREE.Box3().setFromObject(this.worldMesh || gltf.scene);
+      // const size = box.getSize(new THREE.Vector3());
+      // const center = box.getCenter(new THREE.Vector3());
+      // Adjust directionalLight.shadow.camera properties here...
+      // directionalLight.shadow.camera.left = -size.x / 2;
+      // directionalLight.shadow.camera.right = size.x / 2;
+      // ... etc. (Requires directionalLight reference)
+
+    } catch (error) {
+      console.error("Failed to load world model:", error);
+      // Add fallback plane?
+      const fallbackGeometry = new THREE.PlaneGeometry(100, 100);
+      const fallbackMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 }); // Red error plane
+      const fallbackPlane = new THREE.Mesh(fallbackGeometry, fallbackMaterial);
+      fallbackPlane.rotation.x = -Math.PI / 2;
+      fallbackPlane.receiveShadow = true;
+      this.scene.add(fallbackPlane);
+    }
+  },
+
+  // Add this method for visualizing rays
+  showDebugRay(origin, direction, distance, color = 0xff0000) {
+    // Remove previous ray and its spheres if they exist
+    if (this.debugHelpers.groundRay) {
+      if (this.debugHelpers.groundRay.userData.startSphere) {
+        this.scene.remove(this.debugHelpers.groundRay.userData.startSphere);
+      }
+      if (this.debugHelpers.groundRay.userData.endSphere) {
+        this.scene.remove(this.debugHelpers.groundRay.userData.endSphere);
+      }
+      this.scene.remove(this.debugHelpers.groundRay);
+      this.debugHelpers.groundRay = null; // Clear the reference
+    }
+
+    // Create the ray visualization
+    const rayEnd = direction.clone().multiplyScalar(distance).add(origin);
+    const points = [origin.clone(), rayEnd.clone()];
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color });
+    const ray = new THREE.Line(geometry, material);
+
+    // Add ray to scene and store reference
+    this.scene.add(ray);
+    this.debugHelpers.groundRay = ray;
+
+    // Add small spheres at start and end points for better visibility
+    const sphereGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+    const sphereMaterial = new THREE.MeshBasicMaterial({ color });
+
+    const startSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    startSphere.position.copy(origin);
+    this.scene.add(startSphere);
+
+    const endSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    endSphere.position.copy(rayEnd);
+    this.scene.add(endSphere);
+
+    // Store spheres to be removed later
+    ray.userData = {
+      startSphere,
+      endSphere
+    };
+
+    return ray;
+  },
+
+  // Client-side raycasting using THREE.Raycaster
+  performRaycast(rayOrigin, rayDirection, maxDistance) {
+    // Debug visualization
+    this.showDebugRay(rayOrigin, rayDirection, maxDistance);
+
+    if (!this.collisionMesh) {
+      console.warn("Collision mesh not available for raycasting.");
+      return []; // Return empty array if no mesh
+    }
+
+    const raycaster = new THREE.Raycaster(rayOrigin, rayDirection, 0, maxDistance);
+    // Ensure raycaster checks against the collision mesh and its children
+    const intersects = raycaster.intersectObject(this.collisionMesh, true);
+
+    // Log detailed information about the raycast
+    // console.log("Client Raycast:", {
+    //   origin: rayOrigin.toArray(),
+    //   direction: rayDirection.toArray(),
+    //   maxDistance,
+    //   hits: intersects.length,
+    //   firstHit: intersects.length > 0 ? {
+    //     distance: intersects[0].distance,
+    //     point: intersects[0].point.toArray(),
+    //     normal: intersects[0].face ? intersects[0].face.normal.toArray() : null
+    //   } : null
+    // });
+
+    // Rate limit the logging
+    // if (!this.lastRaycastLog || Date.now() - this.lastRaycastLog > 100) {
+    //   console.log("Client Raycast:", {
+    //     origin: rayOrigin.toArray(),
+    //     direction: rayDirection.toArray(),
+    //     maxDistance,
+    //     hits: intersects.length,
+    //     firstHit: intersects.length > 0 ? {
+    //       distance: intersects[0].distance,
+    //       point: intersects[0].point.toArray(),
+    //       normal: intersects[0].face ? intersects[0].face.normal.toArray() : null
+    //     } : null
+    //   });
+    //   this.lastRaycastLog = Date.now();
+    // }
+
+    return intersects; // Returns array of intersection objects [{ distance, point, face, object, ... }]
+  },
+
 
   add(object) {
     this.scene.add(object);

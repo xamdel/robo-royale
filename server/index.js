@@ -8,6 +8,7 @@ const GameLoop = require('./game/game-loop');
 const PlayerController = require('./controllers/player-controller');
 const ProjectileController = require('./controllers/projectile-controller');
 const WeaponController = require('./controllers/weapon-controller');
+const collisionService = require('./services/collision-service'); // Import CollisionService
 
 class GameServer {
   constructor() {
@@ -89,7 +90,16 @@ class GameServer {
     });
   }
 
-  start() {
+  async start() { // Make start async
+    // Initialize Collision Service first
+    const collisionReady = await collisionService.initialize();
+    if (!collisionReady) {
+      console.error("!!! CRITICAL: Collision service failed to initialize. Server starting without collision validation. !!!");
+      // Decide if you want to exit: process.exit(1);
+    } else {
+      console.log("Collision service initialized successfully.");
+    }
+
     // Start the game loop
     this.gameLoop.start();
 

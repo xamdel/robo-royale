@@ -35,6 +35,13 @@ export const Game = {
   inputSequence: 0,
   networkUpdateRate: 60, // Updates per second
   lastNetworkUpdate: 0,
+
+  // Constants for client-side prediction (should match server if possible)
+  PLAYER_HEIGHT: 1.8,
+  PLAYER_RADIUS: 0.5,
+  GROUND_CHECK_DISTANCE: 5.0,
+  WALL_CHECK_OFFSET: 0.1,
+  STEP_HEIGHT: 0.4,
   
   loadMechModel() {
     return new Promise((resolve) => {
@@ -102,7 +109,12 @@ export const Game = {
     await weaponSystem.weaponFactory.preloadWeaponModels();
     console.log('[GAME] Weapon models preloaded successfully');
 
-    this.player.position.set(0, this.player.position.y, 0);
+    // Set initial position high above the chosen spawn point
+    const initialX = 10;
+    const initialZ = 10;
+    const initialY = 100; // Match server's SPAWN_Y_ABOVE_GROUND
+    this.player.position.set(initialX, initialY, initialZ); // Set initial position high
+    console.log(`[GAME] Set initial player position high to x=${initialX}, y=${initialY}, z=${initialZ}`);
     this.previousPosition = this.player.position.clone();
     
     // Add identifying properties to help with weapon parent checks
@@ -445,13 +457,105 @@ export const Game = {
     this.inputBuffer.push(input);
 
     const moveVector = this.applyInput(input, cameraDirections);
-    let moved = false;
+      let moved = false;
+      let finalPredictedPos = this.player.position.clone(); // Start with current position
 
-    if (moveVector.lengthSq() > 0 && !this.isDead) {
-      moved = true;
-      this.player.position.add(moveVector);
-      this.player.position.setY(0);
-    }
+      // Ensure collision mesh is loaded before attempting prediction raycasts
+      if (SceneManager.collisionMesh && moveVector.lengthSq() > 0.0001 && !this.isDead) { // Use a small threshold
+        moved = true;
+        let potentialNextPos = this.player.position.clone().add(moveVector);
+
+        // Find actual ground below current position for accurate step check
+        let actualCurrentGroundY = -Infinity;
+        const currentGroundRayOrigin = this.player.position.clone();
+        currentGroundRayOrigin.y += 0.1; // Start slightly above current pos
+        const currentGroundRayDir = new THREE.Vector3(0, -1, 0);
+        const currentGroundIntersects = SceneManager.performRaycast(currentGroundRayOrigin, currentGroundRayDir, this.GROUND_CHECK_DISTANCE * 2); // Use longer distance just in case
+        if (currentGroundIntersects.length > 0) {
+            actualCurrentGroundY = currentGroundIntersects[0].point.y;
+        } else {
+             // If no ground found below current pos, use current player Y as fallback
+             // This might happen if player is genuinely falling
+             actualCurrentGroundY = this.player.position.y;
+             console.warn("Client prediction: No ground found below current player position.");
+        }
+
+
+        // --- Client-Side Prediction ---
+        // 1. Ground Check for the *next* position
+        const groundRayOrigin = potentialNextPos.clone();
+        groundRayOrigin.y += this.STEP_HEIGHT + 0.1; // Start ray slightly above step height
+        const groundRayDir = new THREE.Vector3(0, -1, 0);
+        const groundIntersects = SceneManager.performRaycast(groundRayOrigin, groundRayDir, this.GROUND_CHECK_DISTANCE);
+
+        let foundGround = false;
+        if (groundIntersects.length > 0) {
+          const groundY = groundIntersects[0].point.y;
+          // Use actualCurrentGroundY for step height check
+          const heightDiff = groundY - actualCurrentGroundY;
+
+           if (heightDiff <= this.STEP_HEIGHT) {
+               // Valid step or flat ground
+               // Assume origin is at feet
+               potentialNextPos.y = groundY;
+               foundGround = true;
+           } else {
+               // Trying to step up too high, invalidate horizontal move for now
+              potentialNextPos.x = this.player.position.x;
+              potentialNextPos.z = this.player.position.z;
+              // Keep player at current ground height
+              potentialNextPos.y = this.player.position.y;
+              foundGround = true; // Technically found ground, but step was too high
+          }
+      } else {
+          // No ground found - potentially falling? Revert Y for now.
+          // A proper implementation would handle gravity/falling state.
+          potentialNextPos.y = this.player.position.y;
+          // Optionally invalidate horizontal move if falling is not desired
+          // potentialNextPos.x = this.player.position.x;
+          // potentialNextPos.z = this.player.position.z;
+      }
+
+      // 2. Wall Check (only if ground check didn't invalidate horizontal)
+      const horizontalMoveVec = potentialNextPos.clone().sub(this.player.position);
+      horizontalMoveVec.y = 0;
+      const horizontalDist = horizontalMoveVec.length();
+
+      if (foundGround && horizontalDist > 0.01) {
+          const horizontalDir = horizontalMoveVec.normalize();
+          const wallRayOrigin = this.player.position.clone();
+          wallRayOrigin.y = potentialNextPos.y; // Use the Y determined by ground check
+          wallRayOrigin.add(horizontalDir.clone().multiplyScalar(this.WALL_CHECK_OFFSET)); // Offset slightly
+
+          const wallIntersects = SceneManager.performRaycast(wallRayOrigin, horizontalDir, horizontalDist + this.WALL_CHECK_OFFSET);
+
+          if (wallIntersects.length > 0 && wallIntersects[0].distance <= horizontalDist) {
+               // Hit wall, stop just before it
+               const stopDist = wallIntersects[0].distance - this.WALL_CHECK_OFFSET * 1.1;
+               potentialNextPos = wallRayOrigin.add(horizontalDir.multiplyScalar(Math.max(0, stopDist))); // Move up to just before hit
+               // Assume origin is at feet
+               potentialNextPos.y = foundGround ? groundIntersects[0].point.y : this.player.position.y; // Ensure Y is correct
+           }
+       }
+      // --- End Client-Side Prediction ---
+
+      finalPredictedPos.copy(potentialNextPos);
+      this.player.position.copy(finalPredictedPos); // Update visual model position
+
+    } else if (SceneManager.collisionMesh && !moved && !this.isDead) { // Check collisionMesh here too
+       // If not moving, still perform a ground check to stick to ground
+       const groundRayOrigin = this.player.position.clone();
+       groundRayOrigin.y += 0.1;
+       const groundRayDir = new THREE.Vector3(0, -1, 0);
+        const groundIntersects = SceneManager.performRaycast(groundRayOrigin, groundRayDir, this.GROUND_CHECK_DISTANCE);
+        if (groundIntersects.length > 0) {
+            const groundY = groundIntersects[0].point.y;
+            // Assume origin is at feet
+            finalPredictedPos.y = groundY;
+            this.player.position.y = finalPredictedPos.y; // Stick to ground
+        }
+     }
+
 
     this.stateHistory.push({
       inputId: input.id,
@@ -465,10 +569,13 @@ export const Game = {
     // Use the unified animation system
     PlayerAnimations.updateAnimation(this, moved);
 
-    const moveData = moved ? {
-      inputId: input.id,
-      position: this.player.position.clone(),
-      rotation: {
+    // Send the *predicted* position to the server for validation
+    let moveData = null; // Initialize moveData to null
+    if (moved) { // Only create and assign if the player moved
+      moveData = {
+        inputId: input.id,
+        position: finalPredictedPos.clone(), // Send the final predicted position
+        rotation: {
         x: this.player.quaternion.x,
         y: this.player.quaternion.y,
         z: this.player.quaternion.z,
@@ -483,8 +590,8 @@ export const Game = {
         isRunning: this.isRunning,
         deltaTime: input.deltaTime
       }
-    } : null;
-
+    };
+  }
     // Update previous position
     if (moved) this.previousPosition.copy(this.player.position);
 

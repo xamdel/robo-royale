@@ -46,11 +46,45 @@ class PlayerController {
         return;
       }
 
-      // Validate movement
-      if (ValidationService.isValidMovement(player.position, data.position)) {
-        player.updatePosition(data, data.inputId);
+      // Validate movement using the collision service
+      const isValid = ValidationService.isValidMovement(player.position, data.position);
+      // Retrieve the corrected position calculated by the collision service
+      // Refined approach: Pass socket.id to store/retrieve result
+      ValidationService.instance.lastValidationResult.set(socket.id, ValidationService.instance.lastValidationResult.get('lastResult')); // Associate with player
+      const validationResult = ValidationService.instance.lastValidationResult.get(socket.id);
+      const correctedPos = validationResult ? validationResult.correctedPos : null;
+
+
+      if (isValid && correctedPos) {
+        // Update server state with the *corrected* position
+        const updateData = {
+          ...data,
+          position: correctedPos // Use the server-validated position
+        };
+        player.updatePosition(updateData, data.inputId);
+
+        // Server Reconciliation: Check if client position deviates significantly
+        const clientPos = data.position;
+        const serverPos = correctedPos;
+        const distanceThreshold = 0.1; // Allow small discrepancies
+
+        // Basic distance check for reconciliation
+        const dx = clientPos.x - serverPos.x;
+        const dy = clientPos.y - serverPos.y;
+        const dz = clientPos.z - serverPos.z;
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        if (distance > distanceThreshold) {
+          console.log(`Correcting position for ${socket.id}. Client: ${JSON.stringify(clientPos)}, Server: ${JSON.stringify(serverPos)}, Dist: ${distance.toFixed(3)}`);
+          socket.emit('positionCorrection', {
+            position: serverPos, // Send the corrected server position
+            rotation: player.rotation // Keep client rotation for now
+          });
+        }
+
       } else {
-        // If invalid movement, force client position reset
+        // If movement is invalid according to collision service, force client position reset
+        console.log(`Invalid move detected for ${socket.id}. Resetting position.`);
         socket.emit('positionCorrection', {
           position: player.position,
           rotation: player.rotation
