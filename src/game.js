@@ -450,8 +450,17 @@ export const Game = {
     if (moveVector.lengthSq() > 0 && !this.isDead) {
       moved = true;
       this.player.position.add(moveVector);
-      this.player.position.setY(0);
+      // Adjust player height based on terrain
+      const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
+      this.player.position.setY(terrainHeight);
+    } else if (!this.isDead) {
+      // Ensure player stays on terrain even when not moving (e.g., after respawn)
+      const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
+      if (Math.abs(this.player.position.y - terrainHeight) > 0.01) { // Add tolerance
+        this.player.position.setY(terrainHeight);
+      }
     }
+
 
     this.stateHistory.push({
       inputId: input.id,

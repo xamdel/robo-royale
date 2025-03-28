@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { weaponSystem } from './weapons';
 import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
+import { TerrainGenerator } from './terrainGenerator.js'; // Import the new generator
 
 export const SceneManager = {
   scene: new THREE.Scene(),
@@ -18,8 +19,10 @@ export const SceneManager = {
   minPitch: -0.8, // Limit looking down
   maxPitch: 0.8, // Limit looking up
   debugHelpers: {}, // Store debug helpers
+  terrainMesh: null, // Add reference to store the terrain mesh
 
-  init() {
+  init(mapSeed = 'default_seed_from_scene') { // Accept mapSeed, provide default for safety
+    console.log(`[SceneManager] Initializing with map seed: ${mapSeed}`);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -33,39 +36,48 @@ export const SceneManager = {
     this.scene.background = new THREE.Color('#87CEEB');
 
     // Add lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-    this.scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    // const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Can reduce or remove if HemisphereLight is strong enough
+    // this.scene.add(ambientLight);
+
+    const hemisphereLight = new THREE.HemisphereLight(0xADD8E6, 0x556B2F, 1.5); // Sky blue, ground green, intensity
+    this.scene.add(hemisphereLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5); // Slightly reduced intensity
     directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 4096;
     directionalLight.shadow.mapSize.height = 4096; // Increased resolution
-    directionalLight.shadow.camera.near = 1; // Adjusted near plane
-    directionalLight.shadow.camera.far = 100; // Adjusted far plane
-    directionalLight.shadow.camera.left = -50; // Added left plane
-    directionalLight.shadow.camera.right = 50; // Added right plane
-    directionalLight.shadow.camera.top = 50; // Added top plane
-    directionalLight.shadow.camera.bottom = -50; // Added bottom plane
+    directionalLight.shadow.camera.near = 1;
+    directionalLight.shadow.camera.far = 600; // Increased far plane for larger map
+    directionalLight.shadow.camera.left = -350; // Increased bounds for 600x600 map
+    directionalLight.shadow.camera.right = 350;
+    directionalLight.shadow.camera.top = 350;
+    directionalLight.shadow.camera.bottom = -350;
     directionalLight.shadow.bias = -0.001; // Reduce shadow acne
     this.scene.add(directionalLight);
+    // IMPORTANT: Update the shadow camera helper after changing bounds
+    directionalLight.shadow.camera.updateProjectionMatrix();
 
     // Add shadow camera helper for debugging
     this.debugHelpers.shadowCamera = new THREE.CameraHelper(directionalLight.shadow.camera);
     this.scene.add(this.debugHelpers.shadowCamera);
-    this.debugHelpers.shadowCamera.visible = false;
+    this.debugHelpers.shadowCamera.visible = false; // Keep hidden by default
 
-    // Add a simple terrain
-    const terrainGeometry = new THREE.PlaneGeometry(200, 200);
-    const terrainMaterial = new THREE.MeshPhongMaterial({
-      color: '#008000', // Green color
-    });
-    const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
-    terrain.rotation.x = -Math.PI / 2;
-    terrain.receiveShadow = true;
-    this.scene.add(terrain);
+    // Initialize TerrainGenerator first with the seed
+    TerrainGenerator.initialize(mapSeed); // Use the provided seed
 
-    // Set initial camera position
-    this.camera.position.set(0, 10, 10);
+    // Generate and add the terrain using the new generator function
+    this.terrainMesh = TerrainGenerator.generateTerrainMesh(); // Use the new function name
+    if (this.terrainMesh) {
+        this.scene.add(this.terrainMesh);
+        console.log("[SceneManager] Terrain mesh added to scene.");
+    } else {
+        console.error("[SceneManager] Failed to generate terrain mesh.");
+    }
+
+
+    // Set initial camera position (adjust Y based on terrain height if needed later)
+    this.camera.position.set(0, 20, 10); // Increased Y slightly for better view
     this.camera.lookAt(0, 0, 0);
 
     // Handle window resize
@@ -318,5 +330,27 @@ export const SceneManager = {
     // Note: When in free look, the server will use movementRotation instead
 
     return { forward, right };
+  },
+
+  getTerrainHeight(x, z) {
+    if (!this.terrainMesh) {
+      console.warn("Terrain mesh not available for height check.");
+      return 0; // Default height if terrain isn't ready
+    }
+
+    const raycaster = new THREE.Raycaster();
+    // Cast ray downwards from a point high above the target x, z
+    const origin = new THREE.Vector3(x, 100, z); // Start ray high up
+    const direction = new THREE.Vector3(0, -1, 0); // Point straight down
+    raycaster.set(origin, direction);
+
+    const intersects = raycaster.intersectObject(this.terrainMesh);
+
+    if (intersects.length > 0) {
+      return intersects[0].point.y; // Return the Y coordinate of the intersection point
+    }
+
+    // console.warn(`No terrain intersection found at (${x}, ${z}). Returning default height 0.`);
+    return 0; // Default height if no intersection (e.g., outside terrain bounds)
   },
 };
