@@ -5,6 +5,7 @@ import { DebugTools } from './debug-tools.js';
 import { HUD } from './hud.js';
 import { weaponSystem } from './weapons/index.js';
 import { particleEffectSystem, initParticleEffectSystem } from './systems/ParticleEffectSystem.js';
+import { DamageNumberSystem } from './systems/DamageNumberSystem.js'; // Import DamageNumberSystem
 import { EnvironmentalObjectSystem } from './environmentalObjectSystem.js'; // Import the system
 import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGenerator
 import { modelManager } from './ModelManager.js'; // Import ModelManager
@@ -142,6 +143,11 @@ function gameLoop(timestamp) {
   
   // Update particle effects
   particleEffectSystem.update();
+
+  // Update damage numbers
+  if (window.damageNumberSystem) {
+    window.damageNumberSystem.update(deltaTime);
+  }
   
   // Render the scene
   SceneManager.render(Game.player?.position);
@@ -298,6 +304,13 @@ async function initializeGame() {
     particleSystem.pools.smoke.setSceneManager(SceneManager);
     particleSystem.pools.smallFire.setSceneManager(SceneManager);
     SceneManager.add(particleSystem.flash);
+  }
+
+  // Initialize Damage Number System after scene is ready
+  if (SceneManager.scene) {
+    DamageNumberSystem.init(SceneManager.scene);
+  } else {
+    console.error("[Main] Cannot initialize DamageNumberSystem: Scene not ready.");
   }
 
   // 6. Start the game loop

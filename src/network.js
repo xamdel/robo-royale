@@ -218,7 +218,13 @@ export const Network = {
 
     // Handle player hit events
     this.socket.on('playerHit', (data) => {
-      // Update local player health if we were hit
+      const hitPosition = new THREE.Vector3(
+        data.position.x,
+        data.position.y + 2, // Offset slightly above hit point for visibility
+        data.position.z
+      );
+
+      // Update local player health if we were hit (INCOMING DAMAGE)
       if (data.hitPlayerId === this.socket.id) {
         Game.health = data.currentHealth;
         
@@ -226,11 +232,21 @@ export const Network = {
         
         if (window.HUD) {
           window.HUD.updateHealth();
-          
-          // Show damage alert
+          // Show damage alert (optional, maybe remove if world numbers are sufficient)
           if (data.damage > 0) {
             window.HUD.showAlert(`Damage taken: ${data.damage}`, "warning");
           }
+        }
+
+        // Show RED damage number in world
+        if (window.damageNumberSystem && data.damage > 0) {
+          window.damageNumberSystem.showDamageNumber(
+            data.damage,
+            hitPosition,
+            {
+              color: 0xff0000 // Red for incoming (use default duration & font size)
+            }
+          );
         }
         
         // Handle death 
@@ -242,14 +258,26 @@ export const Network = {
         }
       }
       
-      // If we're the shooter, show hit confirmation
+      // If we're the shooter, show hit confirmation (OUTGOING DAMAGE)
       if (data.sourcePlayerId === this.socket.id) {
         if (window.HUD) {
+          // Show HUD alert (optional)
           window.HUD.showAlert(`Hit! Damage: ${data.damage}`, "success");
           
           if (data.wasKilled) {
             window.HUD.showAlert("Enemy destroyed!", "success");
           }
+        }
+
+        // Show YELLOW damage number in world
+        if (window.damageNumberSystem && data.damage > 0) {
+          window.damageNumberSystem.showDamageNumber(
+            data.damage,
+            hitPosition,
+            {
+              color: 0xffff00 // Yellow for outgoing (use default duration & font size)
+            }
+          );
         }
       }
     });
