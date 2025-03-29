@@ -6,6 +6,7 @@ import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
 import { TerrainGenerator } from './terrainGenerator.js'; // Import the terrain generator
 import { BuildingPlacer } from './buildingPlacer.js'; // Import the building placer
 import { modelManager } from './ModelManager.js'; // Import the model manager
+import { WeaponSpawnManager } from './weaponSpawnManager.js'; // Import the weapon spawn manager
 
 export const SceneManager = {
   scene: new THREE.Scene(),
@@ -22,6 +23,12 @@ export const SceneManager = {
   maxPitch: 0.8, // Limit looking up
   debugHelpers: {}, // Store debug helpers
   terrainMesh: null, // Add reference to store the terrain mesh
+  isZooming: false, // Zoom state
+  normalDistance: 5, // Default camera distance
+  zoomDistance: 2, // Distance when zoomed in
+  targetCameraDistance: 5, // Target camera distance
+  zoomSpeed: 0.1, // Zoom transition speed
+  weaponSpawnManager: null, // Add reference for the weapon spawn manager
 
   init(mapSeed = 'default_seed_from_scene') { // Accept mapSeed, provide default for safety
     console.log(`[SceneManager] Initializing with map seed: ${mapSeed}`);
@@ -77,12 +84,20 @@ export const SceneManager = {
         console.error("[SceneManager] Failed to generate terrain mesh.");
     }
 
-    // Place buildings after terrain is generated and models are loaded
+    // Initialize WeaponSpawnManager after TerrainGenerator
+    this.weaponSpawnManager = new WeaponSpawnManager(this, TerrainGenerator);
+
+    // Place buildings and spawn weapons after terrain is generated and models are loaded
     if (this.terrainMesh && TerrainGenerator.isInitialized && modelManager.isLoaded) {
         console.log("[SceneManager] Placing buildings...");
         BuildingPlacer.placeBuildings(this.scene, TerrainGenerator, modelManager); // Pass modelManager
+
+        // Spawn weapon pickups using the manager
+        console.log("[SceneManager] Spawning weapon pickups...");
+        this.weaponSpawnManager.spawnWeapons(); // Use await if spawnWeapons becomes async
+
     } else {
-        console.warn("[SceneManager] Skipping building placement because terrain and/or models are not ready.");
+        console.warn("[SceneManager] Skipping building placement and weapon spawning because terrain and/or models are not ready.");
         if (!this.terrainMesh || !TerrainGenerator.isInitialized) console.warn(" - Terrain not ready.");
         if (!modelManager.isLoaded) console.warn(" - Models not loaded.");
     }
@@ -169,24 +184,23 @@ export const SceneManager = {
 
   render(playerPosition) {
     const now = performance.now();
-    const deltaTime = this.lastRenderTime ? (now - this.lastRenderTime)/1000 : 0;
+    const deltaTime = this.lastRenderTime ? (now - this.lastRenderTime) / 1000 : 0;
     this.lastRenderTime = now;
 
-    // Rotate pickups for visual effect
-    if (this.cannon && this.cannonCollider) {
-      this.cannon.rotation.y += deltaTime * 0.5;
-      const worldPos = new THREE.Vector3();
-      this.cannon.getWorldPosition(worldPos);
-      this.cannonCollider.center.copy(worldPos);
+    // Update weapon spawn manager (for pickup animations, etc.)
+    if (this.weaponSpawnManager) {
+      this.weaponSpawnManager.update(deltaTime);
     }
-    
-    if (this.rocketLauncher && this.rocketLauncherCollider) {
-      this.rocketLauncher.rotation.y += deltaTime * 0.5;
-      const worldPos = new THREE.Vector3();
-      this.rocketLauncher.getWorldPosition(worldPos);
-      this.rocketLauncherCollider.center.copy(worldPos);
-    }
-    
+
+    // Collision check for weapon pickups (moved to game loop or player update)
+    // const collidedPickup = this.weaponSpawnManager?.checkCollisions(playerPosition);
+    // if (collidedPickup) {
+    //   // Handle pickup logic here or in game.js
+    //   console.log(`Player collided with ${collidedPickup.type}`);
+    //   // Example: weaponSystem.pickupWeapon(playerModel, collidedPickup.model, collidedPickup.type);
+    //   // Example: this.weaponSpawnManager.removePickup(collidedPickup.id);
+    // }
+
     this.renderer.render(this.scene, this.camera);
   },
 
@@ -207,6 +221,19 @@ export const SceneManager = {
     document.addEventListener('click', () => {
       if (document.pointerLockElement !== document.body) {
         document.body.requestPointerLock();
+      }
+    });
+    
+    // Right mouse for zoom
+    document.addEventListener('mousedown', (event) => {
+      if (event.button === 2) { // Right mouse button
+        this.isZooming = true;
+      }
+    });
+    
+    document.addEventListener('mouseup', (event) => {
+      if (event.button === 2) { // Right mouse button
+        this.isZooming = false;
       }
     });
     
@@ -232,87 +259,17 @@ export const SceneManager = {
     });
   },
 
-  async addWeaponPickups() {
-    try {
-      console.log('[WEAPON PICKUP] Creating cannon pickup');
-      const cannonWeapon = await weaponSystem.weaponFactory.createWeapon('cannon');
-      
-      if (!cannonWeapon) {
-        console.error('[WEAPON PICKUP] Failed to create cannon weapon');
-        return;
-      }
-      
-      console.log('[WEAPON PICKUP] Cannon created, adding to scene', cannonWeapon);
-      this.cannon = cannonWeapon.model;
-      
-      if (!this.cannon) {
-        console.error('[WEAPON PICKUP] Cannon weapon has no model property');
-        return;
-      }
-      
-      this.cannon.position.set(0, 0, -10);
-      this.cannon.castShadow = true;
-      
-      // Ensure the model is visible
-      this.cannon.visible = true;
-      this.cannon.traverse(child => {
-        if (child.isMesh) {
-          child.visible = true;
-          child.castShadow = true;
-        }
-      });
-      
-      this.scene.add(this.cannon);
-      console.log('[WEAPON PICKUP] Cannon added to scene at position', this.cannon.position.toArray());
-      
-      this.cannonCollider = new THREE.Sphere(
-        this.cannon.position.clone(),
-        2.5 // Pickup radius
-      );
-
-      console.log('[WEAPON PICKUP] Creating rocket launcher pickup');
-      const rocketWeapon = await weaponSystem.weaponFactory.createWeapon('rocketLauncher');
-      
-      if (!rocketWeapon) {
-        console.error('[WEAPON PICKUP] Failed to create rocket launcher weapon');
-        return;
-      }
-      
-      console.log('[WEAPON PICKUP] Rocket launcher created, adding to scene', rocketWeapon);
-      this.rocketLauncher = rocketWeapon.model;
-      
-      if (!this.rocketLauncher) {
-        console.error('[WEAPON PICKUP] Rocket launcher weapon has no model property');
-        return;
-      }
-      
-      this.rocketLauncher.position.set(10, 0, -10);
-      this.rocketLauncher.castShadow = true;
-      
-      // Ensure the model is visible
-      this.rocketLauncher.visible = true;
-      this.rocketLauncher.traverse(child => {
-        if (child.isMesh) {
-          child.visible = true;
-          child.castShadow = true;
-        }
-      });
-      
-      this.scene.add(this.rocketLauncher);
-      console.log('[WEAPON PICKUP] Rocket launcher added to scene at position', this.rocketLauncher.position.toArray());
-      
-      this.rocketLauncherCollider = new THREE.Sphere(
-        this.rocketLauncher.position.clone(),
-        2.5 // Pickup radius
-      );
-    } catch (error) {
-      console.error('Error adding weapon pickups:', error);
-    }
-  },
+  // Removed addWeaponPickups method as it's now handled by WeaponSpawnManager
 
   updateCamera(playerPosition, playerModel) {
     const cameraRotation = new THREE.Quaternion()
       .setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+
+    // Determine target camera distance based on zoom state
+    this.targetCameraDistance = this.isZooming ? this.zoomDistance : this.normalDistance;
+
+    // Smoothly interpolate camera distance
+    this.cameraDistance = THREE.MathUtils.lerp(this.cameraDistance, this.targetCameraDistance, this.zoomSpeed);
 
     const offset = new THREE.Vector3(0, this.cameraHeight, this.cameraDistance)
       .applyQuaternion(cameraRotation);
