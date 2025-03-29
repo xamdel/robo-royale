@@ -113,8 +113,8 @@ export class MountPoint {
     };
 
     // Add axes helpers to both weapon and mount (helpful for debugging)
-    addAxesHelper(weapon.model, `${weapon.type}_weapon`);
-    addAxesHelper(this.bone, `${this.id}_mount`);
+    // addAxesHelper(weapon.model, `${weapon.type}_weapon`);
+    // addAxesHelper(this.bone, `${this.id}_mount`);
 
     // Detailed logging of attachment process
     console.log(`[WEAPON ATTACHMENT] Mounted ${weapon.type} to ${this.id}`, {

@@ -79,10 +79,10 @@ export const TerrainGenerator = {
     const zones = {
       FLAT: { threshold: -0.3, amplitude: 0.5, stepSize: 2.0, baseColor: '#878787' },
       HILLS: { threshold: 0.4, amplitude: 6.0, stepSize: 1.5, baseColor: '#228B22' },
-      MOUNTAINS: { amplitude: 55.0, stepSize: 2.0, baseColor: '#1B5E20' }
+      MOUNTAINS: { amplitude: 42.0, stepSize: 2.0, baseColor: '#1B5E20' }
     };
     this.generationParams.zones = zones;
-    this.generationParams.snowCapThreshold = 45.0;
+    this.generationParams.snowCapThreshold = 35.0;
     this.generationParams.minMountainRawHeight = 4.0;
 
     this.isInitialized = true;
@@ -90,7 +90,7 @@ export const TerrainGenerator = {
   },
 
   // Generate the terrain mesh using the initialized parameters
-  generateTerrainMesh(width = 600, height = 600, segments = 60) {
+  generateTerrainMesh(width = 600, height = 600, segments = 80) { // Removed debugZones flag
     if (!this.isInitialized) {
       console.error("[TerrainGenerator] Must initialize with a seed before generating mesh.");
       // Return a default flat plane or throw error?
@@ -125,7 +125,7 @@ export const TerrainGenerator = {
 
         vertices[index + 2] = quantizedHeight; // Apply height to vertex Z (becomes Y)
 
-        // Determine Color based on Zone and Height
+        // Determine Color based on Zone and Height (Normal Mode)
         if (quantizedHeight >= snowCapThreshold && currentZone === zones.MOUNTAINS) {
           color.set('#FFFFFF'); // Snow caps only in mountain zone
         } else {
@@ -178,19 +178,23 @@ export const TerrainGenerator = {
   },
 
   // Helper function to get quantized height at any point (used by getTerrainInfo and slope calculation)
-  getQuantizedHeight(x, z) {
+  getQuantizedHeight(worldX, worldZ) { // Renamed params for clarity
     if (!this.noiseFunctions.heightNoise || !this.noiseFunctions.controlNoise) return 0;
 
     const { heightScale, controlScale, zones, minMountainRawHeight } = this.generationParams;
     const { heightNoise, controlNoise } = this.noiseFunctions;
 
-    const controlValue = controlNoise(x * controlScale, z * controlScale);
+    // Transform world coordinates to original plane coordinates for noise sampling
+    const planeX = worldX;
+    const planeY = -worldZ; // The key transformation
+
+    const controlValue = controlNoise(planeX * controlScale, planeY * controlScale); // Use transformed coords
     let currentZone;
     if (controlValue <= zones.FLAT.threshold) currentZone = zones.FLAT;
     else if (controlValue < zones.HILLS.threshold) currentZone = zones.HILLS;
     else currentZone = zones.MOUNTAINS;
 
-    const heightNoiseValue = heightNoise(x * heightScale, z * heightScale);
+    const heightNoiseValue = heightNoise(planeX * heightScale, planeY * heightScale); // Use transformed coords
     let rawHeight = heightNoiseValue * currentZone.amplitude;
     if (currentZone === zones.MOUNTAINS) {
         rawHeight = Math.max(rawHeight, minMountainRawHeight);
@@ -199,7 +203,7 @@ export const TerrainGenerator = {
   },
 
   // Get terrain details (height, zone, slope) at world coordinates (x, z)
-  getTerrainInfo(x, z) {
+  getTerrainInfo(worldX, worldZ) { // Renamed params for clarity
     if (!this.noiseFunctions.heightNoise || !this.noiseFunctions.controlNoise) {
       console.warn("Terrain noise functions not initialized for getTerrainInfo.");
       return { height: 0, zone: 'FLAT', slope: 0 }; // Default values
@@ -208,8 +212,12 @@ export const TerrainGenerator = {
     const { controlScale, zones } = this.generationParams;
     const { controlNoise } = this.noiseFunctions;
 
-    // 1. Determine Zone
-    const controlValue = controlNoise(x * controlScale, z * controlScale);
+    // Transform world coordinates to original plane coordinates for noise sampling
+    const planeX = worldX;
+    const planeY = -worldZ; // The key transformation
+
+    // 1. Determine Zone using transformed coordinates
+    const controlValue = controlNoise(planeX * controlScale, planeY * controlScale);
     let zoneName;
     if (controlValue <= zones.FLAT.threshold) {
       zoneName = 'FLAT';
@@ -219,15 +227,16 @@ export const TerrainGenerator = {
       zoneName = 'MOUNTAINS';
     }
 
-    // 2. Calculate Height (using the helper)
-    const quantizedHeight = this.getQuantizedHeight(x, z);
+    // 2. Calculate Height (using the helper which now handles transformation)
+    const quantizedHeight = this.getQuantizedHeight(worldX, worldZ);
 
     // 3. Calculate Slope (approximate using finite differences)
+    //    Pass world coordinates to getQuantizedHeight, it will handle the transformation internally.
     const delta = 0.5; // Small distance to sample neighbors
-    const heightXPlus = this.getQuantizedHeight(x + delta, z);
-    const heightXMinus = this.getQuantizedHeight(x - delta, z);
-    const heightZPlus = this.getQuantizedHeight(x, z + delta);
-    const heightZMinus = this.getQuantizedHeight(x, z - delta);
+    const heightXPlus = this.getQuantizedHeight(worldX + delta, worldZ);
+    const heightXMinus = this.getQuantizedHeight(worldX - delta, worldZ);
+    const heightZPlus = this.getQuantizedHeight(worldX, worldZ + delta);
+    const heightZMinus = this.getQuantizedHeight(worldX, worldZ - delta);
 
     // Calculate gradient components
     const slopeX = (heightXPlus - heightXMinus) / (2 * delta);

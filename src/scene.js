@@ -3,7 +3,9 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { weaponSystem } from './weapons';
 import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
-import { TerrainGenerator } from './terrainGenerator.js'; // Import the new generator
+import { TerrainGenerator } from './terrainGenerator.js'; // Import the terrain generator
+import { BuildingPlacer } from './buildingPlacer.js'; // Import the building placer
+import { modelManager } from './ModelManager.js'; // Import the model manager
 
 export const SceneManager = {
   scene: new THREE.Scene(),
@@ -67,14 +69,23 @@ export const SceneManager = {
     TerrainGenerator.initialize(mapSeed); // Use the provided seed
 
     // Generate and add the terrain using the new generator function
-    this.terrainMesh = TerrainGenerator.generateTerrainMesh(); // Use the new function name
+    this.terrainMesh = TerrainGenerator.generateTerrainMesh(); // Removed debug flag
     if (this.terrainMesh) {
         this.scene.add(this.terrainMesh);
-        console.log("[SceneManager] Terrain mesh added to scene.");
+        console.log(`[SceneManager] Terrain mesh added to scene.`); // Removed debug message part
     } else {
         console.error("[SceneManager] Failed to generate terrain mesh.");
     }
 
+    // Place buildings after terrain is generated and models are loaded
+    if (this.terrainMesh && TerrainGenerator.isInitialized && modelManager.isLoaded) {
+        console.log("[SceneManager] Placing buildings...");
+        BuildingPlacer.placeBuildings(this.scene, TerrainGenerator, modelManager); // Pass modelManager
+    } else {
+        console.warn("[SceneManager] Skipping building placement because terrain and/or models are not ready.");
+        if (!this.terrainMesh || !TerrainGenerator.isInitialized) console.warn(" - Terrain not ready.");
+        if (!modelManager.isLoaded) console.warn(" - Models not loaded.");
+    }
 
     // Set initial camera position (adjust Y based on terrain height if needed later)
     this.camera.position.set(0, 20, 10); // Increased Y slightly for better view

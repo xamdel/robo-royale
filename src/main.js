@@ -5,7 +5,9 @@ import { DebugTools } from './debug-tools.js';
 import { HUD } from './hud.js';
 import { weaponSystem } from './weapons/index.js';
 import { particleEffectSystem, initParticleEffectSystem } from './systems/ParticleEffectSystem.js';
-import { EnvironmentalObjectSystem } from './environmentalObjectSystem.js'; // Import the new system
+import { EnvironmentalObjectSystem } from './environmentalObjectSystem.js'; // Import the system
+import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGenerator
+import { modelManager } from './ModelManager.js'; // Import ModelManager
 import * as THREE from 'three';
 
 // Debug variables
@@ -192,7 +194,12 @@ async function initializeGame() {
   // 1. Initialize Network first
   Network.init();
 
-  // 2. Wait for connection and map seed from the server
+  // 2. Load building models asynchronously
+  console.log("[Main] Starting building model loading...");
+  await modelManager.loadModels();
+  console.log("[Main] Building models loaded.");
+
+  // 3. Wait for connection and map seed from the server
   //    (Simulating receiving the seed for now)
   const mapSeed = await new Promise(resolve => {
     // Replace this with actual network event listener when integrating server logic
@@ -205,6 +212,7 @@ async function initializeGame() {
     //   resolve(data.seed);
     // });
   });
+
 
   // Initialize debug overlay elements after DOM is loaded
   debugElements.latency = document.getElementById('latency');
@@ -232,21 +240,29 @@ async function initializeGame() {
     }
   });
 
-  // 3. Initialize SceneManager with the seed, then other systems
+  // 4. Initialize SceneManager with the seed, then other systems
   try {
     if (!SceneManager || typeof SceneManager.init !== 'function') {
       throw new Error('SceneManager not properly initialized');
     }
     // Pass the received seed to SceneManager
-    SceneManager.init(mapSeed);
+    SceneManager.init(mapSeed); // This initializes TerrainGenerator internally
 
     // Initialize environmental objects AFTER scene and terrain are ready
-    await EnvironmentalObjectSystem.init();
+    if (TerrainGenerator.isInitialized && SceneManager.scene) {
+      console.log("[Main] Initializing EnvironmentalObjectSystem...");
+      const envSystem = new EnvironmentalObjectSystem(SceneManager.scene, TerrainGenerator);
+      await envSystem.initialize(); // Call the async initialize method
+      // No need to store envSystem globally unless other systems need it
+    } else {
+      console.error("[Main] Cannot initialize EnvironmentalObjectSystem: TerrainGenerator or Scene not ready.");
+    }
 
   } catch (error) {
-    console.error('Failed to initialize SceneManager or EnvironmentalObjectSystem:', error);
+    console.error('Failed to initialize SceneManager or EnvironmentalObjectSystem:', error); // Updated error message
     return; // Stop initialization if critical systems fail
   }
+
 
   // --- Network Event Handlers for Debugging ---
   // (Moved Network.init() earlier)
@@ -267,7 +283,7 @@ async function initializeGame() {
     console.log('[Network Stats]', stats);
   });
 
-  // 4. Initialize Game AFTER network and scene are ready
+  // 5. Initialize Game AFTER network and scene are ready
   await Game.init(Network.socket);
 
   // Initialize HUD after game is initialized
@@ -284,7 +300,7 @@ async function initializeGame() {
     SceneManager.add(particleSystem.flash);
   }
 
-  // 5. Start the game loop
+  // 6. Start the game loop
   console.log("[Main] Initialization complete. Starting game loop.");
   lastTime = performance.now();
   requestAnimationFrame(gameLoop);
