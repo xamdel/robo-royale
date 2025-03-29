@@ -6,6 +6,8 @@ import { PlayerAnimations } from './player-animations.js';
 import { DebugTools } from './debug-tools.js';
 import { WeaponOrientationDebugger } from './debug-tools/weapon-orientation-debugger.js';
 import { Network } from './network.js';
+import { WeaponSpawnManager } from './weaponSpawnManager.js'; // Import WeaponSpawnManager
+import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGenerator
 
 export const Game = {
   player: null,
@@ -21,6 +23,7 @@ export const Game = {
   currentAction: null,
   previousPosition: null,
   weaponOrientationDebugger: null,
+  weaponSpawnManager: null, // Add property for the manager
   
   // Player stats for HUD
   health: 100,
@@ -112,10 +115,18 @@ export const Game = {
     // Add player to scene after weapon system is initialized
     SceneManager.add(this.player);
 
-    // Add weapon pickups after weapon system and player are initialized
-    console.log('[GAME] Adding weapon pickups to scene...');
-    await SceneManager.addWeaponPickups();
-    console.log('[GAME] Weapon pickups added to scene');
+    // Initialize and use WeaponSpawnManager
+    console.log('[GAME] Initializing WeaponSpawnManager...');
+    // Ensure TerrainGenerator is initialized before passing it
+    if (!TerrainGenerator.isInitialized) {
+        console.error("[GAME] TerrainGenerator not initialized before creating WeaponSpawnManager!");
+        // Handle error appropriately, maybe wait or throw
+    } else {
+        this.weaponSpawnManager = new WeaponSpawnManager(SceneManager, TerrainGenerator);
+        console.log('[GAME] Spawning weapon pickups via manager...');
+        await this.weaponSpawnManager.spawnWeapons(); // Use the manager to spawn
+        console.log('[GAME] Weapon pickups spawned via manager');
+    }
 
     // Initialize player stats for HUD
     this.health = this.maxHealth;
@@ -172,6 +183,22 @@ export const Game = {
     this.moveLeft = false;
     this.moveRight = false;
     this.isRunning = false;
+
+    // Notify the server about the death. The server should handle weapon dropping & removal.
+    console.log("[GAME] Player died. Notifying server...");
+    Network.sendPlayerDeath({ killerId: killerPlayerId }); // Assuming Network has this method
+
+    // Client-side cleanup (might be redundant if server confirms removal, but good for immediate feedback)
+    // We keep this for now, but the authoritative removal happens server-side.
+    if (weaponSystem) {
+         console.log("[GAME] Performing client-side weapon removal after death notification.");
+         weaponSystem.removeAllPlayerWeapons();
+    } else {
+        console.warn("[GAME] WeaponSystem not available during handleDeath for client-side cleanup.");
+    }
+
+    // NOTE: Spawning dropped weapons is now handled by receiving messages from the server
+    // based on the server's authoritative action after processing the death event.
     
     // Hide player model (actual hiding is done in the network handler 
     // since we need to sync it with the explosion effect)
@@ -191,6 +218,14 @@ export const Game = {
     // Clear any pending inputs
     this.inputBuffer = [];
     this.stateHistory = [];
+
+    // Ensure local weapons are cleared on respawn
+    if (weaponSystem) {
+        console.log("[GAME] Clearing local weapons on respawn.");
+        weaponSystem.removeAllPlayerWeapons();
+    } else {
+        console.warn("[GAME] WeaponSystem not available during handleRespawn.");
+    }
     
     // Add visual effect
     if (window.HUD) {
@@ -207,40 +242,37 @@ export const Game = {
     // Update local player's animation mixer
     this.mixer.update(deltaTime);
 
-    // Check for weapon pickups
-    if (SceneManager.cannon && SceneManager.cannonCollider) {
-      const playerWorldPos = new THREE.Vector3();
-      this.player.getWorldPosition(playerWorldPos);
-      
-      const cannonWorldPos = SceneManager.cannonCollider.center.clone();
-      const distanceThreshold = SceneManager.cannonCollider.radius * 1.2;
-      const distanceToPlayer = playerWorldPos.distanceTo(cannonWorldPos);
-      
-      if (distanceToPlayer <= distanceThreshold) {
-        weaponSystem.pickupWeapon(this.player, SceneManager.cannon, 'cannon')
-          .then(success => {
-            if (success) {
-              SceneManager.cannonCollider = null;
-            }
-          });
-      }
-    }
+    // Update weapon spawn manager (for animations like rotation)
+    if (this.weaponSpawnManager) {
+      this.weaponSpawnManager.update(deltaTime);
 
-    if (SceneManager.rocketLauncher && SceneManager.rocketLauncherCollider) {
-      const playerWorldPos = new THREE.Vector3();
-      this.player.getWorldPosition(playerWorldPos);
-      
-      const rocketWorldPos = SceneManager.rocketLauncherCollider.center.clone();
-      const distanceThreshold = SceneManager.rocketLauncherCollider.radius * 1.2;
-      const distanceToPlayer = playerWorldPos.distanceTo(rocketWorldPos);
-      
-      if (distanceToPlayer <= distanceThreshold) {
-        weaponSystem.pickupWeapon(this.player, SceneManager.rocketLauncher, 'rocketLauncher')
-          .then(success => {
-            if (success) {
-              SceneManager.rocketLauncherCollider = null;
-            }
-          });
+      // Check for weapon pickup collisions using the manager
+      if (!this.isDead) { // Only check collisions if alive
+        const playerWorldPos = new THREE.Vector3();
+        this.player.getWorldPosition(playerWorldPos);
+        const collidedPickup = this.weaponSpawnManager.checkCollisions(playerWorldPos);
+
+        if (collidedPickup) {
+          console.log(`[GAME] Player collided with ${collidedPickup.type} pickup: ${collidedPickup.id}`);
+          // Attempt to pick up the weapon
+          weaponSystem.pickupWeapon(this.player, collidedPickup.model, collidedPickup.type)
+            .then(success => {
+              if (success) {
+                console.log(`[GAME] Successfully picked up ${collidedPickup.type} (Client-side attachment)`);
+                
+                // Notify the server that this pickup was collected
+                Network.sendPickupCollected({ pickupId: collidedPickup.id }); 
+
+                // Remove the pickup visually immediately on the client
+                // The server will broadcast removal to other clients later
+                this.weaponSpawnManager.removePickup(collidedPickup.id); 
+              } else {
+                console.log(`[GAME] Failed to pick up ${collidedPickup.type} (e.g., no mount points available)`);
+              }
+            }).catch(error => {
+              console.error(`[GAME] Error during weapon pickup:`, error);
+            });
+        }
       }
     }
 

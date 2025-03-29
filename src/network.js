@@ -350,6 +350,14 @@ export const Network = {
               data.position.z
             );
           }
+          
+          // If the server indicates weapons should be cleared (e.g., on respawn)
+          if (data.clearWeapons && remotePlayer.mountManager) {
+             console.log(`[Network] Clearing weapons for remote player ${data.playerId} due to respawn.`);
+             remotePlayer.mountManager.detachAllWeapons();
+          } else if (data.clearWeapons && !remotePlayer.mountManager) {
+             console.warn(`[Network] Cannot clear weapons for remote player ${data.playerId}: MountManager not found.`);
+          }
         }
       }
     });
@@ -467,6 +475,42 @@ export const Network = {
         Game.inputBuffer = [];
       }
     });
+
+    // Handle creation of dropped weapon pickups
+    this.socket.on('droppedWeaponCreated', (data) => {
+      console.log('[Network] Received droppedWeaponCreated:', data);
+      if (Game.weaponSpawnManager && data.type && data.position && data.id) {
+        // Convert position back to THREE.Vector3
+        const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+        // Use the spawn manager to create the visual pickup, passing the server ID
+        Game.weaponSpawnManager.spawnDroppedWeapon(data.type, position, data.id) 
+          .then(clientPickupData => {
+             if (clientPickupData) {
+               // The pickup is now tracked client-side using the server's ID (data.id)
+               console.log(`[Network] Client successfully called spawnDroppedWeapon for: ${data.type} (ID: ${data.id}) at`, position.toArray());
+             } else {
+               // Log failure more explicitly
+               console.error(`[Network] weaponSpawnManager.spawnDroppedWeapon returned null/undefined for type: ${data.type}, ID: ${data.id}. Check WeaponSpawnManager logs for details.`);
+             }
+          });
+      } else {
+        console.warn('[Network] Invalid data or WeaponSpawnManager not ready for droppedWeaponCreated event.');
+      }
+    });
+
+    // Handle removal of dropped weapon pickups (when another player picks them up)
+    this.socket.on('droppedWeaponRemoved', (data) => {
+        console.log('[Network] Received droppedWeaponRemoved:', data);
+        if (Game.weaponSpawnManager && data.pickupId) {
+            // We need a way to find the client-side pickup using the server ID.
+            // This might require storing the server ID when creating the pickup,
+            // or modifying WeaponSpawnManager to track pickups by server ID.
+            // For now, let's assume removePickup can handle the ID format from the server.
+            Game.weaponSpawnManager.removePickup(data.pickupId);
+        } else {
+            console.warn('[Network] Invalid data or WeaponSpawnManager not ready for droppedWeaponRemoved event.');
+        }
+    });
   },
 
   sendMove(moveData) {
@@ -494,6 +538,28 @@ export const Network = {
         position: data.position,
         direction: data.direction
       });
+    }
+  },
+
+  // Send notification that the local player has died
+  sendPlayerDeath(data) {
+    if (this.socket?.connected) {
+      console.log('Sending player death notification to server:', data);
+      // Ensure data includes necessary info, e.g., killerId
+      this.socket.emit('playerDeath', data);
+    } else {
+      console.warn('Cannot send player death notification, socket not connected.');
+    }
+  },
+
+  // Send notification that the local player collected a pickup
+  sendPickupCollected(data) {
+    if (this.socket?.connected) {
+      console.log('Sending pickup collected notification to server:', data);
+      // Ensure data includes pickupId
+      this.socket.emit('pickupCollected', data);
+    } else {
+      console.warn('Cannot send pickup collected notification, socket not connected.');
     }
   },
 

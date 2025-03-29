@@ -51,18 +51,22 @@ class GameServer {
   }
 
   setupControllers() {
-    // Create player controller first
-    this.playerController = new PlayerController(this.io, this.gameLoop);
+    // Create player controller first (will need weapon controller later)
+    this.playerController = new PlayerController(this.io, this.gameLoop); // Temporarily create without weaponController
     
-    // Create weapon controller with player manager
-    this.weaponController = new WeaponController(this.io, this.playerController.getPlayerManager());
+    // Create weapon controller with player manager and game loop
+    this.weaponController = new WeaponController(this.io, this.playerController.getPlayerManager(), this.gameLoop);
 
     // Create projectile controller with player manager and weapon controller
     this.projectileController = new ProjectileController(
       this.io, 
       this.playerController.getPlayerManager(),
-      this.weaponController
+      this.weaponController,
+      this.gameLoop // Pass gameLoop instance
     );
+    
+    // Now update PlayerController with the WeaponController instance
+    this.playerController.setWeaponController(this.weaponController);
 
     // Update game loop with managers
     this.gameLoop.playerManager = this.playerController.getPlayerManager();

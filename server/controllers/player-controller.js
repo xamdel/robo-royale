@@ -7,6 +7,13 @@ class PlayerController {
     this.io = io;
     this.gameLoop = gameLoop;
     this.playerManager = new PlayerManager();
+    this.weaponController = null; // Initialize weaponController reference
+  }
+
+  // Setter for WeaponController dependency (called from server/index.js)
+  setWeaponController(weaponController) {
+    this.weaponController = weaponController;
+    console.log("WeaponController set in PlayerController");
   }
 
   handleConnection(socket) {
@@ -30,6 +37,7 @@ class PlayerController {
 
     // Setup socket event handlers
     this.setupMoveHandler(socket, player);
+    this.setupDeathHandler(socket, player); // Add death handler setup
     this.setupDisconnectHandler(socket);
 
     return player;
@@ -66,6 +74,28 @@ class PlayerController {
         timestamp: Date.now(),
         players: this.playerManager.getAllPlayers().map(p => p.toJSON())
       });
+    });
+  }
+
+  setupDeathHandler(socket, player) {
+    socket.on('playerDeath', (data) => {
+      // Basic validation (can be expanded)
+      if (!player || player.isDead) {
+        console.warn(`Received playerDeath event from already dead or non-existent player: ${socket.id}`);
+        return;
+      }
+      
+      console.log(`Received playerDeath event from ${socket.id}. Killer: ${data?.killerId || 'Unknown'}`);
+      
+      // Mark player as dead (server-side) using the correct method
+      // Note: player.die() is likely already called when the fatal hit was processed.
+      // Calling it again might be redundant but shouldn't hurt.
+      // player.die(); // Consider removing if redundant
+
+      // Weapon dropping logic is now handled authoritatively in ProjectileController.handlePlayerKilled
+      // when the fatal hit is detected. This handler is now primarily for logging or potential future client-specific death logic.
+      
+      console.log(`[PlayerController] Received playerDeath event for ${socket.id}. Weapon dropping handled by ProjectileController.`);
     });
   }
 

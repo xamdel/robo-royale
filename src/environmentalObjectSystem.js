@@ -69,7 +69,7 @@ class EnvironmentalObjectSystem {
         try {
             // 1. Create Placeholder Geometry and Materials
             // Tree (Cone)
-            const treeHeight = 5; // Adjust size as needed
+            const treeHeight = 8; // Adjust size as needed
             const treeRadius = 1.5;
             const treeGeometry = new THREE.ConeGeometry(treeRadius, treeHeight, 6); // Low poly cone (6 radial segments)
             const treeMaterial = new THREE.MeshPhongMaterial({

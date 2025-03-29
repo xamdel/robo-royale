@@ -234,6 +234,45 @@ export class WeaponSystem {
     }
   }
 
+  // Get all weapons currently equipped by the player
+  getPlayerEquippedWeapons() {
+    const equippedWeapons = [];
+    const mounts = this.mountManager.getAllMounts();
+    for (const mount of mounts) {
+      const weapon = mount.getWeapon();
+      if (weapon) {
+        // Return weapon type and maybe other relevant info if needed later
+        equippedWeapons.push({ type: weapon.type, id: weapon.id });
+      }
+    }
+    console.log('[WeaponSystem] Player equipped weapons:', equippedWeapons);
+    return equippedWeapons;
+  }
+
+  // Remove all weapons currently equipped by the player
+  removeAllPlayerWeapons() {
+    console.log('[WeaponSystem] Removing all player weapons...');
+    const mounts = this.mountManager.getAllMounts();
+    let removedCount = 0;
+    for (const mount of mounts) {
+      const weapon = mount.getWeapon();
+      if (weapon) {
+        const weaponId = weapon.id;
+        mount.detachWeapon(); // Detach from the mount point visually
+        weapon.deactivate(); // Perform any weapon-specific cleanup
+        this.activeWeapons.delete(weaponId); // Remove from active tracking
+        removedCount++;
+        console.log(`[WeaponSystem] Removed weapon ${weaponId} from mount ${mount.id}`);
+      }
+    }
+    console.log(`[WeaponSystem] Finished removing weapons. Total removed: ${removedCount}`);
+    // Optionally update HUD if needed
+    if (window.HUD && window.HUD.updateWeaponDisplay) {
+        window.HUD.updateWeaponDisplay('primary');
+        window.HUD.updateWeaponDisplay('secondary');
+    }
+  }
+
   // Get the currently selected weapon of a specific type (primary/secondary)
   getSelectedWeapon(mountType) {
     const mounts = this.mountManager.getMountsByType(mountType);
