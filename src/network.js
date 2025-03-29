@@ -193,14 +193,20 @@ export const Network = {
           if (data.isRocket || data.weaponType === 'rocket' || data.weaponType === 'rocketLauncher') {
             // Create a more dramatic explosion for rockets
             window.particleEffectSystem.createExplosion(hitPosition, color);
-            
+
             // Play explosion sound if audio manager exists
             if (window.AudioManager) {
               window.AudioManager.playSound('explosion', hitPosition);
             }
           } else {
-            // Regular projectiles just get a simple collision effect
-            window.particleEffectSystem.addCollisionEffect(hitPosition, color);
+            // Check weapon type for specific impact effects
+            if (data.weaponType === 'gatling') {
+              // Use the new single-particle effect for gatling
+              window.particleEffectSystem.addGatlingImpactEffect(hitPosition, color);
+            } else {
+              // Other projectiles get the standard collision effect
+              window.particleEffectSystem.addCollisionEffect(hitPosition, color);
+            }
           }
         }
       }
@@ -234,7 +240,7 @@ export const Network = {
           window.HUD.updateHealth();
           // Show damage alert (optional, maybe remove if world numbers are sufficient)
           if (data.damage > 0) {
-            window.HUD.showAlert(`Damage taken: ${data.damage}`, "warning");
+            // window.HUD.showAlert(`Damage taken: ${data.damage}`, "warning"); // Removed damage taken alert
           }
         }
 
@@ -262,7 +268,7 @@ export const Network = {
       if (data.sourcePlayerId === this.socket.id) {
         if (window.HUD) {
           // Show HUD alert (optional)
-          window.HUD.showAlert(`Hit! Damage: ${data.damage}`, "success");
+          // window.HUD.showAlert(`Hit! Damage: ${data.damage}`, "success"); // Removed hit damage alert
           
           if (data.wasKilled) {
             window.HUD.showAlert("Enemy destroyed!", "success");

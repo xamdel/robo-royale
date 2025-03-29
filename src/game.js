@@ -27,8 +27,8 @@ export const Game = {
   killLog: [], // Added kill log array
   
   // Player stats for HUD
-  health: 100,
-  maxHealth: 100,
+  health: 200, // Initialize to maxHealth
+  maxHealth: 200, // Updated to match the intended max health
   isDead: false,
   respawnPosition: new THREE.Vector3(0, 0, 0),
   

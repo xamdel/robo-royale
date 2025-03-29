@@ -7,6 +7,7 @@ class ParticlePool {
     this.particles = [];
     this.active = new Set();
     this.sceneManager = null;
+    this.isPlanePool = geometry instanceof THREE.PlaneGeometry; // Check if this pool uses planes
 
     // Pre-allocate pool
     for (let i = 0; i < poolSize; i++) {
@@ -16,6 +17,7 @@ class ParticlePool {
         velocity: new THREE.Vector3(),
         startTime: 0,
         duration: 0,
+        isMuzzleFlash: false, // Initialize flag
       };
       this.particles.push(particle);
     }
@@ -31,7 +33,6 @@ class ParticlePool {
         }
       });
     }
-    this.pendingAdd = [];
   }
 
   acquire(position, velocity, duration) {
@@ -48,22 +49,32 @@ class ParticlePool {
 
     const particle = this.particles.pop();
     particle.position.copy(position);
-    particle.userData.velocity.copy(velocity);
+    particle.userData.velocity.copy(velocity); // Fixed duplicate line
     particle.userData.startTime = performance.now();
     particle.userData.duration = duration;
+    particle.userData.isMuzzleFlash = false; // Reset flag on acquire
     particle.visible = true;
     particle.material.opacity = 1;
+    particle.scale.set(1, 1, 1); // Reset scale
+    particle.rotation.set(0, 0, 0); // Reset rotation
     this.active.add(particle);
     return particle;
   }
 
   release(particle) {
     particle.visible = false;
+    particle.userData.isMuzzleFlash = false; // Reset flag on release
     this.active.delete(particle);
     this.particles.push(particle);
   }
 
-  update(currentTime) {
+  update(currentTime, camera) { // Accept camera
+    // Need camera for billboarding plane particles
+    if (this.isPlanePool && !camera) {
+       console.warn('[ParticlePool] Camera required for plane particle update, but not provided.');
+       return; // Skip update if camera is needed but not provided
+    }
+
     for (const particle of this.active) {
       const elapsed = currentTime - particle.userData.startTime;
       const progress = elapsed / particle.userData.duration;
@@ -75,239 +86,236 @@ class ParticlePool {
 
       // Update position
       particle.position.add(
-        particle.userData.velocity.clone().multiplyScalar(0.016)
+        particle.userData.velocity.clone().multiplyScalar(0.016) // Assuming 60fps
       );
-      
-      // For smoke particles, add slight upward drift instead of gravity
-      if (particle.material.color.equals(new THREE.Color(0x555555))) { // Check if it's smoke
-        particle.userData.velocity.y += 0.05; // Gentle upward drift
-      } else {
-        // Apply gravity to non-smoke particles
-        particle.userData.velocity.y -= 0.1;
+
+      // Billboarding for plane particles
+      if (this.isPlanePool) {
+        particle.quaternion.copy(camera.quaternion);
+        // Optional: Add slight random rotation wobble if desired
+        // particle.rotation.z += (Math.random() - 0.5) * 0.1;
       }
+
+      // Physics/Movement Logic
+      if (particle.material.color.equals(new THREE.Color(0x555555))) { // Smoke check
+        particle.userData.velocity.y += 0.03; // Slower upward drift for smoke
+      } else if (!particle.userData.isMuzzleFlash) { // Reduced Gravity for non-muzzle-flash, non-smoke
+        particle.userData.velocity.y -= 0.02; // Much less gravity
+      }
+      // Muzzle flash particles (planes or spheres) continue without gravity if isMuzzleFlash is true
 
       // Fade out
       particle.material.opacity = 1 - progress;
+      // Optional: Scale down muzzle flash planes over time
+      if (this.isPlanePool && particle.userData.isMuzzleFlash) {
+         const scaleProgress = 1 - progress;
+         // Ensure initialScale exists before using it
+         const initialScale = particle.userData.initialScale || 1;
+         particle.scale.set(scaleProgress, scaleProgress, scaleProgress).multiplyScalar(initialScale);
+      }
     }
   }
 }
 
 export class ParticleEffectSystem {
   constructor() {
-    // Flag to track initialization
     this.initialized = false;
-    
-    // Shared geometries
-    this.smallGeometry = new THREE.SphereGeometry(0.1, 8, 8);
-    this.mediumGeometry = new THREE.SphereGeometry(0.3, 8, 8);
-    this.largeGeometry = new THREE.SphereGeometry(0.5, 8, 8);
 
-    // Shared materials
+    // Shared geometries - Made smaller
+    this.smallSphereGeometry = new THREE.SphereGeometry(0.06, 6, 6); // Smaller impact/gatling
+    this.mediumSphereGeometry = new THREE.SphereGeometry(0.15, 6, 6); // Smaller fire
+    this.largeSphereGeometry = new THREE.SphereGeometry(0.25, 8, 8); // Smaller smoke
+    this.planeGeometry = new THREE.PlaneGeometry(0.3, 0.3); // Smaller muzzle flash
+
+    // Shared materials - Ensured AdditiveBlending for brightness
     this.fireMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff4400,
+      color: 0xffcc44, // Slightly brighter yellow/orange
       transparent: true,
-      opacity: 1
+      opacity: 1,
+      side: THREE.DoubleSide, // Important for planes
+      blending: THREE.AdditiveBlending // Make flashes brighter when overlapping
     });
     this.smokeMaterial = new THREE.MeshBasicMaterial({
-      color: 0x555555,
+      color: 0x444444, // Slightly darker smoke
       transparent: true,
-      opacity: 0.4
+      opacity: 0.3 // Less opaque smoke
     });
     this.impactMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffff00,
+      color: 0xffffaa, // Brighter yellow impact
       transparent: true,
-      opacity: 1
+      opacity: 1,
+      blending: THREE.AdditiveBlending // Additive blending for impact sparks
     });
 
-    // Particle pools
+    // Particle pools - Adjusted sizes
     this.pools = {
-      impact: new ParticlePool(this.smallGeometry, this.impactMaterial, 100),
-      fire: new ParticlePool(this.mediumGeometry, this.fireMaterial, 100),
-      smoke: new ParticlePool(this.largeGeometry, this.smokeMaterial, 50),
-      smallFire: new ParticlePool(this.smallGeometry, this.fireMaterial, 100) // Added new pool for smaller fire particles
+      impact: new ParticlePool(this.smallSphereGeometry, this.impactMaterial, 150), // Increased pool size slightly
+      fire: new ParticlePool(this.mediumSphereGeometry, this.fireMaterial, 100),
+      smoke: new ParticlePool(this.largeSphereGeometry, this.smokeMaterial, 75), // Increased pool size
+      smallFire: new ParticlePool(this.smallSphereGeometry, this.fireMaterial, 150), // For explosions, increased pool size
+      muzzleFlash: new ParticlePool(this.planeGeometry, this.fireMaterial.clone(), 75) // Use plane geometry, clone material, increased pool size
     };
 
-    // Flash effect
-    this.flash = new THREE.PointLight(0xff8800, 5, 10);
+    // Flash effect - Brighter color
+    this.flash = new THREE.PointLight(0xffcc66, 6, 8); // Brighter, slightly shorter range
     this.flash.visible = false;
   }
 
+  // Call this method after the scene and camera are ready
+  initialize(sceneManager) {
+     if (this.initialized) return;
+     Object.values(this.pools).forEach(pool => pool.setSceneManager(sceneManager));
+     sceneManager.add(this.flash); // Add the point light to the scene
+     this.initialized = true;
+     console.log('[PARTICLE SYSTEM] Initialized');
+  }
+
   createExplosion(position, color = 0xff4400) {
-    if (!this.initialized) {
-      console.warn('[PARTICLE SYSTEM] Attempted to create explosion but system is not initialized');
-      return;
-    }
-    
-    // Fire particles (use small fire pool for smaller particles)
-    for (let i = 0; i < 30; i++) {
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 8,  // Wider spread
-        Math.random() * 7,          // Higher vertical velocity
-        (Math.random() - 0.5) * 8   // Wider spread
-      );
-      const particle = this.pools.smallFire.acquire(position, velocity, 800);
-      
-      // Vary the color of particles
+    if (!this.initialized) return;
+    // Use smallFire pool (spheres) - Reduced count, shorter duration, faster velocity
+    for (let i = 0; i < 20; i++) { // Fewer particles
+      const velocity = new THREE.Vector3((Math.random() - 0.5) * 12, Math.random() * 10, (Math.random() - 0.5) * 12); // Faster
+      const particle = this.pools.smallFire.acquire(position, velocity, 500); // Shorter duration
       if (particle) {
-        // Apply passed color but randomize a bit
-        const colorVariation = Math.random() * 0.2 - 0.1; // -0.1 to +0.1
+        const colorVariation = Math.random() * 0.1 - 0.05; // Less variation
         const colorObj = new THREE.Color(color);
-        
-        // Adjust the color's hue slightly
         colorObj.offsetHSL(colorVariation, 0, 0);
         particle.material.color.copy(colorObj);
       }
     }
-    
-    // Add smoke particles
-    for (let i = 0; i < 10; i++) {
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 3,
-        1 + Math.random() * 2,
-        (Math.random() - 0.5) * 3
-      );
-      this.pools.smoke.acquire(position, velocity, 1200);
+    // Smoke... - Reduced count, shorter duration
+    for (let i = 0; i < 8; i++) { // Fewer smoke particles
+      const velocity = new THREE.Vector3((Math.random() - 0.5) * 4, 1 + Math.random() * 3, (Math.random() - 0.5) * 4); // Slightly faster smoke
+      this.pools.smoke.acquire(position, velocity, 900); // Shorter duration
     }
-
-    // Flash effect - brighter and longer duration
+    // Flash... - Shorter duration
     this.flash.position.copy(position);
     this.flash.visible = true;
-    this.flash.intensity = 8;
-    this.flash.color.set(color);  // Set light color to match explosion
-    this.flash.userData = {
-      startTime: performance.now(),
-      duration: 500
-    };
+    this.flash.intensity = 10; // More intense flash
+    this.flash.color.set(color);
+    this.flash.userData = { startTime: performance.now(), duration: 300, baseIntensity: 10 }; // Shorter flash duration, store base intensity
   }
 
   createPlayerExplosion(position) {
-    if (!this.initialized) {
-      console.warn('[PARTICLE SYSTEM] Attempted to create player explosion but system is not initialized');
-      return;
-    }
-    
-    // Fire colors
-    const explosionColors = [0xff4400, 0xff8800, 0xffcc00];
-
-    for (let i = 0; i < 40; i++) {
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 10,
-        Math.random() * 10,
-        (Math.random() - 0.5) * 10
-      );
-      const particle = this.pools.fire.acquire(position, velocity, 1500);
+    if (!this.initialized) return;
+    const explosionColors = [0xff6600, 0xffaa00, 0xffee00]; // Brighter colors
+    // Use fire pool (medium spheres) - Reduced count, shorter duration, faster velocity
+    for (let i = 0; i < 30; i++) { // Fewer particles
+      const velocity = new THREE.Vector3((Math.random() - 0.5) * 15, Math.random() * 15, (Math.random() - 0.5) * 15); // Faster
+      const particle = this.pools.fire.acquire(position, velocity, 1000); // Shorter duration
       if (particle) {
-        // Random color from explosionColors array
         const color = explosionColors[Math.floor(Math.random() * explosionColors.length)];
         particle.material.color.setHex(color);
+        particle.material.blending = THREE.AdditiveBlending; // Ensure additive blending
       }
     }
-
-    for (let i = 0; i < 15; i++) {
-      const radius = 1 + Math.random() * 3;
+    // Smoke... - Reduced count, shorter duration
+     for (let i = 0; i < 10; i++) { // Fewer smoke particles
+      const radius = 0.5 + Math.random() * 2; // Smaller radius
       const angle = Math.random() * Math.PI * 2;
-      const pos = position.clone().add(
-        new THREE.Vector3(
-          radius * Math.cos(angle),
-          1 + Math.random() * 2,
-          radius * Math.sin(angle)
-        )
-      );
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 3,
-        2 + Math.random() * 4,
-        (Math.random() - 0.5) * 3
-      );
-      this.pools.smoke.acquire(pos, velocity, 2000);
+      const pos = position.clone().add(new THREE.Vector3(radius * Math.cos(angle), 0.5 + Math.random() * 1.5, radius * Math.sin(angle))); // Lower start pos
+      const velocity = new THREE.Vector3((Math.random() - 0.5) * 4, 1 + Math.random() * 3, (Math.random() - 0.5) * 4); // Slightly faster
+      this.pools.smoke.acquire(pos, velocity, 1500); // Shorter duration
     }
-
+    // Flash... - Shorter duration
     this.flash.position.copy(position);
     this.flash.visible = true;
-    this.flash.intensity = 8;
-    this.flash.userData = {
-      startTime: performance.now(),
-      duration: 500
-    };
+    this.flash.intensity = 12; // More intense flash
+    this.flash.color.setHex(0xffaa44); // Player death flash color
+    this.flash.userData = { startTime: performance.now(), duration: 400, baseIntensity: 12 }; // Shorter flash duration, store base intensity
   }
 
-  addCollisionEffect(position, color = 0xffff00) {
-    if (!this.initialized) {
-      console.warn('[PARTICLE SYSTEM] Attempted to add collision effect but system is not initialized');
-      return;
-    }
-    
-    for (let i = 0; i < 15; i++) {
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 5,
-        Math.random() * 5,
-        (Math.random() - 0.5) * 5
-      );
-      const particle = this.pools.impact.acquire(position, velocity, 500);
+  addCollisionEffect(position, color = 0xffffaa) { // Default to brighter yellow
+    if (!this.initialized) return;
+    // Use impact pool (small spheres) - Reduced count, shorter duration, faster velocity
+    for (let i = 0; i < 8; i++) { // Fewer particles
+      const velocity = new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8 + 1, (Math.random() - 0.5) * 8); // Faster, slight upward bias
+      const particle = this.pools.impact.acquire(position, velocity, 350); // Shorter duration
       if (particle) {
         particle.material.color.setHex(color);
+        particle.material.blending = THREE.AdditiveBlending; // Ensure additive blending
       }
     }
   }
 
-  addMuzzleFlash(position, color = 0xff4400, sizeMultiplier = 1.0) {
-    if (!this.initialized) {
-      console.warn('[PARTICLE SYSTEM] Attempted to add muzzle flash but system is not initialized');
-      return;
+  // New method for single-particle gatling impact - Faster, shorter duration
+  addGatlingImpactEffect(position, color = 0xffffaa) { // Default to brighter yellow
+    if (!this.initialized) return;
+    // Use impact pool (small spheres)
+    // Spawn just one particle with a random velocity
+    const velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 10, // Faster velocity spread
+      (Math.random() - 0.5) * 10 + 1.5, // Faster, more upward bias
+      (Math.random() - 0.5) * 10
+    );
+    const particle = this.pools.impact.acquire(position, velocity, 250); // Shorter duration
+    if (particle) {
+      particle.material.color.setHex(color);
+      particle.material.blending = THREE.AdditiveBlending; // Ensure additive blending
     }
-    
-    // Create fire particles for muzzle flash, size based on multiplier
-    const particleCount = Math.round(10 * sizeMultiplier);
+  }
+
+  addMuzzleFlash(position, direction, color = 0xffcc44, sizeMultiplier = 1.0) { // Added direction, brighter default color
+    if (!this.initialized) return;
+
+    const particleCount = Math.round(4 * sizeMultiplier); // Even fewer planes
+    const baseSpeed = 8 * sizeMultiplier; // Faster base speed
+    const spreadAngle = Math.PI / 8; // Tighter spread (22.5 degrees)
+
     for (let i = 0; i < particleCount; i++) {
-      const spreadFactor = 3 * sizeMultiplier;
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * spreadFactor,
-        Math.random() * 2 * sizeMultiplier,
-        (Math.random() - 0.5) * spreadFactor
-      );
-      const particle = this.pools.smallFire.acquire(position, velocity, 300 * sizeMultiplier);
+      // Create velocity vector based on direction and spread
+      const randomAngle = (Math.random() - 0.5) * spreadAngle;
+      const randomAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+      // Ensure direction is normalized before applying rotation
+      const velocity = direction.clone().normalize().applyAxisAngle(randomAxis, randomAngle).multiplyScalar(baseSpeed * (0.9 + Math.random() * 0.2)); // Faster, less speed variation
+
+      // Use the muzzleFlash pool (planes)
+      const particle = this.pools.muzzleFlash.acquire(position, velocity, 60 * sizeMultiplier); // Very short duration flash
       if (particle) {
+        particle.userData.isMuzzleFlash = true; // Mark as muzzle flash particle
         particle.material.color.setHex(color);
-        // Scale particle based on size multiplier
-        particle.scale.set(sizeMultiplier, sizeMultiplier, sizeMultiplier);
+        particle.material.blending = THREE.AdditiveBlending; // Ensure additive blending
+
+        // Scale particle based on size multiplier, add randomness
+        const baseScale = 0.4 * sizeMultiplier; // Adjusted base size for smaller planes
+        const randomScale = baseScale * (0.8 + Math.random() * 0.4); // Less size variation
+        particle.scale.set(randomScale, randomScale, randomScale);
+        particle.userData.initialScale = randomScale; // Store for scaling down
+
+        // Initial random rotation around Z axis (facing direction)
+        particle.rotation.z = Math.random() * Math.PI * 2;
       }
     }
 
-    // Add flash effect
+    // Point light flash effect - Shorter duration, store base intensity
     this.flash.position.copy(position);
     this.flash.visible = true;
-    this.flash.intensity = 3 * sizeMultiplier;
+    const baseIntensity = 5 * sizeMultiplier; // Adjusted base intensity
+    this.flash.intensity = baseIntensity;
     this.flash.color.setHex(color);
     this.flash.userData = {
       startTime: performance.now(),
-      duration: 150 * sizeMultiplier
+      duration: 50 * sizeMultiplier, // Very short light flash
+      baseIntensity: baseIntensity // Store base intensity
     };
   }
 
-  addSmoke(position) {
-    if (!this.initialized) {
-      console.warn('[PARTICLE SYSTEM] Attempted to add smoke but system is not initialized');
-      return;
-    }
-    
-    // Create single minimal smoke particle
-    const velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 0.5, // Minimal spread
-      0.2 + Math.random() * 0.3, // Gentle upward drift
-      (Math.random() - 0.5) * 0.5
-    );
-    this.pools.smoke.acquire(position, velocity, 300); // Very short duration
+  addSmoke(position) { // Less frequent, shorter duration smoke puffs
+    if (!this.initialized) return;
+    const velocity = new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.3 + Math.random() * 0.4, (Math.random() - 0.5) * 0.8); // Slightly faster drift
+    this.pools.smoke.acquire(position, velocity, 200); // Shorter duration
   }
 
-  update() {
-    if (!this.initialized) {
-      // Skip update if not initialized, but don't warn as this is called frequently
+  update(camera) { // Accept camera directly
+    if (!this.initialized || !camera) {
+      // Don't update if not initialized or camera is missing
       return;
     }
-    
+
     const currentTime = performance.now();
 
-    // Update all particle pools
-    Object.values(this.pools).forEach(pool => pool.update(currentTime));
+    // Update all particle pools, passing the camera
+    Object.values(this.pools).forEach(pool => pool.update(currentTime, camera));
 
     // Update flash effect
     if (this.flash.visible) {
@@ -317,20 +325,22 @@ export class ParticleEffectSystem {
       if (progress >= 1) {
         this.flash.visible = false;
       } else {
-        this.flash.intensity = this.flash.intensity * (1 - progress);
+         // Fade intensity quadratically for a faster falloff
+         const baseIntensity = this.flash.userData.baseIntensity || 4; // Use stored base intensity or default
+         this.flash.intensity = baseIntensity * (1 - progress) * (1 - progress);
       }
     }
   }
 }
 
-// Export singleton instance
-// Export the class but don't instantiate it here
+// Singleton instance management
 export let particleEffectSystem = null;
 
-export function initParticleEffectSystem() {
+export function initParticleEffectSystem(sceneManager) { // Accept sceneManager for initialization
   if (!particleEffectSystem) {
     particleEffectSystem = new ParticleEffectSystem();
-    window.particleEffectSystem = particleEffectSystem;
+    particleEffectSystem.initialize(sceneManager); // Call internal initialize
+    window.particleEffectSystem = particleEffectSystem; // Optional: expose globally for debugging
   }
   return particleEffectSystem;
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { audioManager } from '../../audio/AudioManager.js'; // Import AudioManager
 
 export class MountPoint {
   constructor(config, bone) {
@@ -20,6 +21,8 @@ export class MountPoint {
 
     // Store the weapon
     this.weapon = weapon;
+    // Set the back-reference from the weapon to this mount point
+    weapon.mountPoint = this;
 
     // Get parent object info for debugging
     const parentInfo = this.bone.parent ? {
@@ -152,6 +155,10 @@ export class MountPoint {
 
     const weapon = this.weapon;
     this.bone.remove(weapon.model);
+    // Clear the back-reference when detaching
+    if (weapon) {
+        weapon.mountPoint = null;
+    }
     this.weapon = null;
     
     // No need to "revert" mirroring here because the attachWeapon method handles it independently based on the mount point's side when it's attached again.
@@ -218,6 +225,25 @@ export class MountPoint {
     if (success) {
       console.log(`[WEAPON] Fire successful for ${this.weapon.type}`);
       this.lastFireTime = Date.now();
+
+      // Play fire sound effect
+      let soundPath = null;
+      switch (this.weapon.type) {
+        case 'cannon':
+          soundPath = 'cannon.wav';
+          break;
+        case 'rocketLauncher': // Corrected type to match config
+          soundPath = 'rocket.wav';
+          break;
+        // Add cases for other weapons if needed
+      }
+
+      if (soundPath && this.weapon.model) {
+        console.log(`[AUDIO] Playing fire sound ${soundPath} for weapon ${this.weapon.type}`);
+        audioManager.playEffect(soundPath, this.weapon.model);
+      } else if (soundPath) {
+          console.warn(`[AUDIO] Cannot play sound for ${this.weapon.type}: Weapon model not found.`);
+      }
     } else {
       console.log(`[WEAPON] Fire failed for ${this.weapon.type}`);
     }

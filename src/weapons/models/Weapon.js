@@ -12,12 +12,133 @@ export class Weapon {
     this.model = model;
     this.config = config;
     this.id = THREE.MathUtils.generateUUID();
-    this.ammo = 50; // Default ammo count, could be moved to config
-    this.maxAmmo = 50;
+    this.ammo = config.ammo || 50; // Use config ammo, fallback to 50
+    this.maxAmmo = config.maxAmmo || 50; // Use config max ammo, fallback to 50
     this.projectiles = new Set();
     this.active = true;
+    this.shotCounter = 0; // Initialize shot counter
+
+    // Gatling specific state
+    this.firingState = 'idle'; // 'idle', 'spinningUp', 'firing', 'spinningDown'
+    this.spinUpTimeout = null;
+    this.lastFireTime = 0; // For controlling fire rate while in 'firing' state
+    this.mountPoint = null; // Reference to the mount point this weapon is attached to
+
+    // Audio instances (placeholders, assuming an AudioManager exists)
+    this.spinUpAudio = null;
+    this.fireLoopAudio = null;
+    this.spinDownAudio = null; // Track this to prevent overlap
+
+    // Preload sounds (AudioManager expects just the filename)
+    if (this.config.effects?.spinUpSound && window.AudioManager) {
+        window.AudioManager.loadSound(this.config.effects.spinUpSound);
+    }
+    if (this.config.effects?.sound && window.AudioManager) {
+        window.AudioManager.loadSound(this.config.effects.sound); // Main fire sound
+    }
+    if (this.config.effects?.spinDownSound && window.AudioManager) {
+        window.AudioManager.loadSound(this.config.effects.spinDownSound);
+    }
   }
 
+  // --- Firing Sequence Logic (Gatling) ---
+
+  startFiringSequence() {
+    if (this.type !== 'gatling' || !this.active || this.firingState === 'firing' || this.firingState === 'spinningUp') {
+        return; // Only for active gatling, and not already starting/firing
+    }
+
+    console.log(`[WEAPON] ${this.type} starting firing sequence.`);
+    this.firingState = 'spinningUp';
+
+    // Stop any lingering spin-down sound
+    if (this.spinDownAudio && window.AudioManager) {
+        window.AudioManager.stopSound(this.spinDownAudio);
+        this.spinDownAudio = null;
+    }
+    // Stop any potentially stuck fire loop sound (safety)
+    if (this.fireLoopAudio && window.AudioManager) {
+        window.AudioManager.stopSound(this.fireLoopAudio);
+        this.fireLoopAudio = null;
+    }
+
+
+    // Play spin-up sound (AudioManager expects just the filename)
+    if (this.config.effects?.spinUpSound && window.AudioManager) {
+        this.spinUpAudio = window.AudioManager.playEffect(this.config.effects.spinUpSound, this.model);
+    }
+
+    // Set timeout for the fire delay
+    const delay = (this.config.fireDelay || 0) * 1000; // ms
+    clearTimeout(this.spinUpTimeout); // Clear any previous timeout
+    this.spinUpTimeout = setTimeout(() => {
+        if (this.firingState === 'spinningUp') { // Ensure we weren't stopped during spin-up
+            console.log(`[WEAPON] ${this.type} finished spin-up, entering firing state.`);
+            this.firingState = 'firing';
+            this.lastFireTime = 0; // Reset fire timer for immediate first shot
+
+            // Stop spin-up sound (it should finish naturally, but just in case)
+            if (this.spinUpAudio && window.AudioManager) {
+                 window.AudioManager.stopSound(this.spinUpAudio); // Stop explicitly if needed
+                 this.spinUpAudio = null;
+            }
+
+            // Start fire loop sound (AudioManager expects just the filename)
+            if (this.config.effects?.sound && window.AudioManager) {
+                this.fireLoopAudio = window.AudioManager.playLoop(this.config.effects.sound, this.model);
+            }
+        }
+    }, delay);
+  }
+
+  stopFiringSequence() {
+    if (this.type !== 'gatling' || this.firingState === 'idle' || this.firingState === 'spinningDown') {
+        return; // Only stop if it was trying to fire or firing
+    }
+
+    console.log(`[WEAPON] ${this.type} stopping firing sequence. Current state: ${this.firingState}`);
+
+    const previousState = this.firingState;
+    this.firingState = 'spinningDown'; // Intermediate state before idle
+
+    // Clear the spin-up timeout if it's still pending
+    clearTimeout(this.spinUpTimeout);
+    this.spinUpTimeout = null;
+
+    // Stop spin-up sound if it's playing
+    if (this.spinUpAudio && window.AudioManager) {
+        window.AudioManager.stopSound(this.spinUpAudio);
+        this.spinUpAudio = null;
+    }
+
+    // Stop the firing loop sound
+    if (this.fireLoopAudio && window.AudioManager) {
+        window.AudioManager.stopSound(this.fireLoopAudio);
+        this.fireLoopAudio = null;
+    }
+
+    // Play spin-down sound only if it was actually firing or spinning up (AudioManager expects just the filename)
+    if ((previousState === 'firing' || previousState === 'spinningUp') && this.config.effects?.spinDownSound && window.AudioManager) {
+         // Stop any previous spindown sound first to prevent overlap if released/pressed quickly
+         if (this.spinDownAudio && window.AudioManager) {
+            window.AudioManager.stopSound(this.spinDownAudio);
+         }
+        this.spinDownAudio = window.AudioManager.playEffect(this.config.effects.spinDownSound, this.model);
+        // Add a slight delay before setting back to idle to let spindown play a bit
+        setTimeout(() => {
+            if (this.firingState === 'spinningDown') { // Check if state hasn't changed again
+                 this.firingState = 'idle';
+                 console.log(`[WEAPON] ${this.type} returned to idle state after spin-down.`);
+            }
+        }, 100); // Adjust delay as needed
+    } else {
+        // If stopped before firing started, go directly to idle
+        this.firingState = 'idle';
+        console.log(`[WEAPON] ${this.type} returned to idle state (stopped before firing).`);
+    }
+  }
+
+  // Actual single shot logic
   fire(position, direction) {
     console.log(`[WEAPON] ${this.type} fire method called from position`, position.toArray());
     
@@ -32,6 +153,11 @@ export class Weapon {
         window.HUD.showAlert("OUT OF AMMO", "warning");
       }
       return false;
+    }
+
+    // Increment shot counter for Gatling before creating projectile
+    if (this.type === 'gatling') {
+        this.shotCounter++;
     }
 
     // Create spawn position offset in front of the weapon
@@ -64,16 +190,16 @@ export class Weapon {
       }
     }
 
-    // Create effects for all projectiles
-    this.createFireEffects(spawnPosition);
+    // Create effects for this single shot
+    this.createFireEffects(spawnPosition, direction);
 
-    return true;
+    return true; // Indicate a shot was attempted/processed
   }
 
   createProjectile(position, direction) {
     const projectileConfig = this.config.projectileConfig;
-    let projectile;
-    
+    let projectile = null; // Initialize as null
+
     // Special case for rocket-type projectiles
     if (this.config.projectileType === 'rocket') {
       // Create a rocket-shaped projectile
@@ -122,14 +248,51 @@ export class Weapon {
       const flame = new THREE.Mesh(flameGeometry, flameMaterial);
       flame.position.z = -rocketLength * 0.8; // Position at back
       projectile.add(flame);
-      
+
+    } else if (this.type === 'gatling') {
+        // Gatling: Only create a visual for tracer rounds (e.g., every 3rd shot)
+        const tracerFrequency = 3; // Decreased frequency (more tracers)
+        if (this.shotCounter % tracerFrequency === 0) {
+            const tracerLength = 3.0; // Increased length of the tracer line
+            const tracerRadius = 0.03; // Thin radius
+            const geometry = new THREE.CylinderGeometry(tracerRadius, tracerRadius, tracerLength, 6);
+            // Rotate geometry to align with Z-axis forward as standard
+            geometry.rotateX(Math.PI / 2);
+            const material = new THREE.MeshBasicMaterial({
+                color: projectileConfig.color,
+                emissive: projectileConfig.color, // Make it glow
+                emissiveIntensity: 2.0
+            });
+            projectile = new THREE.Mesh(geometry, material);
+            // Manually set rotation to align the cylinder (local Z) with the direction vector
+            const quaternion = new THREE.Quaternion();
+            // Assuming Z is forward for the cylinder after rotateX
+            const cylinderForward = new THREE.Vector3(0, 0, 1); 
+            quaternion.setFromUnitVectors(cylinderForward, direction.clone().normalize());
+            projectile.quaternion.copy(quaternion);
+        } else {
+            // Not a tracer round, don't create a visual mesh
+            // We still need a logical projectile object for tracking, just without geometry/material
+            projectile = new THREE.Object3D(); // Use a simple Object3D for tracking
+        }
     } else {
       // Default to sphere for other projectile types
       const geometry = new THREE.SphereGeometry(projectileConfig.radius, 8, 8);
       const material = new THREE.MeshBasicMaterial({ color: projectileConfig.color });
       projectile = new THREE.Mesh(geometry, material);
     }
-    
+
+    // If a visual mesh was created, add it to the scene
+    if (projectile && projectile.isMesh) {
+        SceneManager.add(projectile);
+    } else if (!projectile) {
+        // If projectile is still null (e.g., error in logic), create a basic Object3D
+        // to prevent downstream errors, though this shouldn't happen with the current logic.
+        console.warn(`[WEAPON] Failed to create projectile visual for type ${this.type}. Creating basic Object3D.`);
+        projectile = new THREE.Object3D();
+    }
+
+    // Common projectile properties (apply to both visual and non-visual projectiles)
     projectile.position.copy(position);
     
     // All projectiles use their configured speed immediately
@@ -158,30 +321,35 @@ export class Weapon {
           flameElement.scale.set(3.0, 3.0, 3.0);
         }
       }
-    
+    // } <-- This closing brace was incorrect and is removed.
+
     this.projectiles.add(projectile);
-    // Add projectile to scene so it can be rendered
-    SceneManager.add(projectile);
+    // SceneManager.add(projectile); // Moved this up to only add visual meshes
+
     return projectile;
   }
 
-  createFireEffects(position) {
+  createFireEffects(position, direction) { // Added direction parameter
     if (this.config.effects) {
-      if (this.config.effects.muzzleFlash) {
-        particleEffectSystem.addMuzzleFlash(position, this.config.projectileConfig.color);
+      if (this.config.effects.muzzleFlash && particleEffectSystem) { // Check particleEffectSystem exists
+        // Pass direction to muzzle flash
+        particleEffectSystem.addMuzzleFlash(position, direction, this.config.projectileConfig.color);
         
         // Add larger muzzle flash for rocket launcher
         if (this.config.projectileType === 'rocket') {
           // Create intense launch effect for rocket
-          if (particleEffectSystem) {
-            // Add a big initial flash
-            particleEffectSystem.addMuzzleFlash(position, 0xff5500, 3.0); // Bigger flash
+          // Add larger muzzle flash for rocket launcher
+          if (this.config.projectileType === 'rocket') {
+            // Create intense launch effect for rocket
+            // Add a big initial flash (passing direction)
+            particleEffectSystem.addMuzzleFlash(position, direction, 0xff5500, 3.0); // Bigger flash
             
             // Create staggered smaller flashes for lingering effect
             for (let i = 1; i < 4; i++) {
               setTimeout(() => {
+                // Pass direction to staggered flashes
                 if (particleEffectSystem) {
-                  particleEffectSystem.addMuzzleFlash(position, 0xff5500, 2.0 - (i * 0.5));
+                  particleEffectSystem.addMuzzleFlash(position, direction, 0xff5500, 2.0 - (i * 0.5));
                 }
               }, i * 40); // Stagger the flashes
             }
@@ -230,8 +398,61 @@ export class Weapon {
       if (distanceTraveled > projectile.maxDistance) {
         this.removeProjectile(projectile);
       }
+    } // End of projectile update loop
+
+    // Gatling: Check fire rate within the update loop if in 'firing' state
+    // Moved OUTSIDE the projectile loop
+    if (this.type === 'gatling' && this.firingState === 'firing') {
+        // console.log(`[WEAPON UPDATE] Gatling in firing state. Ammo: ${this.ammo}`); // Debug log
+        const now = performance.now();
+        const fireInterval = 1000 / this.config.fireRate; // ms between shots
+
+        if (now - this.lastFireTime >= fireInterval) {
+            // console.log(`[WEAPON UPDATE] Gatling fire interval met.`); // Debug log
+            if (this.ammo > 0) {
+                if (!this.model) {
+                     console.error(`[WEAPON UPDATE] Gatling cannot fire: Weapon model is missing.`);
+                     this.stopFiringSequence(); // Stop if model is gone
+                      return; // Exit update for this frame if model is missing
+                 }
+                 // Get current position and direction FROM THE MOUNT POINT, not the weapon model
+                 let firePos, fireDir;
+
+                 // Use mount point's position/direction if available
+                 if (this.mountPoint) {
+                     firePos = this.mountPoint.getWorldPosition();
+                     fireDir = this.mountPoint.getWorldDirection();
+                     // console.log(`[WEAPON UPDATE] Gatling using mount point. Pos: ${firePos.toArray().map(n=>n.toFixed(2))}, Dir: ${fireDir.toArray().map(n=>n.toFixed(2))}`);
+                 } else {
+                     // Fallback to model's position/direction (should not happen ideally)
+                     console.warn(`[WEAPON UPDATE] Gatling ${this.id} firing without mountPoint reference! Falling back to model position.`);
+                     firePos = this.model.getWorldPosition(new THREE.Vector3());
+                     fireDir = this.model.getWorldDirection(new THREE.Vector3());
+                 }
+
+                 // Call the actual single-shot fire method
+                // console.log(`[WEAPON UPDATE] Gatling attempting fire. Pos: ${firePos.toArray().map(n=>n.toFixed(2))}, Dir: ${fireDir.toArray().map(n=>n.toFixed(2))}`); // Verbose log
+                const fireSuccess = this.fire(firePos, fireDir); // This handles ammo decrement, network, effects
+                // console.log(`[WEAPON UPDATE] Gatling fire attempt result: ${fireSuccess}`); // Debug log
+                if (fireSuccess) { // Only update lastFireTime if fire was successful
+                    this.lastFireTime = now;
+                } else {
+                    // If fire failed (e.g., somehow became inactive or out of ammo between checks), stop sequence
+                    console.log(`[WEAPON UPDATE] Gatling fire call failed (returned ${fireSuccess}), stopping sequence.`);
+                    this.stopFiringSequence();
+                }
+            } else {
+                // Out of ammo while firing
+                console.log(`[WEAPON UPDATE] ${this.type} ran out of ammo during firing sequence.`);
+                this.stopFiringSequence(); // Stop the sequence
+                if (window.HUD) {
+                    window.HUD.showAlert("OUT OF AMMO", "warning");
+                }
+            }
+        }
     }
   }
+
 
   removeProjectile(projectile) {
     this.projectiles.delete(projectile);
@@ -316,6 +537,23 @@ export class Weapon {
 
   deactivate() {
     this.active = false;
+
+    // Stop any firing sequence and sounds
+    if (this.type === 'gatling') {
+        this.stopFiringSequence(); // Ensure sounds stop and state resets
+        // Explicitly stop any potentially lingering sounds
+        if (this.spinUpAudio && window.AudioManager) window.AudioManager.stopSound(this.spinUpAudio);
+        if (this.fireLoopAudio && window.AudioManager) window.AudioManager.stopSound(this.fireLoopAudio);
+        if (this.spinDownAudio && window.AudioManager) window.AudioManager.stopSound(this.spinDownAudio);
+        this.spinUpAudio = null;
+        this.fireLoopAudio = null;
+        this.spinDownAudio = null;
+        clearTimeout(this.spinUpTimeout);
+        this.spinUpTimeout = null;
+        this.firingState = 'idle';
+    }
+
+
     // Clean up projectiles
     for (const projectile of this.projectiles) {
       this.removeProjectile(projectile);

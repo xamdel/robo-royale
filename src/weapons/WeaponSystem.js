@@ -9,6 +9,11 @@ export class WeaponSystem {
     this.mountManager = new MountManager();
     this.activeWeapons = new Map(); // Track all active weapons by ID
     this.weaponTemplates = new Map(); // Track weapon templates by type
+
+    // Firing state
+    this.isFiringPrimary = false;
+    this.isFiringSecondary = false;
+
     this.setupInputListeners();
   }
 
@@ -52,19 +57,52 @@ export class WeaponSystem {
     // Mouse controls for primary weapons (arms)
     document.addEventListener('mousedown', (event) => {
       if (event.button === 0) { // Left click
-        this.fireWeaponByControl('mouse0');
+        this.isFiringPrimary = true;
+        const weapon = this.getSelectedWeapon('primary');
+        if (weapon?.type === 'gatling') {
+          weapon.startFiringSequence();
+        }
+        // Non-gatling firing is now handled in the update loop
+      }
+    });
+    document.addEventListener('mouseup', (event) => {
+      if (event.button === 0) { // Left click release
+        this.isFiringPrimary = false;
+        const weapon = this.getSelectedWeapon('primary');
+        if (weapon?.type === 'gatling') {
+          weapon.stopFiringSequence();
+        }
       }
     });
 
     // Keyboard controls for secondary weapons (shoulders)
     document.addEventListener('keydown', (event) => {
+      // Prevent repeated firing from keydown event itself if held
+      if (event.repeat) return;
+
       switch (event.code) {
         case 'KeyR':
-          this.fireWeaponByControl('keyR');
+          this.isFiringSecondary = true;
+          const weapon = this.getSelectedWeapon('secondary');
+          if (weapon?.type === 'gatling') {
+            weapon.startFiringSequence();
+          }
+          // Non-gatling firing is now handled in the update loop
           break;
         case 'Tab':
           event.preventDefault(); // Prevent tab from changing focus
           this.cycleSecondaryWeapon();
+          break;
+      }
+    });
+    document.addEventListener('keyup', (event) => {
+      switch (event.code) {
+        case 'KeyR':
+          this.isFiringSecondary = false;
+          const weapon = this.getSelectedWeapon('secondary');
+          if (weapon?.type === 'gatling') {
+            weapon.stopFiringSequence();
+          }
           break;
       }
     });
@@ -345,8 +383,22 @@ export class WeaponSystem {
   update(deltaTime) {
     // Update all mount points (which in turn update their weapons)
     this.mountManager.update(deltaTime);
-    
-    // Also update weapon templates to handle remote projectiles
+
+    // Handle continuous firing for non-gatling weapons
+    if (this.isFiringPrimary) {
+      const primaryWeapon = this.getSelectedWeapon('primary');
+      if (primaryWeapon && primaryWeapon.type !== 'gatling') {
+        this.fireWeaponByControl('mouse0'); // Attempt to fire primary
+      }
+    }
+    if (this.isFiringSecondary) {
+      const secondaryWeapon = this.getSelectedWeapon('secondary');
+      if (secondaryWeapon && secondaryWeapon.type !== 'gatling') {
+        this.fireWeaponByControl('keyR'); // Attempt to fire secondary
+      }
+    }
+
+    // Update weapon templates to handle remote projectiles
     for (const weapon of this.weaponTemplates.values()) {
       weapon.update(deltaTime);
     }

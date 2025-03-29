@@ -10,6 +10,7 @@ import { DamageNumberSystem } from './systems/DamageNumberSystem.js'; // Import 
 import { EnvironmentalObjectSystem } from './environmentalObjectSystem.js'; // Import the system
 import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGenerator
 import { modelManager } from './ModelManager.js'; // Import ModelManager
+import { audioManager } from './audio/AudioManager.js'; // Import the audio manager instance
 import * as THREE from 'three';
 
 // Debug variables
@@ -28,6 +29,8 @@ let debugState = {
   showVisualHelpers: false
 };
 
+// This older init function might be redundant now with initializeGame,
+// but keeping it for now in case it's called elsewhere unexpectedly.
 async function init() {
   // Initialize debug overlay elements after DOM is loaded
   debugElements.latency = document.getElementById('latency');
@@ -36,33 +39,34 @@ async function init() {
   debugElements.interpolationSpeed = document.getElementById('debug-interpolation-speed');
   debugElements.overlay = document.getElementById('debug-overlay');
   debugElements.toggle = document.getElementById('debug-toggle');
-  
+
   // Set up debug toggle
   if (debugElements.toggle) {
     debugElements.toggle.addEventListener('click', toggleDebug);
   }
-  
+
   // Set up interpolation speed controls
   document.getElementById('debug-interpolation-speed-up')?.addEventListener('click', () => {
     Network.interpolationSpeed += 1;
     updateInterpolationSpeedDisplay();
   });
-  
+
   document.getElementById('debug-interpolation-speed-down')?.addEventListener('click', () => {
     if (Network.interpolationSpeed > 1) {
       Network.interpolationSpeed -= 1;
       updateInterpolationSpeedDisplay();
     }
   });
-  
+
   try {
     if (!SceneManager || typeof SceneManager.init !== 'function') {
       throw new Error('SceneManager not properly initialized');
     }
-    SceneManager.init();
-    await EnvironmentalObjectSystem.init(); // Initialize environmental objects after scene
+    // Assuming SceneManager.init now takes the seed, pass null or handle appropriately
+    SceneManager.init(null); // Or fetch seed if needed here
+    // EnvironmentalObjectSystem initialization moved to initializeGame
   } catch (error) {
-    console.error('Failed to initialize SceneManager or EnvironmentalObjectSystem:', error);
+    console.error('Failed to initialize SceneManager:', error);
     return;
   }
   Network.init();
@@ -70,7 +74,7 @@ async function init() {
   // --- Network Event Handlers for Debugging ---
   Network.socket.on('networkStats', (stats) => {
     if (!debugState.enabled) return;
-    
+
     if (debugElements.latency) {
       debugElements.latency.innerText = `Latency: ${stats.latency.toFixed(0)} ms`;
     }
@@ -80,34 +84,38 @@ async function init() {
     if (debugElements.updateRate) {
       debugElements.updateRate.innerText = `Update Rate: ${stats.updateRate} ms`;
     }
-    
+
     // Also log to console for debugging
     console.log('[Network Stats]', stats);
   });
-  
+
   await Game.init(Network.socket);
-  
+
   // Initialize HUD after game is initialized
   HUD.init();
-  
-  // Initialize Leaderboard immediately after HUD
-  Leaderboard.init(); 
 
-  // Initialize particle effect system
-  const particleSystem = initParticleEffectSystem();
-  if (particleSystem) {
-    particleSystem.initialized = true;
-    particleSystem.pools.impact.setSceneManager(SceneManager);
-    particleSystem.pools.fire.setSceneManager(SceneManager);
-    particleSystem.pools.smoke.setSceneManager(SceneManager);
-    particleSystem.pools.smallFire.setSceneManager(SceneManager);
-    SceneManager.add(particleSystem.flash);
+  // Initialize Leaderboard immediately after HUD
+  Leaderboard.init();
+
+  // Initialize particle effect system (passing the scene) - Corrected Call
+  if (SceneManager.scene) {
+    initParticleEffectSystem(SceneManager.scene);
+  } else {
+    console.error("[Main-init] Cannot initialize ParticleEffectSystem: Scene not ready.");
   }
-  
+
+  // Initialize Damage Number System
+  if (SceneManager.scene) {
+    DamageNumberSystem.init(SceneManager.scene);
+  } else {
+     console.error("[Main-init] Cannot initialize DamageNumberSystem: Scene not ready.");
+  }
+
   // Start the game loop
   lastTime = performance.now();
   requestAnimationFrame(gameLoop);
 }
+
 
 let lastTime = 0;
 let lastNetworkUpdate = 0;
@@ -118,11 +126,11 @@ const RUN_UPDATE_RATE = 50;   // ms between updates when running
 function gameLoop(timestamp) {
   const deltaTime = (timestamp - lastTime) / 1000; // Convert to seconds
   lastTime = timestamp;
-  
+
   if (Game.player) {
     // Get movement data from Game.update()
     const moveData = Game.update(deltaTime);
-    
+
     // Send position to server at a controlled rate based on movement speed
     const updateRate = Game.isRunning ? RUN_UPDATE_RATE : WALK_UPDATE_RATE;
     if (moveData && timestamp - lastNetworkUpdate > updateRate) {
@@ -135,27 +143,29 @@ function gameLoop(timestamp) {
     Game.update(deltaTime);
   }
   Network.update(deltaTime);  // Add network update for interpolation
-  
+
   // Update debug visualizations
   if (debugState.enabled) {
     DebugTools.updateDebugVisuals();
     DebugTools.updateNetworkDebugUI();
   }
-  
+
   // Update HUD
   HUD.update(deltaTime);
-  
-  // Update particle effects
-  particleEffectSystem.update();
+
+  // Update particle effects (passing the camera) - Corrected Call
+  if (particleEffectSystem && SceneManager.camera) {
+    particleEffectSystem.update(SceneManager.camera);
+  }
 
   // Update damage numbers
   if (window.damageNumberSystem) {
     window.damageNumberSystem.update(deltaTime);
   }
-  
+
   // Render the scene
   SceneManager.render(Game.player?.position);
-  
+
   // Continue the game loop
   requestAnimationFrame(gameLoop);
 }
@@ -163,22 +173,22 @@ function gameLoop(timestamp) {
 // Toggle debug mode
 function toggleDebug() {
   debugState.enabled = !debugState.enabled;
-  
+
   // Update UI
   if (debugElements.toggle) {
     debugElements.toggle.innerText = `Debug: ${debugState.enabled ? 'ON' : 'OFF'}`;
   }
-  
+
   if (debugElements.overlay) {
     debugElements.overlay.style.display = debugState.enabled ? 'block' : 'none';
   }
-  
+
   // Update interpolation speed display
   updateInterpolationSpeedDisplay();
-  
+
   // Toggle visual helpers
   debugState.showVisualHelpers = debugState.enabled;
-  
+
   if (debugState.enabled) {
     // Initialize debug visualizations
     DebugTools.createDebugVisuals(SceneManager.scene);
@@ -186,7 +196,7 @@ function toggleDebug() {
     // Clear all debug visualizations
     DebugTools.clearDebugVisuals(SceneManager.scene);
   }
-  
+
   console.log(`Debug mode ${debugState.enabled ? 'enabled' : 'disabled'}`);
 }
 
@@ -258,6 +268,25 @@ async function initializeGame() {
     // Pass the received seed to SceneManager
     SceneManager.init(mapSeed); // This initializes TerrainGenerator internally
 
+    // Initialize AudioManager AFTER scene and camera are ready
+    if (SceneManager.camera) {
+      audioManager.init(SceneManager.camera);
+      window.AudioManager = audioManager; // Make it globally accessible
+      console.log("[Main] AudioManager initialized and attached to window.");
+
+      // Preload weapon sounds
+      console.log("[Main] Preloading weapon sounds...");
+      audioManager.loadSound('cannon.wav');
+      audioManager.loadSound('rocket.wav');
+      // Preload gatling sounds too, might need them later
+      audioManager.loadSound('gatling-fire.wav');
+      audioManager.loadSound('gatling-spinup.wav');
+      audioManager.loadSound('gatling-spindown.wav');
+      console.log("[Main] Weapon sounds preloading initiated.");
+    } else {
+      console.error("[Main] Cannot initialize AudioManager: SceneManager camera not ready.");
+    }
+
     // Initialize environmental objects AFTER scene and terrain are ready
     if (TerrainGenerator.isInitialized && SceneManager.scene) {
       console.log("[Main] Initializing EnvironmentalObjectSystem...");
@@ -300,25 +329,21 @@ async function initializeGame() {
   HUD.init();
 
   // Initialize Leaderboard after HUD
-  Leaderboard.init(); 
+  Leaderboard.init();
   console.log("[Main] Leaderboard initialized."); // Add log
 
-  // Initialize particle effect system
-  const particleSystem = initParticleEffectSystem();
-  if (particleSystem) {
-    particleSystem.initialized = true;
-    particleSystem.pools.impact.setSceneManager(SceneManager);
-    particleSystem.pools.fire.setSceneManager(SceneManager);
-    particleSystem.pools.smoke.setSceneManager(SceneManager);
-    particleSystem.pools.smallFire.setSceneManager(SceneManager);
-    SceneManager.add(particleSystem.flash);
+  // Initialize particle effect system (passing the scene) - Corrected Call
+  if (SceneManager.scene) {
+    initParticleEffectSystem(SceneManager.scene);
+  } else {
+    console.error("[Main-initializeGame] Cannot initialize ParticleEffectSystem: Scene not ready.");
   }
 
   // Initialize Damage Number System after scene is ready
   if (SceneManager.scene) {
     DamageNumberSystem.init(SceneManager.scene);
   } else {
-    console.error("[Main] Cannot initialize DamageNumberSystem: Scene not ready.");
+    console.error("[Main-initializeGame] Cannot initialize DamageNumberSystem: Scene not ready.");
   }
 
   // 6. Start the game loop
@@ -333,23 +358,23 @@ window.onload = async () => {
   try {
     await initializeGame(); // Wait for all async setup to complete
     console.log("[Main] Initialization finished. Adding key listener.");
-    
+
 // Add 'L' key listener for leaderboard *after* successful initialization
 document.addEventListener('keydown', (event) => {
   if (event.code === 'KeyL') {
     // Log the state of Leaderboard elements when 'L' is pressed for debugging
-    console.log("[Main] 'L' key pressed. Checking Leaderboard state:", 
-      window.Leaderboard, 
-      window.Leaderboard?.elements?.container, 
+    console.log("[Main] 'L' key pressed. Checking Leaderboard state:",
+      window.Leaderboard,
+      window.Leaderboard?.elements?.container,
       window.Leaderboard?.elements?.list
     );
 
     // Check if Leaderboard object and its elements are initialized before toggling
-    if (window.Leaderboard && 
-        window.Leaderboard.elements.container && 
-        window.Leaderboard.elements.list) 
-    { 
-      Leaderboard.toggle(Game.killLog); 
+    if (window.Leaderboard &&
+        window.Leaderboard.elements.container &&
+        window.Leaderboard.elements.list)
+    {
+      Leaderboard.toggle(Game.killLog);
     } else {
       // Log if the key is pressed but elements aren't ready
       console.warn("[Main] Leaderboard elements not ready when 'L' key was pressed.");
@@ -371,3 +396,4 @@ export const Debug = {
 window.Game = Game;
 window.HUD = HUD;
 window.Leaderboard = Leaderboard; // Make Leaderboard global
+// window.AudioManager is assigned above after init

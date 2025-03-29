@@ -14,19 +14,22 @@ export const HUD = {
   },
 
   config: {
-    maxHealth: 100,
+    maxHealth: 200,
     maxAmmo: 50,
     scannerRadius: 50,
     updateRate: 50, // ms between HUD updates
   },
 
+  // Removed redundant maxHealth from HUD config, rely on Game.maxHealth
+
   status: {
-    health: 100,
+    health: 200,
     ammo: 50,
     weaponActive: false,
     enemies: [],
     lastMessage: '',
     alerts: [],
+    alertTimestamps: {}, // Added to track alert times
   },
 
   lastUpdateTime: 0,
@@ -56,6 +59,9 @@ export const HUD = {
     
     // Initial scale update
     this.updateScale();
+
+    // Update health display initially
+    this.updateHealth();
   },
 
   // Add to the HUD object
@@ -118,7 +124,8 @@ export const HUD = {
     // Health percentage
     const healthPercent = document.createElement('div');
     healthPercent.className = 'health-percent';
-    healthPercent.textContent = '100%';
+    // Removed hardcoded '100%', updateHealth will set the initial value
+    // healthPercent.textContent = '100%'; 
     healthBarWrapper.appendChild(healthPercent);
     
     healthContainer.appendChild(healthBarWrapper);
@@ -559,6 +566,18 @@ export const HUD = {
   },
   
   showAlert(message, type = 'info') {
+    const now = performance.now();
+    const lastShown = this.status.alertTimestamps[message];
+    const cooldown = 2000; // 2 seconds cooldown for the same message
+
+    // Prevent spamming the same message
+    if (lastShown && (now - lastShown < cooldown)) {
+      return; // Skip showing the alert
+    }
+
+    // Update timestamp for this message
+    this.status.alertTimestamps[message] = now;
+
     // Create alert element
     const alert = document.createElement('div');
     alert.className = `alert alert-${type}`;

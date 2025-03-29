@@ -8,30 +8,18 @@ export class WeaponSpawnManager {
 
     this.sceneManager = sceneManager;
     this.terrainGenerator = terrainGenerator;
-    this.spawnPoints = {
-      cannon: [
-        { x: 0, z: -10 },    // Original position
-        { x: 50, z: 50 },
-        { x: -50, z: 50 },
-        { x: 50, z: -50 },
-        { x: -50, z: -50 },
-        { x: 100, z: 0 },
-        { x: -100, z: 0 },
-        { x: 0, z: 100 },
-        { x: 0, z: -100 },
-      ],
-      rocketLauncher: [
-        { x: 10, z: -10 },   // Original position
-        { x: -30, z: 30 },
-        { x: 60, z: -20 },
-        { x: -60, z: -60 },
-        { x: 30, z: -70 },
-        { x: -70, z: 80 },
-        { x: 80, z: 80 },
-        { x: -80, z: -20 },
-      ]
-      // Add more weapon types and points as needed
-    };
+    // Combined list of all potential spawn locations
+    this.spawnPoints = [
+      // Cannon original points
+      { x: 0, z: -10 }, { x: 50, z: 50 }, { x: -50, z: 50 }, { x: 50, z: -50 },
+      { x: -50, z: -50 }, { x: 100, z: 0 }, { x: -100, z: 0 }, { x: 0, z: 100 },
+      { x: 0, z: -100 },
+      // RocketLauncher original points
+      { x: 10, z: -10 }, { x: -30, z: 30 }, { x: 60, z: -20 }, { x: -60, z: -60 },
+      { x: 30, z: -70 }, { x: -70, z: 80 }, { x: 80, z: 80 }, { x: -80, z: -20 },
+      // Add more potential spawn points if needed
+    ];
+    this.weaponTypes = ['cannon', 'rocketLauncher', 'gatling']; // Available weapon types
     this.activePickups = new Map(); // Map<string, { model: THREE.Object3D, collider: THREE.Sphere, type: string }>
     this.pickupRadius = 2.5; // Standard pickup radius
     this.rotationSpeed = 0.5; // Rotation speed for pickups
@@ -41,52 +29,61 @@ export class WeaponSpawnManager {
     console.log('[WeaponSpawnManager] Spawning weapon pickups...');
     this.clearExistingPickups(); // Clear any previous pickups first
 
-    for (const [weaponType, points] of Object.entries(this.spawnPoints)) {
-      console.log(`[WeaponSpawnManager] Spawning ${weaponType} at ${points.length} locations.`);
-      for (const point of points) {
-        // Use the correct method: getQuantizedHeight
-        const terrainY = this.terrainGenerator.getQuantizedHeight(point.x, point.z);
-        const spawnPosition = new THREE.Vector3(point.x, terrainY + 1, point.z); // Place slightly above terrain
+    if (this.weaponTypes.length === 0) {
+      console.warn('[WeaponSpawnManager] No weapon types defined. Cannot spawn pickups.');
+      return;
+    }
 
-        try {
-          // Use the weapon factory to get the model template
-          const weaponTemplate = weaponSystem.weaponTemplates.get(weaponType);
-          if (!weaponTemplate || !weaponTemplate.model) {
-            console.error(`[WeaponSpawnManager] Failed to get model template for ${weaponType}`);
-            continue;
-          }
+    console.log(`[WeaponSpawnManager] Spawning weapons at ${this.spawnPoints.length} locations from types:`, this.weaponTypes);
 
-          // Clone the model for the pickup
-          const pickupModel = weaponTemplate.model.clone();
-          pickupModel.position.copy(spawnPosition);
-          pickupModel.castShadow = true;
-          pickupModel.visible = true;
-          pickupModel.traverse(child => {
-            if (child.isMesh) {
-              child.visible = true;
-              child.castShadow = true;
-            }
-          });
+    for (const point of this.spawnPoints) {
+      // Randomly select a weapon type for this spawn point
+      const weaponTypeIndex = Math.floor(Math.random() * this.weaponTypes.length);
+      const weaponType = this.weaponTypes[weaponTypeIndex];
 
-          this.sceneManager.add(pickupModel);
+      // Use the correct method: getQuantizedHeight
+      const terrainY = this.terrainGenerator.getQuantizedHeight(point.x, point.z);
+      const spawnPosition = new THREE.Vector3(point.x, terrainY + 1, point.z); // Place slightly above terrain
 
-          // Create collider
-          const collider = new THREE.Sphere(spawnPosition.clone(), this.pickupRadius);
-
-          // Store the pickup information using a unique ID (e.g., type + position)
-          const pickupId = `${weaponType}_${point.x}_${point.z}`;
-          this.activePickups.set(pickupId, {
-            model: pickupModel,
-            collider: collider,
-            type: weaponType,
-            id: pickupId // Store the ID for easy removal
-          });
-
-          console.log(`[WeaponSpawnManager] Spawned ${weaponType} pickup at`, spawnPosition.toArray());
-
-        } catch (error) {
-          console.error(`[WeaponSpawnManager] Error spawning ${weaponType} at (${point.x}, ${point.z}):`, error);
+      try {
+        // Use the weapon factory to get the model template
+        const weaponTemplate = weaponSystem.weaponTemplates.get(weaponType);
+        if (!weaponTemplate || !weaponTemplate.model) {
+          console.error(`[WeaponSpawnManager] Failed to get model template for ${weaponType}`);
+          continue; // Skip this spawn point if template is missing
         }
+
+        // Clone the model for the pickup
+        const pickupModel = weaponTemplate.model.clone();
+        pickupModel.position.copy(spawnPosition);
+        pickupModel.castShadow = true;
+        pickupModel.visible = true;
+        pickupModel.traverse(child => {
+          if (child.isMesh) {
+            child.visible = true;
+            child.castShadow = true;
+          }
+        });
+
+        this.sceneManager.add(pickupModel);
+
+        // Create collider
+        const collider = new THREE.Sphere(spawnPosition.clone(), this.pickupRadius);
+
+        // Store the pickup information using a unique ID (e.g., type + position)
+        // Ensure uniqueness even if multiple weapons spawn at the same x,z (unlikely but possible)
+        const pickupId = `${weaponType}_${point.x}_${point.z}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        this.activePickups.set(pickupId, {
+          model: pickupModel,
+          collider: collider,
+          type: weaponType,
+          id: pickupId // Store the ID for easy removal
+        });
+
+        console.log(`[WeaponSpawnManager] Spawned ${weaponType} pickup at`, spawnPosition.toArray());
+
+      } catch (error) {
+        console.error(`[WeaponSpawnManager] Error spawning ${weaponType} at (${point.x}, ${point.z}):`, error);
       }
     }
     console.log(`[WeaponSpawnManager] Finished spawning. Total pickups: ${this.activePickups.size}`);

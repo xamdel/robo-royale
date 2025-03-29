@@ -47,6 +47,18 @@ module.exports = {
         minDamage: 20
       }
     },
+    gatling: {
+      speed: 400,       // Fast bullets
+      radius: 0.1,      // Small radius
+      maxDistance: 120, // Long range
+      maxLifetime: 5000,
+      damage: 2,        // As specified
+      distanceFalloff: {
+        start: 60,      // Start falloff later
+        end: 100,       // End falloff sooner relative to max distance
+        minDamage: 3    // Minimum damage at max range
+      }
+    },
     default: {
       speed: 25,
       radius: 0.3,
@@ -62,15 +74,16 @@ module.exports = {
   },
 
   PLAYER_CONFIG: {
-    maxHealth: 100,
+    maxHealth: 200,
     spawnInvulnerabilityTime: 3000, // 3 seconds of invulnerability after spawn
     respawnDelay: 5000  // 5 seconds before respawn
   },
 
   WEAPON_COOLDOWN: {
     cannon: 500,  // 0.5 second between shots
-    rocketLauncher: 1000,
-    rocket: 1000, // Match rocketLauncher cooldown for consistency
+    rocketLauncher: 500,
+    rocket: 500, // Match rocketLauncher cooldown for consistency
+    gatling: 20, // 0.2 seconds between shots (20ms)
     default: 500   // 0.5 seconds between shots
   },
 
@@ -84,6 +97,11 @@ module.exports = {
       initial: 4,      // Starting ammo when weapon is picked up
       max: 8,         // Maximum ammo capacity 
       pickupAmount: 4   // Amount of ammo gained from ammo pickups
+    },
+    gatling: {
+      initial: 500,
+      max: 1000,
+      pickupAmount: 500
     },
     default: {
       initial: 20,
