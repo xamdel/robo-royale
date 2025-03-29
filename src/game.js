@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SceneManager } from './scene.js';
 import { weaponSystem } from './weapons/index.js';
 import { PlayerAnimations } from './player-animations.js';
+import { NameTagSystem } from './systems/NameTagSystem.js'; // Import NameTagSystem
 import { DebugTools } from './debug-tools.js';
 import { WeaponOrientationDebugger } from './debug-tools/weapon-orientation-debugger.js';
 import { Network } from './network.js';
@@ -317,6 +318,9 @@ export const Game = {
         } else {
           player.previousPosition = player.mesh.position.clone();
         }
+
+        // Update name tag position
+        NameTagSystem.updateTagPosition(player.mesh.playerId, player.mesh);
       }
     });
     
@@ -359,6 +363,7 @@ export const Game = {
   },
 
   updateOtherPlayer(playerData) {
+    // console.log(`[GAME] updateOtherPlayer called for ID: ${playerData.id}`, playerData); // Removed log
     let player = this.otherPlayers[playerData.id];
     
     if (!player) {
@@ -370,6 +375,15 @@ export const Game = {
       player.previousPosition = new THREE.Vector3();
       player.isMoving = false;
       player.lastMovementTime = 0; // Initialize movement timestamp
+
+      // Add name tag for the new player
+      // console.log(`[GAME] Received update for player ${playerData.id}. Data:`, playerData); // Removed log
+      if (playerData.name) { // Check if name exists
+        // console.log(`[GAME] Creating name tag for ${playerData.id} with name "${playerData.name}"`); // Removed log
+        NameTagSystem.addTag(playerData.id, playerData.name);
+      } else {
+        console.warn(`[GAME] Player data for ${playerData.id} missing name, cannot create tag.`);
+      }
       
       // Create a dedicated mount manager for this remote player
       console.log(`Creating dedicated mount manager for remote player ${playerData.id}`);

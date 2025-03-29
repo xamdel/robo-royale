@@ -2,6 +2,7 @@ import { io } from 'socket.io-client';
 import { Game } from './game.js';
 import { SceneManager } from './scene.js';
 import { weaponSystem } from './weapons/index.js';
+import { NameTagSystem } from './systems/NameTagSystem.js'; // Import NameTagSystem
 import { MountManager } from './weapons/MountManager.js';
 import { particleEffectSystem } from './systems/ParticleEffectSystem.js';
 import * as THREE from 'three';
@@ -80,6 +81,7 @@ export const Network = {
           if (Game.otherPlayers[playerId]?.mesh) {
             SceneManager.remove(Game.otherPlayers[playerId].mesh);
           }
+          NameTagSystem.removeTag(playerId); // Remove name tag
           delete Game.otherPlayers[playerId];
           this.interpolationBuffer.delete(playerId);
           this.isMovingMap.delete(playerId);
@@ -217,6 +219,7 @@ export const Network = {
       if (Game.otherPlayers[playerId]?.mesh) {
         SceneManager.remove(Game.otherPlayers[playerId].mesh);
       }
+      NameTagSystem.removeTag(playerId); // Remove name tag
       delete Game.otherPlayers[playerId];
       this.interpolationBuffer.delete(playerId);
       this.playerVelocities.delete(playerId);

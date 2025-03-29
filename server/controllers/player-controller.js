@@ -26,8 +26,12 @@ class PlayerController {
       return;
     }
 
-    // Initialize player
-    const player = this.playerManager.addPlayer(socket.id);
+    // Generate a simple name for the player
+    const playerName = `Player_${socket.id.slice(-4)}`; 
+    console.log(`Assigning name "${playerName}" to player ${socket.id}`);
+
+    // Initialize player with the generated name
+    const player = this.playerManager.addPlayer(socket.id, playerName);
 
     // Send initial state to new player
     socket.emit('gameState', {

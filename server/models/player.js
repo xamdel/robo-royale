@@ -1,8 +1,9 @@
 const gameConfig = require('../config/game-config');
 
 class Player {
-  constructor(socketId) {
+  constructor(socketId, name = 'Player') { // Add name parameter with default
     this.id = socketId;
+    this.name = name; // Store the name
     this.position = { x: 0, y: 0, z: 0 };
     this.rotation = { x: 0, y: 0, z: 0, w: 1 };
     this.lastProcessedInput = 0;
@@ -43,6 +44,7 @@ class Player {
   toJSON() {
     return {
       id: this.id,
+      name: this.name, // Include name in JSON
       position: this.position,
       rotation: this.rotation,
       lastProcessedInput: this.lastProcessedInput,
@@ -128,8 +130,8 @@ class PlayerManager {
     this.players = new Map();
   }
 
-  addPlayer(socketId) {
-    const player = new Player(socketId);
+  addPlayer(socketId, name) { // Pass name when adding
+    const player = new Player(socketId, name);
     this.players.set(socketId, player);
     return player;
   }
