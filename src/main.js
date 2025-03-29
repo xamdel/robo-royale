@@ -3,6 +3,7 @@ import { Game } from './game.js';
 import { Network } from './network.js';
 import { DebugTools } from './debug-tools.js';
 import { HUD } from './hud.js';
+import { Leaderboard } from './leaderboard.js'; // Import Leaderboard
 import { weaponSystem } from './weapons/index.js';
 import { particleEffectSystem, initParticleEffectSystem } from './systems/ParticleEffectSystem.js';
 import { DamageNumberSystem } from './systems/DamageNumberSystem.js'; // Import DamageNumberSystem
@@ -89,6 +90,9 @@ async function init() {
   // Initialize HUD after game is initialized
   HUD.init();
   
+  // Initialize Leaderboard immediately after HUD
+  Leaderboard.init(); 
+
   // Initialize particle effect system
   const particleSystem = initParticleEffectSystem();
   if (particleSystem) {
@@ -295,6 +299,10 @@ async function initializeGame() {
   // Initialize HUD after game is initialized
   HUD.init();
 
+  // Initialize Leaderboard after HUD
+  Leaderboard.init(); 
+  console.log("[Main] Leaderboard initialized."); // Add log
+
   // Initialize particle effect system
   const particleSystem = initParticleEffectSystem();
   if (particleSystem) {
@@ -320,7 +328,39 @@ async function initializeGame() {
 }
 
 
-window.onload = initializeGame; // Use the new initialization function
+// Use an async function for onload to await initialization
+window.onload = async () => {
+  try {
+    await initializeGame(); // Wait for all async setup to complete
+    console.log("[Main] Initialization finished. Adding key listener.");
+    
+// Add 'L' key listener for leaderboard *after* successful initialization
+document.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyL') {
+    // Log the state of Leaderboard elements when 'L' is pressed for debugging
+    console.log("[Main] 'L' key pressed. Checking Leaderboard state:", 
+      window.Leaderboard, 
+      window.Leaderboard?.elements?.container, 
+      window.Leaderboard?.elements?.list
+    );
+
+    // Check if Leaderboard object and its elements are initialized before toggling
+    if (window.Leaderboard && 
+        window.Leaderboard.elements.container && 
+        window.Leaderboard.elements.list) 
+    { 
+      Leaderboard.toggle(Game.killLog); 
+    } else {
+      // Log if the key is pressed but elements aren't ready
+      console.warn("[Main] Leaderboard elements not ready when 'L' key was pressed.");
+    }
+  }
+});
+  } catch (error) {
+    console.error("[Main] Critical error during game initialization:", error);
+    // Optionally display an error message to the user
+  }
+};
 
 // Export debug state for other modules
 export const Debug = {
@@ -330,3 +370,4 @@ export const Debug = {
 // Make these available globally for cross-module access
 window.Game = Game;
 window.HUD = HUD;
+window.Leaderboard = Leaderboard; // Make Leaderboard global

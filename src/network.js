@@ -539,6 +539,30 @@ export const Network = {
             console.warn('[Network] Invalid data or WeaponSpawnManager not ready for droppedWeaponRemoved event.');
         }
     });
+    
+    // Handle kill feed notifications
+    this.socket.on('killNotification', (data) => {
+      console.log('[Network] Received kill notification:', data);
+      if (data.killerName && data.victimName) {
+        // Add to game kill log
+        if (Game.killLog) {
+          Game.killLog.push({ killerName: data.killerName, victimName: data.victimName });
+          // Optional: Limit log size if needed
+          // if (Game.killLog.length > 50) Game.killLog.shift(); 
+        } else {
+          console.warn('[Network] Game.killLog not initialized.');
+        }
+
+        // Display in HUD comms window
+        if (window.HUD) {
+          window.HUD.showKillFeed(data.killerName, data.victimName);
+        } else {
+          console.warn('[Network] HUD not available for kill notification display.');
+        }
+      } else {
+         console.warn('[Network] Missing data for kill notification.');
+      }
+    });
   },
 
   sendMove(moveData) {

@@ -391,6 +391,21 @@ class ProjectileController {
       position: player.position, // Add player position for explosion effect
       timestamp: Date.now()
     });
+    
+    // --- Start: Kill Feed Notification ---
+    const killerPlayer = this.playerManager.getPlayer(killerSocketId);
+    const victimPlayer = player; // player object is passed into the function
+    
+    // Use IDs as names for now, can be replaced with actual names if available
+    const killerName = killerPlayer ? killerPlayer.id : 'Unknown'; 
+    const victimName = victimPlayer ? victimPlayer.id : 'Unknown';
+    
+    console.log(`[ProjectileController] Broadcasting kill notification: ${killerName} eliminated ${victimName}`);
+    this.io.emit('killNotification', {
+      killerName: killerName,
+      victimName: victimName
+    });
+    // --- End: Kill Feed Notification ---
 
     // Set up respawn check
     setTimeout(() => {

@@ -75,8 +75,10 @@ export const HUD = {
     this.showAlert(`Hit! Damage: ${damage}`, 'info');
   },
 
-  showKillFeed(killedPlayerId) {
-    this.showAlert('Enemy destroyed!', 'success');
+  // Corrected function signature to accept killerName and victimName
+  showKillFeed(killerName, victimName) { 
+    // Updated to accept names and use addMessage
+    this.addMessage(`${killerName} eliminated ${victimName}`);
   },
 
   updateAmmo(ammo) {
@@ -583,11 +585,13 @@ export const HUD = {
     // Add to message logs
     this.elements.messageLogs.appendChild(messageElement);
     
-    // Remove old messages if too many
-    const messages = this.elements.messageLogs.querySelectorAll('.message');
-    if (messages.length > 5) {
-      messages[0].remove();
-    }
+    // Remove message after 4 seconds
+    setTimeout(() => {
+      messageElement.style.opacity = '0'; // Start fade out
+      setTimeout(() => {
+        messageElement.remove();
+      }, 500); // Remove after fade out animation (adjust timing if needed)
+    }, 4000); // 4 second timeout
   },
   
   updateScale() {
@@ -1103,8 +1107,8 @@ export const HUD = {
         overflow: hidden;
         display: flex;
         flex-direction: column;
-        background-color: rgba(0, 20, 40, 0.3);
-        border: calc(1px * var(--hud-scale)) solid var(--hud-primary-color);
+        background-color: transparent; /* Changed */
+        /* border: calc(1px * var(--hud-scale)) solid var(--hud-primary-color); Removed */
         border-radius: calc(5px * var(--hud-scale));
         padding: calc(5px * var(--hud-scale));
       }
@@ -1148,8 +1152,10 @@ export const HUD = {
         padding: calc(5px * var(--hud-scale)) calc(20px * var(--hud-scale));
         margin-bottom: calc(5px * var(--hud-scale));
         font-size: calc(12px * var(--hud-scale));
-        animation: fadeIn 0.3s ease, messagePulse 2s infinite;
+        animation: fadeIn 0.3s ease; /* Removed pulse */
+        transition: opacity 0.5s ease-out; /* Added for fade out */
         position: relative;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7); /* Added for readability */
       }
       
       .message::before {
@@ -1160,11 +1166,7 @@ export const HUD = {
         color: var(--hud-primary-color);
       }
       
-      @keyframes messagePulse {
-        0% { box-shadow: 0 0 5px rgba(0, 170, 255, 0.3); }
-        50% { box-shadow: 0 0 10px rgba(0, 170, 255, 0.5); }
-        100% { box-shadow: 0 0 5px rgba(0, 170, 255, 0.3); }
-      }
+      /* Removed messagePulse keyframes */
       
       /* Tech overlay effect */
       #mech-hud::after {

@@ -24,6 +24,7 @@ export const Game = {
   previousPosition: null,
   weaponOrientationDebugger: null,
   weaponSpawnManager: null, // Add property for the manager
+  killLog: [], // Added kill log array
   
   // Player stats for HUD
   health: 100,
