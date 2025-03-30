@@ -68,47 +68,62 @@ export class MountPoint {
     this.bone.add(weapon.model);
     // Force matrix updates after parenting
     this.bone.updateMatrixWorld(true); 
-    weapon.model.updateMatrixWorld(true); 
+    weapon.model.updateMatrixWorld(true);
 
     console.log('  Weapon World Matrix (after parenting to bone):', weapon.model.matrixWorld.toArray());
     console.log('  Weapon Local Matrix (relative to bone):', weapon.model.matrix.toArray());
 
     // Initial setup for position, rotation, and scale
     let position = this.config.defaultPosition.clone();
-    let rotation = this.config.defaultRotation.clone();
+    let baseRotation = this.config.defaultRotation.clone(); // Base Euler rotation from config
     let scale = this.config.defaultScale;
 
-    console.log(`  Applying Mount Config Defaults: Pos=${position.toArray()}, Rot=${rotation.toArray()}, Scale=${scale}`);
+    console.log(`  Applying Mount Config Defaults: Pos=${position.toArray()}, Rot=${baseRotation.toArray()}, Scale=${scale}`);
 
-    // Capture pre-attachment state
+    // Capture pre-attachment state (using Euler for simplicity in logging)
     const preAttachmentState = {
       weaponPosition: weapon.model.position.clone(),
-      weaponRotation: weapon.model.rotation.clone(),
+      weaponRotation: weapon.model.rotation.clone(), // Log Euler before quaternion changes
       weaponScale: weapon.model.scale.clone(),
       mountPosition: this.bone.position.clone(),
       mountRotation: this.bone.rotation.clone(),
       mountWorldMatrix: this.bone.matrixWorld.clone()
     };
 
-    // Handle weapon orientation based on mount side
+    // --- Direct Quaternion Rotation Logic ---
+    // Reset rotation and scale first
+    weapon.model.quaternion.identity();
+    weapon.model.scale.set(scale, scale, scale);
+
+    let finalPositionX = position.x; // Default X position
+    
+    // 1. Start with the default mount rotation
+    const finalQuat = new THREE.Quaternion().setFromEuler(baseRotation); // Use mount's defaultRotation
+
+    // 2. Apply weapon-specific mirror rotation if needed
     if (this.side !== weapon.config.naturalSide) {
-      console.log(`  Mirroring for opposite side. Original Pos=${position.toArray()}, Rot=${rotation.toArray()}`);
-      // Mirror the weapon if mounting on opposite side
-      position.x = -position.x; // CORRECTED Mirror position along X axis
-      rotation.y += Math.PI; // Rotate by 180 degrees (PI radians) around Y axis
-      console.log(`  Mirrored Values: Pos=${position.toArray()}, Rot=${rotation.toArray()}`);
+        console.log(`  Mirroring for opposite side. Applying weapon's mirrorRotation.`);
+        finalPositionX = -position.x; // Mirror X position
+        
+        // Get the mirror rotation from the weapon config (ensure it exists)
+        const mirrorRotationEuler = weapon.config.mirrorRotation || new THREE.Euler(0, 0, 0); 
+        const mirrorQuat = new THREE.Quaternion().setFromEuler(mirrorRotationEuler);
+        
+        // Apply the mirror rotation on top of the default mount rotation
+        finalQuat.multiply(mirrorQuat); 
     } else {
-       console.log('  No mirroring needed (same side or no natural side specified).');
+        console.log('  No mirroring needed (same side or no natural side specified).');
     }
 
-    weapon.model.position.copy(position);
-    weapon.model.rotation.copy(rotation);
-    weapon.model.scale.set(scale, scale, scale);
-    
-    // Force matrix update after setting local transforms
-    weapon.model.updateMatrixWorld(true); 
+    // Apply the final calculated rotation and position
+    weapon.model.quaternion.copy(finalQuat);
+    weapon.model.position.copy(position); // Use original Y, Z
+    weapon.model.position.setX(finalPositionX); // Set potentially mirrored X
 
-    console.log('  Final Weapon Local Matrix (after defaults/mirroring):', weapon.model.matrix.toArray());
+    // Final matrix update after all transformations
+    weapon.model.updateMatrixWorld(true);
+
+    console.log('  Final Weapon Local Matrix (Direct Quat):', weapon.model.matrix.toArray());
     console.log('  Final Weapon World Matrix:', weapon.model.matrixWorld.toArray());
 
     // Ensure the model is visible
@@ -138,8 +153,8 @@ export class MountPoint {
     };
 
     // Add axes helpers to both weapon and mount (helpful for debugging)
-    addAxesHelper(weapon.model, `${weapon.type}_weapon`);
-    addAxesHelper(this.bone, `${this.id}_mount`);
+    // addAxesHelper(weapon.model, `${weapon.type}_weapon`);
+    // addAxesHelper(this.bone, `${this.id}_mount`);
 
     // Detailed logging of attachment process
     console.log(`[WEAPON ATTACHMENT] Mounted ${weapon.type} to ${this.id}`, {

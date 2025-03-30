@@ -5,6 +5,7 @@ export const weaponConfigs = {
     modelPath: 'assets/models/Cannon.glb',
     preferredMounts: ['leftArm', 'rightArm'], // Preference, not restriction
     naturalSide: 'left',  // The side the model is naturally oriented for
+    mirrorRotation: new THREE.Euler(Math.PI, Math.PI, Math.PI), // Added Z rotation for mirroring
     projectileType: 'cannonball',
     fireRate: 2,
     damage: 20,
@@ -25,6 +26,7 @@ export const weaponConfigs = {
     modelPath: 'assets/models/RocketLauncher.glb',
     preferredMounts: ['rightShoulder', 'rightArm'],
     naturalSide: 'right',
+    mirrorRotation: new THREE.Euler(Math.PI, Math.PI, Math.PI), // Added Z rotation for mirroring
     projectileType: 'rocket',
     fireRate: 2,
     damage: 50,
@@ -46,6 +48,7 @@ export const weaponConfigs = {
     modelPath: 'assets/models/Gatling.glb',
     preferredMounts: ['leftArm', 'leftShoulder'],
     naturalSide: 'left', // Assuming left-handed model orientation
+    mirrorRotation: new THREE.Euler(Math.PI, Math.PI, Math.PI), // Added Z rotation for mirroring
     projectileType: 'bullet', // Standard bullet type
     fireRate: 50, // High rate of fire
     damage: 2, // Low damage per bullet
