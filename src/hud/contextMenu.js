@@ -138,35 +138,33 @@ export function showWeaponContextMenu(position, allMounts, pickupInfo) {
     quadrantDiv.className = 'context-menu-quadrant';
     quadrantDiv.dataset.mountId = mountId; // Store mount ID
 
-    // Create the highlight element
-    const highlightElem = document.createElement('div');
-    highlightElem.className = 'context-menu-quadrant-highlight';
-    highlightElem.dataset.mountId = mountId;
-    quadrantDiv.appendChild(highlightElem);
-
     // Create the label span
     const labelSpan = document.createElement('span');
     labelSpan.className = 'quadrant-label';
+    labelSpan.textContent = quadrant.name; // Always show mount name
+
+    quadrantDiv.appendChild(labelSpan); // Add mount label first
 
     if (mount) {
       const currentWeapon = mount.getWeapon();
       if (currentWeapon) {
-        // Slot is occupied - display mount name and weapon name in the label
+        // Slot is occupied - add weapon name in a separate span
         const weaponName = currentWeapon.config.displayName || currentWeapon.type;
-        labelSpan.textContent = `${quadrant.name}: ${weaponName.toUpperCase()}`;
+        const weaponSpan = document.createElement('span');
+        weaponSpan.className = 'quadrant-weapon-name';
+        weaponSpan.textContent = weaponName.toUpperCase();
+        quadrantDiv.appendChild(weaponSpan); // Add weapon name span below mount label
         quadrantDiv.classList.add('occupied');
       } else {
-        // Slot is empty - display only mount name in the label
-        labelSpan.textContent = quadrant.name;
+        // Slot is empty
         quadrantDiv.classList.add('available');
       }
     } else {
       // Mount doesn't exist? Should not happen.
-      labelSpan.textContent = `${quadrant.name}: N/A`;
+      labelSpan.textContent = `${quadrant.name}: N/A`; // Keep N/A in main label if mount missing
       quadrantDiv.classList.add('unavailable');
     }
 
-    quadrantDiv.appendChild(labelSpan); // Add label to the quadrant div
     contextMenuElement.appendChild(quadrantDiv);
   }
 

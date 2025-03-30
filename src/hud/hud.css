@@ -635,6 +635,7 @@
   width: 50%;
   height: 50%;
   transform-origin: bottom right;
+  overflow: hidden; /* Needed for clip-path */
 }
 .context-menu-quadrant[data-mount-id="rightArm"] { /* Bottom Right */
   top: 50%;
@@ -642,6 +643,7 @@
   width: 50%;
   height: 50%;
   transform-origin: top left;
+  overflow: hidden; /* Needed for clip-path */
 }
 .context-menu-quadrant[data-mount-id="leftArm"] { /* Bottom Left */
   top: 50%;
@@ -649,70 +651,49 @@
   width: 50%;
   height: 50%;
   transform-origin: top right;
+  overflow: hidden; /* Needed for clip-path */
 }
 
-/* Arc Visual - Using a single complete circle */
-#weapon-context-menu::before {
+/* Arc Visual - Using pseudo-elements on each quadrant */
+.context-menu-quadrant::before {
   content: '';
   position: absolute;
+  /* Make it double size to cover the quadrant when clipped */
+  width: 200%;
+  height: 200%;
+  border: calc(20px * var(--hud-scale)) solid rgba(0, 30, 60, 0.85); /* Base color */
+  border-radius: 50%;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 1; /* Below label */
+  transition: border-color 0.1s ease;
+}
+
+/* Position and clip the pseudo-element for each quadrant */
+.context-menu-quadrant[data-mount-id="rightShoulder"]::before { /* Top Right */
+  top: 0;
+  left: -100%;
+  clip-path: polygon(50% 0, 100% 0, 100% 50%, 50% 50%);
+}
+.context-menu-quadrant[data-mount-id="leftShoulder"]::before { /* Top Left */
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  border: calc(20px * var(--hud-scale)) solid rgba(0, 30, 60, 0.85);
-  border-radius: 50%;
-  box-sizing: border-box;
-  pointer-events: none;
-  z-index: 1;
+  clip-path: polygon(0 0, 50% 0, 50% 50%, 0 50%);
+}
+.context-menu-quadrant[data-mount-id="rightArm"]::before { /* Bottom Right */
+  top: -100%;
+  left: -100%;
+  clip-path: polygon(50% 50%, 100% 50%, 100% 100%, 50% 100%);
+}
+.context-menu-quadrant[data-mount-id="leftArm"]::before { /* Bottom Left */
+  top: -100%;
+  left: 0;
+  clip-path: polygon(0 50%, 50% 50%, 50% 100%, 0 100%);
 }
 
-/* Hide the original pseudo-elements in quadrants */
-.context-menu-quadrant::before {
-  display: none;
-}
-
-/* Highlight - We'll use an overlay for highlighting */
-.context-menu-quadrant-highlight {
-  position: absolute;
-  width: 50%;
-  height: 50%;
-  border: calc(20px * var(--hud-scale)) solid transparent;
-  border-radius: 50%;
-  box-sizing: border-box;
-  pointer-events: none;
-  z-index: 2;
-  opacity: 0;
-  transition: opacity 0.1s ease;
-}
-
-/* Position the highlight overlays */
-.context-menu-quadrant-highlight[data-mount-id="rightShoulder"] {
-  top: -50%;
-  right: -50%;
-  border-top-color: rgba(0, 170, 255, 0.8);
-}
-
-.context-menu-quadrant-highlight[data-mount-id="leftShoulder"] {
-  top: -50%;
-  left: -50%;
-  border-top-color: rgba(0, 170, 255, 0.8);
-}
-
-.context-menu-quadrant-highlight[data-mount-id="rightArm"] {
-  bottom: -50%;
-  right: -50%;
-  border-bottom-color: rgba(0, 170, 255, 0.8);
-}
-
-.context-menu-quadrant-highlight[data-mount-id="leftArm"] {
-  bottom: -50%;
-  left: -50%;
-  border-bottom-color: rgba(0, 170, 255, 0.8);
-}
-
-/* Show highlight when quadrant is highlighted */
-.context-menu-quadrant.highlighted .context-menu-quadrant-highlight {
-  opacity: 1;
+/* Highlight State - Change border color of the pseudo-element */
+.context-menu-quadrant.highlighted::before {
+  border-color: rgba(0, 170, 255, 0.8); /* Highlight color */
 }
 
 /* Unavailable State */
@@ -760,6 +741,50 @@
   left: 25%;
   transform: translate(0, 0);
 }
+
+/* Weapon Name Styling (when slot is occupied) */
+.quadrant-weapon-name {
+  position: absolute;
+  display: block; /* Ensure it takes its own line */
+  font-size: calc(8px * var(--hud-scale)); /* Smaller font */
+  font-weight: normal;
+  color: rgba(0, 170, 255, 0.8); /* Slightly dimmer color */
+  text-shadow: none; /* Optional: remove glow for less emphasis */
+  z-index: 2;
+  pointer-events: none;
+  background-color: rgba(0, 10, 20, 0.8);
+  padding: calc(1px * var(--hud-scale)) calc(3px * var(--hud-scale));
+  border-radius: calc(2px * var(--hud-scale));
+  white-space: nowrap;
+  margin-top: calc(12px * var(--hud-scale)); /* Add space below the main label */
+}
+
+/* Weapon Name Positioning (relative to quadrant) */
+.context-menu-quadrant[data-mount-id="rightShoulder"] .quadrant-weapon-name {
+  top: 25%; /* Align with label */
+  right: 25%;
+  transform: translate(0, 0);
+}
+.context-menu-quadrant[data-mount-id="leftShoulder"] .quadrant-weapon-name {
+  top: 25%; /* Align with label */
+  left: 25%;
+  transform: translate(0, 0);
+}
+.context-menu-quadrant[data-mount-id="rightArm"] .quadrant-weapon-name {
+  bottom: 25%; /* Align with label */
+  right: 25%;
+  transform: translate(0, -100%); /* Move it up from the bottom edge */
+  margin-top: 0; /* Reset margin */
+  margin-bottom: calc(12px * var(--hud-scale)); /* Add space above */
+}
+.context-menu-quadrant[data-mount-id="leftArm"] .quadrant-weapon-name {
+  bottom: 25%; /* Align with label */
+  left: 25%;
+  transform: translate(0, -100%); /* Move it up from the bottom edge */
+  margin-top: 0; /* Reset margin */
+  margin-bottom: calc(12px * var(--hud-scale)); /* Add space above */
+}
+
 
 /* Center Text (Weapon Name) */
 .context-menu-center {
