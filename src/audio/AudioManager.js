@@ -204,6 +204,30 @@ class AudioManager {
         soundsToStop.forEach(sound => this.stopSound(sound));
         this.activeSounds.clear(); // Ensure the map is empty
     }
+
+    // Play a one-shot sound at a specific world position (not attached to an object)
+    playGlobalEffect(soundPath, position) {
+        const fullPath = `assets/audio/${soundPath}`;
+        if (!this.listener || !this.sounds[fullPath] || !position) {
+            console.warn(`AudioManager: Cannot play global effect ${soundPath}. Listener ready: ${!!this.listener}, Sound loaded: ${!!this.sounds[fullPath]}, Position valid: ${!!position}`);
+            return null;
+        }
+
+        const sound = new THREE.Audio(this.listener);
+        sound.setBuffer(this.sounds[fullPath]);
+        sound.setRefDistance(20); // Adjust as needed
+        sound.setRolloffFactor(1.0); // Adjust as needed
+        sound.setVolume(0.8); // Adjust volume as needed
+        sound.setLoop(false);
+        sound.position.copy(position); // Set the sound's position
+
+        sound.onEnded = () => {
+            sound.disconnect(); // Disconnect after playing
+        };
+
+        sound.play();
+        return sound;
+    }
 }
 
 // Export a singleton instance

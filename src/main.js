@@ -2,7 +2,7 @@ import { SceneManager } from './scene.js';
 import { Game } from './game.js';
 import { Network } from './network.js';
 import { DebugTools } from './debug-tools.js';
-import { HUD } from './hud.js';
+import { HUD } from './hud/index.js';
 import { Leaderboard } from './leaderboard.js'; // Import Leaderboard
 import { weaponSystem } from './weapons/index.js';
 import { particleEffectSystem, initParticleEffectSystem } from './systems/ParticleEffectSystem.js';

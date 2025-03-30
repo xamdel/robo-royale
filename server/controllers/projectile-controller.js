@@ -348,43 +348,15 @@ class ProjectileController {
   handlePlayerKilled(player, killerSocketId) {
     console.log(`[ProjectileController] Handling kill for player ${player.id} by ${killerSocketId}`);
     
-    // --- Start: Weapon Dropping Logic ---
-    const deathPosition = player.position; // Position at time of death
-    
-    // Get equipped weapons (requires WeaponController interaction)
-    const equippedWeapons = this.weaponController ? this.weaponController.getPlayerWeapons(player.id) : [];
-    console.log(`[ProjectileController] Player ${player.id} died with weapons:`, equippedWeapons);
-
-    // Remove weapons from player state (requires WeaponController interaction)
+    // Call WeaponController to handle removing weapons and dropping items
     if (this.weaponController) {
-      this.weaponController.removeAllPlayerWeapons(player.id);
-      console.log(`[ProjectileController] Removed weapons from server state for player ${player.id}`);
+      this.weaponController.removeAllPlayerWeapons(player.id); 
+      // This now handles getting player position, iterating weapons, calling _dropSingleWeapon
     } else {
-       console.warn(`[ProjectileController] WeaponController not available during handlePlayerKilled for ${player.id}`);
+       console.warn(`[ProjectileController] WeaponController not available during handlePlayerKilled for ${player.id}, cannot drop weapons.`);
     }
 
-    // Spawn dropped weapon pickups via GameLoop
-    if (this.gameLoop && equippedWeapons.length > 0) {
-      console.log(`[ProjectileController] Creating ${equippedWeapons.length} dropped weapon pickups at`, deathPosition);
-      equippedWeapons.forEach(weapon => {
-        // Create the item in the server state via GameLoop
-        const pickupData = this.gameLoop.createDroppedWeaponPickup(weapon.type, deathPosition);
-        
-        if (pickupData) {
-          console.log(`[ProjectileController] Attempting to broadcast droppedWeaponCreated for ID: ${pickupData.id}, Type: ${pickupData.type}`);
-          // Broadcast the creation of this specific pickup to all clients
-          this.io.emit('droppedWeaponCreated', pickupData); 
-          console.log(`[ProjectileController] Successfully broadcasted droppedWeaponCreated: ID=${pickupData.id}, Type=${pickupData.type}`);
-        } else {
-           console.error(`[ProjectileController] Failed to create server-side state via gameLoop.createDroppedWeaponPickup for weapon: ${weapon.type}`);
-        }
-      });
-    } else if (equippedWeapons.length > 0) {
-       console.warn(`[ProjectileController] GameLoop reference not available during handlePlayerKilled for ${player.id}, cannot create dropped items.`);
-    }
-    // --- End: Weapon Dropping Logic ---
-
-    // Broadcast kill event with position information (original logic)
+    // Broadcast kill event with position information
     this.io.emit('playerKilled', {
       playerId: player.id,
       killerPlayerId: killerSocketId,

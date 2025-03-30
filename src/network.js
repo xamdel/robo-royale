@@ -324,7 +324,7 @@ export const Network = {
       
       // Play explosion sound
       if (window.AudioManager) {
-        window.AudioManager.playSound('explosion', position);
+        window.AudioManager.playGlobalEffect('explosion.wav', position);
       }
     });
 
@@ -405,7 +405,6 @@ export const Network = {
       
       if (window.HUD) {
         // No need for separate method since updateWeaponStatus already reads Game.ammo
-        window.HUD.updateWeaponStatus();
       }
     });
 
@@ -515,7 +514,7 @@ export const Network = {
 
     // Handle creation of dropped weapon pickups
     this.socket.on('droppedWeaponCreated', (data) => {
-      console.log('[Network] Received droppedWeaponCreated:', data);
+      // console.log(`[Network] Received droppedWeaponCreated: ID=${data.id}, Type=${data.type}, Pos=`, data.position); // Removed log
       if (Game.weaponSpawnManager && data.type && data.position && data.id) {
         // Convert position back to THREE.Vector3
         const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
@@ -524,10 +523,10 @@ export const Network = {
           .then(clientPickupData => {
              if (clientPickupData) {
                // The pickup is now tracked client-side using the server's ID (data.id)
-               console.log(`[Network] Client successfully called spawnDroppedWeapon for: ${data.type} (ID: ${data.id}) at`, position.toArray());
+               // console.log(`[Network] Client successfully called spawnDroppedWeapon for: ${data.type} (ID: ${data.id}) at`, position.toArray()); // Removed log
              } else {
                // Log failure more explicitly
-               console.error(`[Network] weaponSpawnManager.spawnDroppedWeapon returned null/undefined for type: ${data.type}, ID: ${data.id}. Check WeaponSpawnManager logs for details.`);
+               // console.error(`[Network] weaponSpawnManager.spawnDroppedWeapon returned null/undefined for type: ${data.type}, ID: ${data.id}. Check WeaponSpawnManager logs for details.`); // Removed log
              }
           });
       } else {
@@ -610,6 +609,17 @@ export const Network = {
       this.socket.emit('playerDeath', data);
     } else {
       console.warn('Cannot send player death notification, socket not connected.');
+    }
+  },
+
+  // Send notification that a weapon was dropped
+  sendWeaponDrop(data) {
+    if (this.socket?.connected) {
+      console.log('Sending weapon drop notification to server:', data);
+      // Ensure data includes mountId, weaponType, position
+      this.socket.emit('weaponDrop', data);
+    } else {
+      console.warn('Cannot send weapon drop notification, socket not connected.');
     }
   },
 

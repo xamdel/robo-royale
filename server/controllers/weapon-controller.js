@@ -1,6 +1,15 @@
 const ValidationService = require('../services/validation');
 const gameConfig = require('../config/game-config');
 
+// Map client mount IDs (logical names) to server socket/bone names
+const mountIdToSocketName = {
+  'rightArm': 'ArmR',
+  'leftArm': 'ArmL',
+  'rightShoulder': 'ShoulderR',
+  'leftShoulder': 'ShoulderL'
+  // Add other mappings if necessary (e.g., back mounts)
+};
+
 class WeaponController {
   constructor(io, playerManager, gameLoop) { // Add gameLoop parameter
     this.io = io;
@@ -96,30 +105,50 @@ class WeaponController {
     });
   }
 
+  // Handles the 'weaponDrop' event from the client (e.g., during context menu swap)
   handleWeaponDrop(socket, data) {
+    // Validate data
+    if (!data || !data.mountId || !data.weaponType || !data.position) {
+      console.warn(`[WeaponController] Invalid weaponDrop data from ${socket.id}:`, data);
+      return;
+    }
+
+    console.log(`[WeaponController] Received weaponDrop event from ${socket.id} for mount ${data.mountId}`);
+
+    // Find the weapon associated with this mount for the player
     const playerWeapons = this.playerWeapons.get(socket.id);
-    if (!playerWeapons) return;
+    let weaponToDropData = null;
+    if (playerWeapons) {
+      // Client sends mountId (e.g., 'leftArm'), server stores weapon data with socket name (e.g., 'ArmL').
+      // Map the client's mountId to the server's socket name.
+      const clientMountId = data.mountId;
+      const socketNameToFind = mountIdToSocketName[clientMountId];
 
-    // Remove weapon from player's inventory
-    playerWeapons.delete(data.weaponId);
+      if (!socketNameToFind) {
+        console.error(`[WeaponController] Invalid mountId received from client ${socket.id}: ${clientMountId}`);
+        return; // Exit if the mountId is not recognized
+      }
 
-    // Remove weapon cooldown and ammo tracking
-    const cooldowns = this.weaponCooldowns.get(socket.id);
-    if (cooldowns) {
-      cooldowns.delete(data.weaponId);
+      // Find the weapon whose 'socket' property matches the mapped socket name.
+      weaponToDropData = Array.from(playerWeapons).find(w => w.socket === socketNameToFind);
+
+      if (weaponToDropData) {
+        console.log(`[WeaponController] Found weapon ${weaponToDropData.id} (${weaponToDropData.type}) on socket ${socketNameToFind} (from mount ${clientMountId}) to drop.`);
+      } else {
+        // Log available weapons and their sockets for debugging if not found
+        console.warn(`[WeaponController] Could not find weapon on socket ${socketNameToFind} (from mount ${clientMountId}) for player ${socket.id}. Available weapons:`,
+          Array.from(playerWeapons).map(w => ({ id: w.id, type: w.type, socket: w.socket }))
+        );
+      }
     }
 
-    const ammo = this.playerAmmo.get(socket.id);
-    if (ammo) {
-      ammo.delete(data.weaponId);
+    if (!weaponToDropData) {
+      console.warn(`[WeaponController] Could not find weapon data for player ${socket.id} corresponding to drop request:`, data);
+      return;
     }
-
-    // Broadcast weapon drop
-    this.io.emit('weaponDropped', {
-      weaponId: data.weaponId,
-      playerId: socket.id,
-      position: data.position
-    });
+    
+    // Use the reusable drop function
+    this._dropSingleWeapon(socket.id, weaponToDropData, data.position);
   }
 
   handleWeaponSwitch(socket, data) {
@@ -196,6 +225,56 @@ class WeaponController {
     return weapon.type;
   }
 
+  // --- Internal Reusable Drop Logic ---
+  _dropSingleWeapon(socketId, weaponData, dropPosition) {
+    if (!weaponData || !weaponData.id || !weaponData.type) {
+      console.error(`[WeaponController._dropSingleWeapon] Invalid weaponData for player ${socketId}:`, weaponData);
+      return false;
+    }
+    
+    const weaponId = weaponData.id;
+    const weaponType = weaponData.type;
+    
+    console.log(`[WeaponController._dropSingleWeapon] Dropping weapon ${weaponId} (${weaponType}) for player ${socketId} at`, dropPosition);
+
+    // 1. Remove from player's state
+    const playerWeapons = this.playerWeapons.get(socketId);
+    let removedFromSet = false;
+    if (playerWeapons) {
+      // Find the specific weapon object in the set to remove it
+      const weaponToRemove = Array.from(playerWeapons).find(w => w.id === weaponId);
+      if (weaponToRemove) {
+        removedFromSet = playerWeapons.delete(weaponToRemove);
+      }
+    }
+    const cooldownsRemoved = this.weaponCooldowns.get(socketId)?.delete(weaponId);
+    const ammoRemoved = this.playerAmmo.get(socketId)?.delete(weaponId);
+
+    if (!removedFromSet) {
+        console.warn(`[WeaponController._dropSingleWeapon] Weapon ${weaponId} not found in player ${socketId}'s weapon set.`);
+        // Continue anyway to ensure cooldown/ammo are cleared if they exist
+    }
+
+    // 2. Create dropped item state via GameLoop
+    if (this.gameLoop) {
+      const pickupData = this.gameLoop.createDroppedWeaponPickup(weaponType, dropPosition);
+      if (pickupData) {
+        // 3. Broadcast creation to all clients
+        console.log(`[WeaponController._dropSingleWeapon] Broadcasting droppedWeaponCreated: ID=${pickupData.id}, Type=${pickupData.type}`);
+        this.io.emit('droppedWeaponCreated', pickupData);
+        return true; // Indicate successful drop and broadcast
+      } else {
+        console.error(`[WeaponController._dropSingleWeapon] Failed to create server-side state via gameLoop.createDroppedWeaponPickup for weapon: ${weaponType}`);
+        return false; // Indicate failure
+      }
+    } else {
+      console.error("[WeaponController._dropSingleWeapon] GameLoop reference not available, cannot create dropped item state.");
+      return false; // Indicate failure
+    }
+  }
+  // --- End Internal Reusable Drop Logic ---
+
+
   // Get the list of weapons a player currently has
   getPlayerWeapons(socketId) {
     const weaponsSet = this.playerWeapons.get(socketId);
@@ -206,20 +285,50 @@ class WeaponController {
     return Array.from(weaponsSet); 
   }
 
-  // Remove all weapons and related data for a player (e.g., on death)
+  // Remove all weapons and related data for a player (e.g., on death or disconnect)
+  // Now also handles dropping the weapons as items.
   removeAllPlayerWeapons(socketId) {
-    console.log(`Removing all weapons for player ${socketId} from server state.`);
-    const weaponsRemoved = this.playerWeapons.delete(socketId);
-    const cooldownsRemoved = this.weaponCooldowns.delete(socketId);
-    const ammoRemoved = this.playerAmmo.delete(socketId);
+    console.log(`[WeaponController] Removing and dropping all weapons for player ${socketId}.`);
     
-    if (!weaponsRemoved && !cooldownsRemoved && !ammoRemoved) {
-        console.log(`No weapon data found to remove for player ${socketId}.`);
-    } else {
-        console.log(`Weapon data removal status for ${socketId}: Weapons=${weaponsRemoved}, Cooldowns=${cooldownsRemoved}, Ammo=${ammoRemoved}`);
+    const player = this.playerManager.getPlayer(socketId);
+    if (!player) {
+      console.warn(`[WeaponController] Cannot remove/drop weapons for non-existent player ${socketId}.`);
+      // Still attempt to clear maps just in case
+      this.playerWeapons.delete(socketId);
+      this.weaponCooldowns.delete(socketId);
+      this.playerAmmo.delete(socketId);
+      return;
     }
+
+    const dropPosition = player.position; // Get player's position for dropping
+    const weaponsToDrop = this.getPlayerWeapons(socketId); // Get the list before clearing
+
+    if (weaponsToDrop.length > 0) {
+      console.log(`[WeaponController] Player ${socketId} has ${weaponsToDrop.length} weapons to drop at`, dropPosition);
+      // Iterate through the weapons and drop each one individually
+      weaponsToDrop.forEach(weaponData => {
+        this._dropSingleWeapon(socketId, weaponData, dropPosition); 
+        // _dropSingleWeapon handles removing from maps and broadcasting item creation
+      });
+    } else {
+      console.log(`[WeaponController] Player ${socketId} had no weapons to drop.`);
+      // Ensure maps are still cleared even if the set was empty or already cleared
+      this.playerWeapons.delete(socketId);
+      this.weaponCooldowns.delete(socketId);
+      this.playerAmmo.delete(socketId);
+    }
+    
+    // Note: _dropSingleWeapon now handles removing the weapon from the player's state maps.
+    // So, we don't need the separate delete calls here anymore if weaponsToDrop was populated.
+    // However, keeping the deletes after the loop ensures cleanup even if getPlayerWeapons returned empty for some reason.
+    this.playerWeapons.delete(socketId);
+    this.weaponCooldowns.delete(socketId);
+    this.playerAmmo.delete(socketId);
+
+    console.log(`[WeaponController] Finished removing/dropping weapons for player ${socketId}.`);
+    
     // Optionally, notify the specific client that their weapons were cleared server-side?
-    // this.io.to(socketId).emit('weaponsCleared'); 
+    // this.io.to(socketId).emit('weaponsCleared');
   }
 
   removePlayer(socketId) {

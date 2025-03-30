@@ -248,6 +248,13 @@ export class MountPoint {
       console.log(`[WEAPON] Fire successful for ${this.weapon.type}`);
       this.lastFireTime = Date.now();
 
+      // Update HUD display for this mount type
+      if (window.HUD && window.HUD.updateWeaponDisplay) {
+        window.HUD.updateWeaponDisplay(this.config.mountType);
+      } else {
+        console.warn(`[MountPoint] Could not update HUD for mount ${this.id}. HUD or updateWeaponDisplay function missing.`);
+      }
+
       // Play fire sound effect
       let soundPath = null;
       switch (this.weapon.type) {

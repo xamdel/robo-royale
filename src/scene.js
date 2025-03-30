@@ -210,8 +210,14 @@ export const SceneManager = {
   setupMouseControls() {
     // Mouse movement handler
     document.addEventListener('mousemove', (event) => {
-      if (document.pointerLockElement === document.body) {
-        // Apply mouse movement to camera rotation
+      // Ensure Game object exists before checking its state
+      if (!window.Game) return; 
+
+      // Check if context menu is active in Game object
+      const isContextMenuActive = window.Game.isContextMenuActive || false; 
+      
+      if (document.pointerLockElement === document.body && !isContextMenuActive) {
+        // Apply mouse movement to camera rotation ONLY if pointer is locked AND context menu is NOT active
         this.yaw -= event.movementX * this.mouseSensitivity;
         this.pitch -= event.movementY * this.mouseSensitivity;
         

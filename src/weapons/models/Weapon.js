@@ -12,6 +12,7 @@ export class Weapon {
     this.model = model;
     this.config = config;
     this.id = THREE.MathUtils.generateUUID();
+    this.naturalSide = config.naturalSide; // Added naturalSide from config
     this.ammo = config.ammo || 50; // Use config ammo, fallback to 50
     this.maxAmmo = config.maxAmmo || 50; // Use config max ammo, fallback to 50
     this.projectiles = new Set();
@@ -185,9 +186,7 @@ export class Weapon {
       // Decrease ammo
       this.ammo--;
       // console.log(`[WEAPON] ${this.type} ammo decreased to ${this.ammo}`);
-      if (window.HUD) {
-        window.HUD.updateAmmo(this.ammo);
-      }
+      // HUD update moved to MountPoint.fire
     }
 
     // Create effects for this single shot
@@ -530,8 +529,25 @@ export class Weapon {
 
   handleAmmoUpdate(ammo) {
     this.ammo = ammo;
+    // Update HUD if this is a local player weapon
     if (window.HUD && window.Game && window.Game.player && this.isLocalPlayerWeapon()) {
-      window.HUD.updateAmmo(ammo);
+      // Find the mount point this weapon is attached to
+      // Ensure weaponSystem and mountManager are available globally or accessible
+      // Assuming weaponSystem is globally available as window.weaponSystem
+      const mountPoint = window.weaponSystem?.mountManager?.getAllMounts().find(m => m.getWeapon() === this);
+      if (mountPoint && window.HUD.updateWeaponDisplay) {
+        // Call the correct HUD update function with the mount type
+        window.HUD.updateWeaponDisplay(mountPoint.config.mountType);
+      } else {
+        console.warn(`[Weapon] Could not update HUD ammo display for weapon ${this.id} via network update. Mount point not found or HUD function missing.`);
+        // Fallback: Try updating both displays if the specific mount isn't found
+        // This might happen if the update arrives during a weapon swap or detachment
+        if (window.HUD.updateWeaponDisplay) {
+          console.warn(`[Weapon] Falling back to updating both primary and secondary HUD sections.`);
+          window.HUD.updateWeaponDisplay('primary');
+          window.HUD.updateWeaponDisplay('secondary');
+        }
+      }
     }
   }
 

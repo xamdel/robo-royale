@@ -153,15 +153,211 @@ export class WeaponSystem {
         }
       }
 
-      // Notify other players about weapon pickup
+      // Notify server about weapon pickup (ensure socketName is sent)
       Network.sendWeaponPickup({
         weaponId: weapon.id,
         weaponType: weaponType,
-        socketName: mountPoint.socketName
+        socketName: mountPoint.socketName // Correctly sending socketName here too
       });
     }
 
     return success;
+  }
+
+  // New method for handling 'E' key press pickup
+  async tryPickupAndAttach(pickupInfo) {
+    console.log(`[WEAPON SYSTEM] Attempting pickup & attach for: ${pickupInfo.type} (ID: ${pickupInfo.id})`);
+    const weaponType = pickupInfo.type;
+    const pickupId = pickupInfo.id;
+
+    // Define mount priority
+    const mountPriority = ['rightArm', 'rightShoulder', 'leftArm', 'leftShoulder'];
+
+    for (const mountId of mountPriority) {
+      const mount = this.mountManager.getMountPoint(mountId);
+
+      // Check if mount exists and is available
+      if (mount && !mount.hasWeapon()) {
+        console.log(`[WEAPON SYSTEM] Found available mount: ${mountId}`);
+        
+        // Create a new weapon instance for this pickup
+        const weapon = await this.weaponFactory.createWeapon(weaponType);
+        if (!weapon) {
+          console.error(`[WEAPON SYSTEM] Failed to create weapon instance for type: ${weaponType}`);
+          continue; // Try next mount if creation fails
+        }
+
+        // Attempt to attach the weapon
+        const success = mount.attachWeapon(weapon);
+        if (success) {
+          console.log(`[WEAPON SYSTEM] Successfully attached ${weaponType} to ${mountId}`);
+          this.activeWeapons.set(weapon.id, weapon);
+
+          // Update HUD
+          const mountType = mount.config.mountType;
+          const displayName = weapon.config.displayName || weapon.type;
+          if (window.HUD) {
+            window.HUD.showAlert(`${mountType.toUpperCase()}: ${displayName.toUpperCase()} EQUIPPED`, "info");
+            window.HUD.addMessage(`${displayName} equipped to ${mount.config.displayName}. Ammo: ${weapon.ammo}/${weapon.maxAmmo}`);
+            if (window.HUD.updateWeaponDisplay) {
+              window.HUD.updateWeaponDisplay(mountType);
+            }
+          }
+
+          // Notify server about the weapon pickup (attaching to specific mount)
+          console.log(`[WEAPON SYSTEM] Sending weapon pickup network message: WeaponID=${weapon.id}, Type=${weaponType}, SocketName=${mount.socketName}`);
+          Network.sendWeaponPickup({
+            weaponId: weapon.id,
+            weaponType: weaponType,
+            socketName: mount.socketName // Send socketName (bone name)
+          });
+
+          // Remove the pickup item from the world via WeaponSpawnManager
+          if (window.Game && window.Game.weaponSpawnManager) {
+            window.Game.weaponSpawnManager.removePickup(pickupId); // Remove locally regardless
+            console.log(`[WEAPON SYSTEM] Removed pickup item ${pickupId} from world.`);
+
+            // Only notify server if it's a dropped item (server tracks these - starts with 'pickup_')
+            if (pickupId && pickupId.startsWith('pickup_')) {
+                // console.log(`[WEAPON SYSTEM] Sending pickup collected network message for dropped item ID: ${pickupId}`); // Removed log
+                Network.sendPickupCollected({ pickupId: pickupId });
+            } else {
+                // console.log(`[WEAPON SYSTEM] Initial spawn item ${pickupId} collected via quick pickup, no server notification needed.`); // Removed log
+            }
+          } else {
+             console.error("[WEAPON SYSTEM] Cannot remove pickup or notify server: Game.weaponSpawnManager not found!");
+          }
+
+
+          return true; // Attachment successful, exit loop
+        } else {
+          console.warn(`[WEAPON SYSTEM] Failed to attach ${weaponType} to mount ${mountId}, trying next.`);
+          // If attach failed, clean up the created weapon instance? Or let GC handle it?
+          // For now, let GC handle it.
+        }
+      } else {
+         // console.log(`[WEAPON SYSTEM] Mount ${mountId} not found or already occupied.`);
+      }
+    }
+
+    // If loop completes without attaching
+    console.log(`[WEAPON SYSTEM] No available mount points found for ${weaponType} according to priority.`);
+    if (window.HUD) {
+        window.HUD.showAlert("NO SUITABLE MOUNT POINT AVAILABLE", "warning");
+    }
+    return false;
+  }
+
+  // Detach weapon from a mount and drop it as a pickup
+  async detachAndDropWeapon(mountId) {
+    const mount = this.mountManager.getMountPoint(mountId);
+    if (!mount || !mount.hasWeapon()) {
+      console.warn(`[WEAPON SYSTEM] Cannot detach/drop weapon from mount ${mountId}: Mount not found or empty.`);
+      return null; // Return null if no weapon to drop
+    }
+
+    const weaponToDrop = mount.getWeapon();
+    const weaponType = weaponToDrop.type;
+    const weaponId = weaponToDrop.id; // Get ID before detaching
+
+    console.log(`[WEAPON SYSTEM] Detaching and dropping ${weaponType} (ID: ${weaponId}) from mount ${mountId}`);
+
+    // Get position *before* detaching
+    const dropPosition = mount.getWorldPosition(); // Use mount's position as drop origin
+
+    // Detach the weapon from the mount
+    mount.detachWeapon(); // This also clears weapon.mountPoint
+
+    // Deactivate and remove from active list
+    weaponToDrop.deactivate();
+    this.activeWeapons.delete(weaponId);
+    console.log(`[WEAPON SYSTEM] Weapon ${weaponId} removed from active list.`);
+
+    // Spawn the dropped weapon pickup via WeaponSpawnManager - REMOVED LOCAL SPAWN
+    // The server will handle creating the item state and broadcasting 'droppedWeaponCreated'
+    // The client's network handler for 'droppedWeaponCreated' will spawn the visual pickup.
+    if (window.Game && window.Game.weaponSpawnManager) {
+      // Spawn slightly above the mount point position
+      dropPosition.y += 0.5; // Adjust offset as needed
+      // We don't await this, let it happen in the background
+      // window.Game.weaponSpawnManager.spawnDroppedWeapon(weaponType, dropPosition); // REMOVED
+      // console.log(`[WEAPON SYSTEM] Instructed WeaponSpawnManager to spawn dropped ${weaponType} at`, dropPosition.toArray()); // REMOVED
+
+      // Notify the server about the weapon drop (server will create the item and broadcast)
+      Network.sendWeaponDrop({
+        mountId: mountId, // Let server know which mount was cleared
+        weaponType: weaponType,
+        position: dropPosition
+      });
+      console.log(`[WEAPON SYSTEM] Sent weapon drop network message for mount ${mountId}.`);
+
+    } else {
+      console.error("[WEAPON SYSTEM] Cannot spawn dropped weapon: Game.weaponSpawnManager not found!");
+    }
+    
+    // Update HUD for the mount type that just became empty
+    if (window.HUD && window.HUD.updateWeaponDisplay) {
+        window.HUD.updateWeaponDisplay(mount.config.mountType);
+    }
+
+
+    return weaponToDrop; // Return the dropped weapon instance if needed
+  }
+
+  // New method for attaching a weapon to a specific mount (used by context menu)
+  async attachToSpecificMount(weaponType, mountId) {
+    console.log(`[WEAPON SYSTEM] Attempting to attach ${weaponType} to specific mount: ${mountId}`);
+    const mount = this.mountManager.getMountPoint(mountId);
+
+    // Check if mount exists and is available
+    if (mount && !mount.hasWeapon()) {
+      console.log(`[WEAPON SYSTEM] Mount ${mountId} is available.`);
+      
+      // Create a new weapon instance
+      const weapon = await this.weaponFactory.createWeapon(weaponType);
+      if (!weapon) {
+        console.error(`[WEAPON SYSTEM] Failed to create weapon instance for type: ${weaponType}`);
+        return false; // Weapon creation failed
+      }
+
+      // Attempt to attach the weapon
+      const success = mount.attachWeapon(weapon);
+      if (success) {
+        console.log(`[WEAPON SYSTEM] Successfully attached ${weaponType} to specific mount ${mountId}`);
+        this.activeWeapons.set(weapon.id, weapon);
+
+        // Update HUD
+        const mountType = mount.config.mountType;
+        const displayName = weapon.config.displayName || weapon.type;
+        if (window.HUD) {
+          window.HUD.showAlert(`${mountType.toUpperCase()}: ${displayName.toUpperCase()} EQUIPPED`, "info");
+          window.HUD.addMessage(`${displayName} equipped to ${mount.config.displayName}. Ammo: ${weapon.ammo}/${weapon.maxAmmo}`);
+          if (window.HUD.updateWeaponDisplay) {
+            window.HUD.updateWeaponDisplay(mountType);
+          }
+        }
+
+        // Notify server about the weapon pickup (attaching to specific mount)
+        console.log(`[WEAPON SYSTEM] Sending weapon pickup network message: WeaponID=${weapon.id}, Type=${weaponType}, SocketName=${mount.socketName}`);
+        Network.sendWeaponPickup({
+          weaponId: weapon.id,
+          weaponType: weaponType,
+          socketName: mount.socketName // Send socketName (bone name)
+        });
+        
+        // Note: The pickup removal and server notification for collection
+        // should happen in the calling function (Game.handlePickupKeyUp)
+        // after this method returns successfully.
+
+        return true; // Attachment successful
+      } else {
+        console.warn(`[WEAPON SYSTEM] Failed to attach ${weaponType} to specific mount ${mountId}.`);
+        return false; // Attachment failed
+      }
+    } else {
+      console.warn(`[WEAPON SYSTEM] Specific mount ${mountId} not found or already occupied.`);
+      return false; // Mount not available
+    }
   }
 
   fireWeaponByControl(controlKey) {

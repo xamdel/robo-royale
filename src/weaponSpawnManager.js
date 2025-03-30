@@ -132,6 +132,29 @@ export class WeaponSpawnManager {
     return null; // No collision
   }
 
+  // Find the nearest weapon pickup within a certain distance
+  findNearestPickup(position, maxDistance) {
+    let nearestPickup = null;
+    let minDistanceSq = maxDistance * maxDistance;
+    // console.log(`[WSM.findNearestPickup] Checking from position:`, position.toArray(), `Max dist sq: ${minDistanceSq}`); // Debug
+
+    for (const [pickupId, pickup] of this.activePickups.entries()) {
+      const distanceSq = position.distanceToSquared(pickup.collider.center);
+      // console.log(`[WSM.findNearestPickup] Checking pickup ID: ${pickupId}, Type: ${pickup.type}, Center:`, pickup.collider.center.toArray(), `DistSq: ${distanceSq}`); // Re-commented Debug
+      if (distanceSq < minDistanceSq) {
+        // console.log(`[WSM.findNearestPickup] Found new nearest: ${pickupId} (DistSq: ${distanceSq})`); // Re-commented Debug
+        minDistanceSq = distanceSq;
+        nearestPickup = {
+          id: pickupId,
+          type: pickup.type,
+          model: pickup.model,
+          distance: Math.sqrt(distanceSq) // Return actual distance
+        };
+      }
+    }
+    return nearestPickup;
+  }
+
   // Spawn a single weapon pickup at a specific world position (e.g., when dropped by a player)
   // Accepts an optional serverId to use for tracking
   async spawnDroppedWeapon(weaponType, position, serverId = null) {
@@ -168,7 +191,8 @@ export class WeaponSpawnManager {
 
       // Use the server-provided ID if available, otherwise generate a client-side one
       const pickupId = serverId || `${weaponType}_dropped_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      
+      // console.log(`[WeaponSpawnManager] Using pickup ID: ${pickupId} (Server ID was: ${serverId})`); // Removed log
+
       // Check if a pickup with this ID already exists (e.g., duplicate network message)
       if (this.activePickups.has(pickupId)) {
           console.warn(`[WeaponSpawnManager] Pickup with ID ${pickupId} already exists. Ignoring spawn request.`);
