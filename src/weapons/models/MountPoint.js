@@ -19,6 +19,10 @@ export class MountPoint {
       return false;
     }
 
+    console.log(`[ATTACHMENT START] Weapon: ${weapon.type}, Mount: ${this.id}, Bone: ${this.bone.name}`);
+    console.log('  Initial Bone World Matrix:', this.bone.matrixWorld.toArray());
+    console.log('  Initial Weapon World Matrix (before parenting):', weapon.model.matrixWorld.toArray());
+
     // Store the weapon
     this.weapon = weapon;
     // Set the back-reference from the weapon to this mount point
@@ -62,11 +66,19 @@ export class MountPoint {
 
     // Add to bone
     this.bone.add(weapon.model);
+    // Force matrix updates after parenting
+    this.bone.updateMatrixWorld(true); 
+    weapon.model.updateMatrixWorld(true); 
+
+    console.log('  Weapon World Matrix (after parenting to bone):', weapon.model.matrixWorld.toArray());
+    console.log('  Weapon Local Matrix (relative to bone):', weapon.model.matrix.toArray());
 
     // Initial setup for position, rotation, and scale
     let position = this.config.defaultPosition.clone();
     let rotation = this.config.defaultRotation.clone();
     let scale = this.config.defaultScale;
+
+    console.log(`  Applying Mount Config Defaults: Pos=${position.toArray()}, Rot=${rotation.toArray()}, Scale=${scale}`);
 
     // Capture pre-attachment state
     const preAttachmentState = {
@@ -80,14 +92,24 @@ export class MountPoint {
 
     // Handle weapon orientation based on mount side
     if (this.side !== weapon.config.naturalSide) {
+      console.log(`  Mirroring for opposite side. Original Pos=${position.toArray()}, Rot=${rotation.toArray()}`);
       // Mirror the weapon if mounting on opposite side
-      position.x = position.x; // Mirror position along X axis
+      position.x = -position.x; // CORRECTED Mirror position along X axis
       rotation.y += Math.PI; // Rotate by 180 degrees (PI radians) around Y axis
+      console.log(`  Mirrored Values: Pos=${position.toArray()}, Rot=${rotation.toArray()}`);
+    } else {
+       console.log('  No mirroring needed (same side or no natural side specified).');
     }
 
     weapon.model.position.copy(position);
     weapon.model.rotation.copy(rotation);
     weapon.model.scale.set(scale, scale, scale);
+    
+    // Force matrix update after setting local transforms
+    weapon.model.updateMatrixWorld(true); 
+
+    console.log('  Final Weapon Local Matrix (after defaults/mirroring):', weapon.model.matrix.toArray());
+    console.log('  Final Weapon World Matrix:', weapon.model.matrixWorld.toArray());
 
     // Ensure the model is visible
     weapon.model.visible = true;
@@ -116,8 +138,8 @@ export class MountPoint {
     };
 
     // Add axes helpers to both weapon and mount (helpful for debugging)
-    // addAxesHelper(weapon.model, `${weapon.type}_weapon`);
-    // addAxesHelper(this.bone, `${this.id}_mount`);
+    addAxesHelper(weapon.model, `${weapon.type}_weapon`);
+    addAxesHelper(this.bone, `${this.id}_mount`);
 
     // Detailed logging of attachment process
     console.log(`[WEAPON ATTACHMENT] Mounted ${weapon.type} to ${this.id}`, {

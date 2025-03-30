@@ -79,9 +79,19 @@ export const Game = {
     this.player = playerData.mesh;
     // In Game.init() after creating player:
     this.player.userData = { id: socket.id };
+    
+    // Initialize weapon system first
+    console.log('[GAME] Initializing weapon system...');
+    await weaponSystem.init(this.player);
 
-    // Initialize weapon orientation debugger
-    // this.weaponOrientationDebugger = new WeaponOrientationDebugger();
+    // NOW initialize the debugger, ensuring mountManager exists
+    this.weaponOrientationDebugger = new WeaponOrientationDebugger();
+
+    // Preload all weapon models
+    console.log('[GAME] Preloading weapon models...');
+    await weaponSystem.weaponFactory.preloadWeaponModels();
+    console.log('[GAME] Weapon models preloaded successfully');
+
     // Add colliders to the local player's mesh
     this.player.colliders = {
         body: new Collider('capsule', {

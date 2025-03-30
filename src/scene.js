@@ -11,6 +11,9 @@ import { WeaponSpawnManager } from './weaponSpawnManager.js'; // Import the weap
 export const SceneManager = {
   scene: new THREE.Scene(),
   camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
+  normalFOV: 75, // Default FOV
+  zoomFOV: 30, // Zoomed FOV
+  targetFOV: 75, // Target FOV (for smooth transitions)
   renderer: new THREE.WebGLRenderer({ antialias: true }),
   cameraOffset: new THREE.Vector3(0, 3, 7), // Third-person camera offset
   cameraDistance: 5, // Distance from player
@@ -228,12 +231,14 @@ export const SceneManager = {
     document.addEventListener('mousedown', (event) => {
       if (event.button === 2) { // Right mouse button
         this.isZooming = true;
+        this.targetFOV = this.zoomFOV; // Set target FOV to zoom FOV
       }
     });
     
     document.addEventListener('mouseup', (event) => {
       if (event.button === 2) { // Right mouse button
         this.isZooming = false;
+        this.targetFOV = this.normalFOV; // Set target FOV to normal FOV
       }
     });
     
@@ -265,13 +270,11 @@ export const SceneManager = {
     const cameraRotation = new THREE.Quaternion()
       .setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
 
-    // Determine target camera distance based on zoom state
-    this.targetCameraDistance = this.isZooming ? this.zoomDistance : this.normalDistance;
+    // Smoothly interpolate FOV
+    this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, this.targetFOV, this.zoomSpeed);
+    this.camera.updateProjectionMatrix();
 
-    // Smoothly interpolate camera distance
-    this.cameraDistance = THREE.MathUtils.lerp(this.cameraDistance, this.targetCameraDistance, this.zoomSpeed);
-
-    const offset = new THREE.Vector3(0, this.cameraHeight, this.cameraDistance)
+    const offset = new THREE.Vector3(0, this.cameraHeight, this.normalDistance) // Use normalDistance
       .applyQuaternion(cameraRotation);
 
     const targetCameraPosition = playerPosition.clone().add(offset);

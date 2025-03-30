@@ -49,7 +49,7 @@ export class WeaponSpawnManager {
         // Use the weapon factory to get the model template
         const weaponTemplate = weaponSystem.weaponTemplates.get(weaponType);
         if (!weaponTemplate || !weaponTemplate.model) {
-          console.error(`[WeaponSpawnManager] Failed to get model template for ${weaponType}`);
+          // console.error(`[WeaponSpawnManager] Failed to get model template for ${weaponType}`);
           continue; // Skip this spawn point if template is missing
         }
 

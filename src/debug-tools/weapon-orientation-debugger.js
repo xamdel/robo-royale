@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Game } from '../game.js';
+import { weaponSystem } from '../weapons/index.js';
 
 export class WeaponOrientationDebugger {
   constructor() {
@@ -53,6 +53,7 @@ export class WeaponOrientationDebugger {
   
   setupKeyControls() {
     window.addEventListener('keydown', (e) => {
+      // console.log(`[Debugger Keydown] Key: ${e.key}, Shift: ${e.shiftKey}`); 
       // Only process if Shift is held
       if (!e.shiftKey) return;
       
@@ -61,7 +62,7 @@ export class WeaponOrientationDebugger {
       e.stopPropagation();
       
       // Toggle UI with Shift+0
-      if (e.key === '0') {
+      if (e.code === 'Digit0') {
         this.toggleUI();
         return;
       }
@@ -69,27 +70,42 @@ export class WeaponOrientationDebugger {
       if (!this.active) return;
       
       // Select weapons with Shift+1 through Shift+4
-      if ('1234'.includes(e.key)) {
-        const mountIndex = parseInt(e.key) - 1;
-        const mounts = Game.player.mountManager.getAllMounts();
+      if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3' || e.code === 'Digit4') {
+        // --- CORRECTED SAFETY CHECKS ---
+        // Check the weaponSystem and its mountManager
+        if (!weaponSystem || !weaponSystem.mountManager) { 
+          console.warn('[Debugger] weaponSystem.mountManager not initialized yet.');
+          return; 
+        }
+        // --- END SAFETY CHECKS ---
+
+        const mountIndex = parseInt(e.code.replace('Digit', '')) - 1;
+        // --- USE CORRECT MOUNT MANAGER ---
+        const mounts = weaponSystem.mountManager.getAllMounts(); 
+        // --- END USE CORRECT MOUNT MANAGER ---
+        
         if (mounts[mountIndex] && mounts[mountIndex].hasWeapon()) {
           this.selectWeapon(mounts[mountIndex].getWeapon());
+        } else {
+          console.warn(`[Debugger] No weapon found in mount slot ${mountIndex + 1}`);
         }
         return;
       }
       
       // Rotation controls
-      if (this.targetWeapon) {
-        switch (e.key.toLowerCase()) {
-          case 'q': this.adjustRotation('x', this.adjustmentStep); break;
-          case 'a': this.adjustRotation('x', -this.adjustmentStep); break;
-          case 'w': this.adjustRotation('y', this.adjustmentStep); break;
-          case 's': this.adjustRotation('y', -this.adjustmentStep); break;
-          case 'e': this.adjustRotation('z', this.adjustmentStep); break;
-          case 'd': this.adjustRotation('z', -this.adjustmentStep); break;
-          case 'r': this.resetRotation(); break;
-          case 'p': this.printCurrentRotation(); break;
-        }
+      if (!this.targetWeapon) {
+        console.warn('[Debugger] No weapon selected for rotation adjustment.');
+        return;
+      }
+      switch (e.code) {
+        case 'KeyQ': this.adjustRotation('x', this.adjustmentStep); break;
+        case 'KeyA': this.adjustRotation('x', -this.adjustmentStep); break;
+        case 'KeyW': this.adjustRotation('y', this.adjustmentStep); break;
+        case 'KeyS': this.adjustRotation('y', -this.adjustmentStep); break;
+        case 'KeyE': this.adjustRotation('z', this.adjustmentStep); break;
+        case 'KeyD': this.adjustRotation('z', -this.adjustmentStep); break;
+        case 'KeyR': this.resetRotation(); break;
+        case 'KeyP': this.printCurrentRotation(); break;
       }
     }, { capture: true });
   }

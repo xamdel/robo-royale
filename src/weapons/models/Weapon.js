@@ -48,7 +48,7 @@ export class Weapon {
         return; // Only for active gatling, and not already starting/firing
     }
 
-    console.log(`[WEAPON] ${this.type} starting firing sequence.`);
+    // console.log(`[WEAPON] ${this.type} starting firing sequence.`);
     this.firingState = 'spinningUp';
 
     // Stop any lingering spin-down sound
@@ -73,7 +73,7 @@ export class Weapon {
     clearTimeout(this.spinUpTimeout); // Clear any previous timeout
     this.spinUpTimeout = setTimeout(() => {
         if (this.firingState === 'spinningUp') { // Ensure we weren't stopped during spin-up
-            console.log(`[WEAPON] ${this.type} finished spin-up, entering firing state.`);
+            // console.log(`[WEAPON] ${this.type} finished spin-up, entering firing state.`);
             this.firingState = 'firing';
             this.lastFireTime = 0; // Reset fire timer for immediate first shot
 
@@ -96,7 +96,7 @@ export class Weapon {
         return; // Only stop if it was trying to fire or firing
     }
 
-    console.log(`[WEAPON] ${this.type} stopping firing sequence. Current state: ${this.firingState}`);
+    // console.log(`[WEAPON] ${this.type} stopping firing sequence. Current state: ${this.firingState}`);
 
     const previousState = this.firingState;
     this.firingState = 'spinningDown'; // Intermediate state before idle
@@ -128,19 +128,19 @@ export class Weapon {
         setTimeout(() => {
             if (this.firingState === 'spinningDown') { // Check if state hasn't changed again
                  this.firingState = 'idle';
-                 console.log(`[WEAPON] ${this.type} returned to idle state after spin-down.`);
+                //  console.log(`[WEAPON] ${this.type} returned to idle state after spin-down.`);
             }
         }, 100); // Adjust delay as needed
     } else {
         // If stopped before firing started, go directly to idle
         this.firingState = 'idle';
-        console.log(`[WEAPON] ${this.type} returned to idle state (stopped before firing).`);
+        // console.log(`[WEAPON] ${this.type} returned to idle state (stopped before firing).`);
     }
   }
 
   // Actual single shot logic
   fire(position, direction) {
-    console.log(`[WEAPON] ${this.type} fire method called from position`, position.toArray());
+    // console.log(`[WEAPON] ${this.type} fire method called from position`, position.toArray());
     
     if (!this.active) {
       console.log(`[WEAPON] ${this.type} is not active`);
@@ -148,7 +148,7 @@ export class Weapon {
     }
     
     if (this.ammo <= 0) {
-      console.log(`[WEAPON] ${this.type} is out of ammo`);
+      // console.log(`[WEAPON] ${this.type} is out of ammo`);
       if (window.HUD) {
         window.HUD.showAlert("OUT OF AMMO", "warning");
       }
@@ -163,18 +163,18 @@ export class Weapon {
     // Create spawn position offset in front of the weapon
     const spawnOffset = 1.5;
     const spawnPosition = position.clone().add(direction.clone().multiplyScalar(spawnOffset));
-    console.log(`[WEAPON] ${this.type} spawning projectile at`, spawnPosition.toArray());
+    // console.log(`[WEAPON] ${this.type} spawning projectile at`, spawnPosition.toArray());
 
     // Always create projectile for visual representation
     const projectile = this.createProjectile(spawnPosition, direction);
-    console.log(`[WEAPON] ${this.type} created projectile`, projectile);
+    // console.log(`[WEAPON] ${this.type} created projectile`, projectile);
 
     // Only send to server and manage ammo for local player weapons
     if (this.isLocalPlayerWeapon()) {
-      console.log(`[WEAPON] ${this.type} confirmed as local player weapon`);
+      // console.log(`[WEAPON] ${this.type} confirmed as local player weapon`);
       
       // Send shot data to server
-      console.log(`[WEAPON] ${this.type} sending shot data to server, weapon ID: ${this.id}`);
+      // console.log(`[WEAPON] ${this.type} sending shot data to server, weapon ID: ${this.id}`);
       Network.sendShot({
         weaponId: this.id,
         type: this.type,
@@ -184,7 +184,7 @@ export class Weapon {
 
       // Decrease ammo
       this.ammo--;
-      console.log(`[WEAPON] ${this.type} ammo decreased to ${this.ammo}`);
+      // console.log(`[WEAPON] ${this.type} ammo decreased to ${this.ammo}`);
       if (window.HUD) {
         window.HUD.updateAmmo(this.ammo);
       }
@@ -438,12 +438,12 @@ export class Weapon {
                     this.lastFireTime = now;
                 } else {
                     // If fire failed (e.g., somehow became inactive or out of ammo between checks), stop sequence
-                    console.log(`[WEAPON UPDATE] Gatling fire call failed (returned ${fireSuccess}), stopping sequence.`);
+                    // console.log(`[WEAPON UPDATE] Gatling fire call failed (returned ${fireSuccess}), stopping sequence.`);
                     this.stopFiringSequence();
                 }
             } else {
                 // Out of ammo while firing
-                console.log(`[WEAPON UPDATE] ${this.type} ran out of ammo during firing sequence.`);
+                // console.log(`[WEAPON UPDATE] ${this.type} ran out of ammo during firing sequence.`);
                 this.stopFiringSequence(); // Stop the sequence
                 if (window.HUD) {
                     window.HUD.showAlert("OUT OF AMMO", "warning");
@@ -468,7 +468,7 @@ export class Weapon {
   isLocalPlayerWeapon() {
     // Check if this weapon is attached to the local player
     if (!window.Game || !window.Game.player) {
-      console.log(`[WEAPON] ${this.type} cannot check if local player weapon - Game.player not available`);
+      // console.log(`[WEAPON] ${this.type} cannot check if local player weapon - Game.player not available`);
       return false;
     }
     
@@ -485,7 +485,7 @@ export class Weapon {
         (currentObj.userData && currentObj.userData.id === window.Game.player.userData?.id) ||
         (currentObj.name === "PlayerMech" && currentObj.type === "Group")
       ) {
-        console.log(`[WEAPON] ${this.type} is attached to local player (found at depth ${depth})`);
+        // console.log(`[WEAPON] ${this.type} is attached to local player (found at depth ${depth})`);
         return true;
       }
       
@@ -495,17 +495,17 @@ export class Weapon {
     }
     
     // Log detailed debug info
-    console.log(`[WEAPON] ${this.type} is NOT attached to local player:`, {
-      weaponModelName: this.model.name,
-      playerName: window.Game.player.name || 'unnamed',
-      searchDepth: depth,
-      playerModelId: window.Game.player.userData?.id || 'unknown',
-      weaponParentChain: this.getParentChain(this.model, 5)
-    });
+    // console.log(`[WEAPON] ${this.type} is NOT attached to local player:`, {
+    //   weaponModelName: this.model.name,
+    //   playerName: window.Game.player.name || 'unnamed',
+    //   searchDepth: depth,
+    //   playerModelId: window.Game.player.userData?.id || 'unknown',
+    //   weaponParentChain: this.getParentChain(this.model, 5)
+    // });
     
     // TEMPORARY FIX: Force weapons to be recognized as local player weapons
     // until the hierarchy issue is resolved
-    console.log(`[WEAPON] ${this.type} - TEMPORARY FIX: Forcing recognition as local player weapon`);
+    // console.log(`[WEAPON] ${this.type} - TEMPORARY FIX: Forcing recognition as local player weapon`);
     return true;
   }
   

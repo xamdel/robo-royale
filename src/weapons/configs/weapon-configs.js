@@ -16,7 +16,7 @@ export const weaponConfigs = {
     },
     effects: {
       muzzleFlash: true,
-      sound: 'cannon-shot.mp3'
+      sound: 'cannon.wav'
     },
     ammo: 20, // Initial ammo
     maxAmmo: 20 // Max ammo capacity
@@ -37,7 +37,7 @@ export const weaponConfigs = {
     effects: {
       muzzleFlash: true,
       smoke: true,
-      sound: 'rocket-launch.mp3'
+      sound: 'rocket.wav'
     },
     ammo: 4, // Initial ammo
     maxAmmo: 8 // Max ammo capacity

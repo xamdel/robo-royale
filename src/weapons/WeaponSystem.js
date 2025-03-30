@@ -18,7 +18,7 @@ export class WeaponSystem {
   }
 
   async init(playerModel) {
-    console.log('Initializing weapon system...');
+    // console.log('Initializing weapon system...');
 
     // Initialize mount points on player model
     const mountsInitialized = this.mountManager.initMounts(playerModel);
@@ -33,7 +33,7 @@ export class WeaponSystem {
     // Create weapon templates for all configured weapon types
     await this.createWeaponTemplates();
 
-    console.log('Weapon system initialized');
+    // // console.log('Weapon system initialized');
     return true;
   }
 
@@ -44,7 +44,7 @@ export class WeaponSystem {
       const weapon = await this.weaponFactory.createWeapon(weaponType);
       if (weapon) {
         this.weaponTemplates.set(weaponType, weapon);
-        console.log(`Created weapon template for ${weaponType}`);
+        // console.log(`Created weapon template for ${weaponType}`);
       }
     }
   }
@@ -165,24 +165,24 @@ export class WeaponSystem {
   }
 
   fireWeaponByControl(controlKey) {
-    console.log(`[WEAPON SYSTEM] Fire attempt for control key: ${controlKey}`);
+    // console.log(`[WEAPON SYSTEM] Fire attempt for control key: ${controlKey}`);
     
     // Get all mounts for this control key
     const mounts = this.mountManager.getAllMounts().filter(mount => mount.config.controlKey === controlKey);
     if (mounts.length === 0) {
-      console.log(`[WEAPON SYSTEM] No mounts found for control key: ${controlKey}`);
+      // console.log(`[WEAPON SYSTEM] No mounts found for control key: ${controlKey}`);
       return false;
     }
     
     // Debug log all mount points for this control key
-    console.log(`[WEAPON SYSTEM] Found ${mounts.length} mounts for control key ${controlKey}:`, 
-      mounts.map(m => ({
-        id: m.id,
-        socketName: m.socketName,
-        hasWeapon: m.hasWeapon(),
-        weaponType: m.hasWeapon() ? m.getWeapon().type : 'none'
-      }))
-    );
+    // console.log(`[WEAPON SYSTEM] Found ${mounts.length} mounts for control key ${controlKey}:`, 
+    //   mounts.map(m => ({
+    //     id: m.id,
+    //     socketName: m.socketName,
+    //     hasWeapon: m.hasWeapon(),
+    //     weaponType: m.hasWeapon() ? m.getWeapon().type : 'none'
+    //   }))
+    // );
     
     // Filter by mount type
     const mountType = mounts[0].config.mountType; // Get mount type from first mount
@@ -191,7 +191,7 @@ export class WeaponSystem {
     // Only use mounts that have weapons
     const mountsWithWeapons = mounts.filter(mount => mount.hasWeapon());
     if (mountsWithWeapons.length === 0) {
-      console.log(`[WEAPON SYSTEM] No armed mounts found for control key: ${controlKey}`);
+      // console.log(`[WEAPON SYSTEM] No armed mounts found for control key: ${controlKey}`);
       return false;
     }
     
@@ -199,7 +199,7 @@ export class WeaponSystem {
     const activeIndex = Math.min(selectedIndex, mountsWithWeapons.length - 1);
     const activeMount = mountsWithWeapons[activeIndex];
     
-    console.log(`[WEAPON SYSTEM] Firing mount ${activeMount.id} for control key: ${controlKey}`);
+    // console.log(`[WEAPON SYSTEM] Firing mount ${activeMount.id} for control key: ${controlKey}`);
     
     // Make sure the weapon is visible before firing
     const weapon = activeMount.getWeapon();
@@ -213,7 +213,7 @@ export class WeaponSystem {
     }
     
     const result = activeMount.fire();
-    console.log(`[WEAPON SYSTEM] Fire result for ${activeMount.id}: ${result}`);
+    // console.log(`[WEAPON SYSTEM] Fire result for ${activeMount.id}: ${result}`);
     return result;
   }
 
@@ -283,13 +283,13 @@ export class WeaponSystem {
         equippedWeapons.push({ type: weapon.type, id: weapon.id });
       }
     }
-    console.log('[WeaponSystem] Player equipped weapons:', equippedWeapons);
+    // console.log('[WeaponSystem] Player equipped weapons:', equippedWeapons);
     return equippedWeapons;
   }
 
   // Remove all weapons currently equipped by the player
   removeAllPlayerWeapons() {
-    console.log('[WeaponSystem] Removing all player weapons...');
+    // console.log('[WeaponSystem] Removing all player weapons...');
     const mounts = this.mountManager.getAllMounts();
     let removedCount = 0;
     for (const mount of mounts) {
@@ -300,10 +300,10 @@ export class WeaponSystem {
         weapon.deactivate(); // Perform any weapon-specific cleanup
         this.activeWeapons.delete(weaponId); // Remove from active tracking
         removedCount++;
-        console.log(`[WeaponSystem] Removed weapon ${weaponId} from mount ${mount.id}`);
+        // console.log(`[WeaponSystem] Removed weapon ${weaponId} from mount ${mount.id}`);
       }
     }
-    console.log(`[WeaponSystem] Finished removing weapons. Total removed: ${removedCount}`);
+    // console.log(`[WeaponSystem] Finished removing weapons. Total removed: ${removedCount}`);
     // Optionally update HUD if needed
     if (window.HUD && window.HUD.updateWeaponDisplay) {
         window.HUD.updateWeaponDisplay('primary');
@@ -355,7 +355,7 @@ export class WeaponSystem {
   }
 
   handleRemoteShot(data) {
-    console.log(`[WeaponSystem] Handling remote shot for weapon type: ${data.weaponType}`);
+    // console.log(`[WeaponSystem] Handling remote shot for weapon type: ${data.weaponType}`);
     
     // Try to find weapon template for this type
     const weapon = this.weaponTemplates.get(data.weaponType);
@@ -363,7 +363,7 @@ export class WeaponSystem {
     if (weapon) {
       const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
       const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);
-      console.log(`[WeaponSystem] Creating projectile at`, position, 'direction', direction);
+      // console.log(`[WeaponSystem] Creating projectile at`, position, 'direction', direction);
       const projectile = weapon.createProjectile(position, direction);
       return projectile;
     } else {
