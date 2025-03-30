@@ -75,25 +75,45 @@ class GameServer {
   }
 
   setupSocketConnection() {
+    // Store map seed in class so it can be shared across methods
+    this.mapSeed = process.env.MAP_SEED || `roboroyale_${Date.now()}`;
+    console.log(`Using map seed: ${this.mapSeed}`);
+    
     this.io.on('connection', (socket) => {
-      // Handle player connection
-      const player = this.playerController.handleConnection(socket);
+      console.log(`New client connected: ${socket.id}`);
       
-      // If player connection was successful
-      if (player) {
-        // Setup event handlers for different controllers
-        this.projectileController.setupSocketHandlers(socket);
-        this.weaponController.setupSocketHandlers(socket);
-
-        // Handle weapon cleanup on disconnect
-        socket.on('disconnect', () => {
-          this.weaponController.removePlayer(socket.id);
-        });
-      }
+      // Send map seed immediately on connection, before any other events
+      socket.emit('mapSeed', { seed: this.mapSeed });
+      
+      // Add a small delay to ensure the client has time to initialize its environment
+      // before we start processing player movements with collisions
+      setTimeout(() => {
+        // Handle player connection
+        const player = this.playerController.handleConnection(socket);
+        
+        // If player connection was successful
+        if (player) {
+          console.log(`Player ${socket.id} fully initialized with collision handling`);
+          
+          // Setup event handlers for different controllers
+          this.projectileController.setupSocketHandlers(socket);
+          this.weaponController.setupSocketHandlers(socket);
+  
+          // Handle weapon cleanup on disconnect
+          socket.on('disconnect', () => {
+            this.weaponController.removePlayer(socket.id);
+          });
+        }
+      }, 1000); // Give client 1 second to initialize environment
     });
   }
 
   start() {
+    console.log(`Initializing game with map seed: ${this.mapSeed}`);
+    
+    // Initialize environment in game loop with the seed
+    this.gameLoop.initEnvironment(this.mapSeed);
+    
     // Start the game loop
     this.gameLoop.start();
 

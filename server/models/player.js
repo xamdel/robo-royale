@@ -4,7 +4,17 @@ class Player {
   constructor(socketId, name = 'Player') { // Add name parameter with default
     this.id = socketId;
     this.name = name; // Store the name
-    this.position = { x: 0, y: 0, z: 0 };
+    
+    // Generate a random spawn position in a small radius around origin
+    // This prevents players from all stacking at the exact same spot (0,0,0)
+    const spawnRadius = 3; // Small radius to disperse players
+    const spawnAngle = Math.random() * Math.PI * 2; // Random angle
+    this.position = { 
+      x: Math.cos(spawnAngle) * spawnRadius, 
+      y: 0, 
+      z: Math.sin(spawnAngle) * spawnRadius 
+    };
+    
     this.rotation = { x: 0, y: 0, z: 0, w: 1 };
     this.lastProcessedInput = 0;
     this.lastActive = Date.now();

@@ -222,17 +222,21 @@ async function initializeGame() {
   console.log("[Main] Building models loaded.");
 
   // 3. Wait for connection and map seed from the server
-  //    (Simulating receiving the seed for now)
   const mapSeed = await new Promise(resolve => {
-    // Replace this with actual network event listener when integrating server logic
-    const receivedSeed = 'test_seed_123'; // Example seed
-    console.log(`[Main] Received map seed: ${receivedSeed}`);
-    resolve(receivedSeed);
-    // Example using Network socket event:
-    // Network.socket.once('mapData', (data) => {
-    //   console.log(`[Main] Received map seed: ${data.seed}`);
-    //   resolve(data.seed);
-    // });
+    // Listen for mapSeed event from the server
+    Network.socket.once('mapSeed', (data) => {
+      console.log(`[Main] Received map seed from server: ${data.seed}`);
+      resolve(data.seed);
+    });
+    
+    // Add a timeout fallback in case the server doesn't send a seed
+    const timeoutId = setTimeout(() => {
+      console.warn('[Main] No map seed received from server, using fallback seed');
+      resolve('fallback_seed_' + Date.now());
+    }, 5000);
+    
+    // Clear the timeout if we get the seed
+    Network.socket.once('mapSeed', () => clearTimeout(timeoutId));
   });
 
 

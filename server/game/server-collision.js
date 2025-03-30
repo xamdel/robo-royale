@@ -199,6 +199,24 @@ class ServerCollisionSystem { // Remove export keyword
      * @returns {Array<object>} Array of colliding object references { objectId, objectType, colliderData }.
      */
     checkPlayerCollision(playerPosition, playerRadius) {
+        // DEBUG: Check if the colliders map is populated
+        if (Math.random() < 0.01) {  // Only log occasionally to avoid spam
+            console.log(`[DEBUG-Collision] Checking collisions for player at (${playerPosition.x.toFixed(2)}, ${playerPosition.z.toFixed(2)}) with radius ${playerRadius}`);
+            console.log(`[DEBUG-Collision] Number of registered colliders: ${this.colliders.size}`);
+            
+            // Log a few random colliders to verify they're working properly
+            if (this.colliders.size > 0) {
+                let count = 0;
+                for (const [id, data] of this.colliders.entries()) {
+                    if (count++ < 3) {  // Just log 3 examples
+                        console.log(`[DEBUG-Collision] Sample collider ${id}: Type=${data.objectType}, Position=(${data.colliderData.position.x.toFixed(2)}, ${data.colliderData.position.z.toFixed(2)})`);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        
         const centerIndices = this.worldToGridIndices(playerPosition.x, playerPosition.z);
         const searchRadius = Math.ceil(playerRadius / this.cellSize);
         const collisions = [];
@@ -211,6 +229,12 @@ class ServerCollisionSystem { // Remove export keyword
                     const cellColliders = this.grid.get(key);
                     for (const { objectId, objectType } of cellColliders) {
                         if (checkedIds.has(objectId)) continue;
+
+                        // Make sure the collider still exists
+                        if (!this.colliders.has(objectId)) {
+                            console.warn(`[ServerCollision] Reference to non-existent collider ${objectId} found in grid`);
+                            continue;
+                        }
 
                         const { colliderData } = this.colliders.get(objectId);
 
@@ -315,12 +339,21 @@ class ServerCollisionSystem { // Remove export keyword
      * @param {Array<object>} collisions
      */
     resolvePlayerCollision(originalPosition, desiredPosition, playerRadius, collisions) {
-         if (collisions.length === 0) return;
+        if (collisions.length === 0) return;
 
-        // Attempt simple slide first
+        // Calculate movement vector
         const movementVector = desiredPosition.clone().sub(originalPosition);
+        const movementLength = Math.sqrt(movementVector.x * movementVector.x + movementVector.z * movementVector.z);
+        
+        // If not moving much, just return to original position
+        if (movementLength < 0.01) {
+            desiredPosition.copy(originalPosition);
+            return;
+        }
+        
+        // Step 1: Try to slide along X or Z axis
         let resolved = false;
-
+        
         // Try X only
         const posX = originalPosition.clone().add(new Vec3(movementVector.x, 0, 0));
         if (this.checkPlayerCollision(posX, playerRadius).length === 0) {
@@ -334,10 +367,57 @@ class ServerCollisionSystem { // Remove export keyword
                 resolved = true;
             }
         }
-
-        // If still not resolved, block movement
+        
+        // Step 2: If sliding didn't work, try pushing the player away from the collision
         if (!resolved) {
-            desiredPosition.copy(originalPosition);
+            // Find the closest collision point to adjust direction
+            let closestDist = Number.MAX_VALUE;
+            let closestCollision = null;
+            
+            for (const collision of collisions) {
+                const colliderPos = collision.colliderData.position;
+                const dx = desiredPosition.x - colliderPos.x;
+                const dz = desiredPosition.z - colliderPos.z;
+                const distSq = dx * dx + dz * dz;
+                
+                if (distSq < closestDist) {
+                    closestDist = distSq;
+                    closestCollision = collision;
+                }
+            }
+            
+            if (closestCollision) {
+                // Calculate push direction (away from collision)
+                const pushDir = new Vec3(
+                    desiredPosition.x - closestCollision.colliderData.position.x,
+                    0,
+                    desiredPosition.z - closestCollision.colliderData.position.z
+                ).normalize();
+                
+                // Calculate combined radius (collision avoidance distance)
+                const combinedRadius = playerRadius + 
+                    (closestCollision.objectType === 'tree' || closestCollision.objectType === 'rock' 
+                        ? closestCollision.colliderData.radius 
+                        : Math.max(closestCollision.colliderData.width/2, closestCollision.colliderData.depth/2));
+                
+                // Create a new position that's just outside the combined radius
+                const safePos = new Vec3(
+                    closestCollision.colliderData.position.x + pushDir.x * (combinedRadius + 0.1),
+                    desiredPosition.y,
+                    closestCollision.colliderData.position.z + pushDir.z * (combinedRadius + 0.1)
+                );
+                
+                // If the safe position works, use it
+                if (this.checkPlayerCollision(safePos, playerRadius).length === 0) {
+                    desiredPosition.copy(safePos);
+                    resolved = true;
+                }
+            }
+            
+            // If still not resolved, block movement completely
+            if (!resolved) {
+                desiredPosition.copy(originalPosition);
+            }
         }
     }
 }

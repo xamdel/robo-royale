@@ -498,17 +498,41 @@ export const Network = {
       });
     });
 
-    // Handle position corrections
+    // Handle position corrections (used for collision enforcement)
     this.socket.on('positionCorrection', (data) => {
       if (Game.player) {
+        console.log(`[Network] Received position correction: (${data.position.x.toFixed(2)}, ${data.position.z.toFixed(2)})`);
+        
+        // Set the player's position to the corrected position
         Game.player.position.set(data.position.x, data.position.y, data.position.z);
-        Game.player.quaternion.set(
-          data.rotation.x,
-          data.rotation.y,
-          data.rotation.z,
-          data.rotation.w
-        );
+        
+        // Set rotation if provided
+        if (data.rotation) {
+          if (data.rotation.w !== undefined) {
+            // If we received a quaternion
+            Game.player.quaternion.set(
+              data.rotation.x,
+              data.rotation.y,
+              data.rotation.z,
+              data.rotation.w
+            );
+          } else {
+            // If we received euler angles
+            Game.player.rotation.set(
+              data.rotation.x || 0,
+              data.rotation.y || 0,
+              data.rotation.z || 0
+            );
+          }
+        }
+        
+        // Clear input buffer to stop client-side prediction
         Game.inputBuffer = [];
+        
+        // Update the previous position to prevent "rubber-banding" back
+        if (Game.previousPosition) {
+          Game.previousPosition.copy(Game.player.position);
+        }
       }
     });
 

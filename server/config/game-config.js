@@ -1,12 +1,23 @@
 // Game Configuration Constants
 
 module.exports = {
+  // Server settings
   TICK_RATE: 60,
   MAX_PLAYERS: 16,
   INACTIVE_TIMEOUT: 300000, // 5 minutes
   MIN_MOVE_INTERVAL: 16, // ~60fps max
   PORT: process.env.NODE_ENV === 'production' ? (process.env.PORT || 3000) : 3000,
   CORS_ORIGIN: "http://localhost:5173",
+  
+  // World settings
+  WORLD_WIDTH: 800,  // World width (X-axis) - must match client terrain dimensions
+  WORLD_DEPTH: 800,  // World depth (Z-axis) - must match client terrain dimensions
+  PLAYER_CONFIG: {
+    radius: 1.0,   // Player collision radius
+    maxHealth: 200,
+    spawnInvulnerabilityTime: 3000, // 3 seconds of invulnerability after spawn
+    respawnDelay: 5000  // 5 seconds before respawn
+  },
   
   PROJECTILE_CONFIGS: {
     cannon: {
@@ -73,11 +84,6 @@ module.exports = {
     }
   },
 
-  PLAYER_CONFIG: {
-    maxHealth: 200,
-    spawnInvulnerabilityTime: 3000, // 3 seconds of invulnerability after spawn
-    respawnDelay: 5000  // 5 seconds before respawn
-  },
 
   WEAPON_COOLDOWN: {
     cannon: 500,  // 0.5 second between shots

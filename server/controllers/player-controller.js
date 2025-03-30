@@ -69,15 +69,55 @@ class PlayerController {
 
       // Check for collisions at the desired position
       const collisions = collisionSystem.checkPlayerCollision(desiredPosVec3, playerRadius);
-
-      // Resolve collisions if necessary (modifies desiredPosVec3)
+      
+      // Handle collisions only if they're significant
       if (collisions.length > 0) {
+        // Filter out collisions that are too far away (optimization)
+        const significantCollisions = collisions.filter(c => {
+          const dx = desiredPosVec3.x - c.colliderData.position.x;
+          const dz = desiredPosVec3.z - c.colliderData.position.z;
+          const distSq = dx * dx + dz * dz;
+          // Only consider collisions within 2x player radius + object radius
+          const maxDist = playerRadius * 2 + 
+            (c.objectType === 'tree' || c.objectType === 'rock' ? c.colliderData.radius : 
+              Math.max(c.colliderData.width/2, c.colliderData.depth/2));
+          return distSq <= maxDist * maxDist;
+        });
+        
+        if (significantCollisions.length > 0) {
+          console.log(`[Collision] Player ${socket.id} at (${desiredPosVec3.x.toFixed(1)}, ${desiredPosVec3.z.toFixed(1)}) - Found ${significantCollisions.length} collisions with ${significantCollisions.map(c => c.objectType).join(', ')}`);
+          
+          // Resolve collisions (modifies desiredPosVec3)
+          const originalPos = desiredPosVec3.clone(); // Save for debugging
+          
           collisionSystem.resolvePlayerCollision(
               currentPosVec3,
               desiredPosVec3,
               playerRadius,
-              collisions
+              significantCollisions
           );
+          
+          // Calculate how far the position was corrected
+          const dx = originalPos.x - desiredPosVec3.x;
+          const dz = originalPos.z - desiredPosVec3.z;
+          const correctionDistance = Math.sqrt(dx*dx + dz*dz);
+          
+          // Log resolution effect
+          console.log(`[Collision] Resolved: (${originalPos.x.toFixed(1)}, ${originalPos.z.toFixed(1)}) -> (${desiredPosVec3.x.toFixed(1)}, ${desiredPosVec3.z.toFixed(1)}), distance: ${correctionDistance.toFixed(2)}`);
+          
+          // Only send position correction if the resolution moved the player significantly
+          // This prevents small jitters from triggering constant corrections
+          if (correctionDistance > 0.1) {
+            socket.emit('positionCorrection', {
+              position: {
+                x: desiredPosVec3.x,
+                y: desiredPosVec3.y,
+                z: desiredPosVec3.z
+              },
+              rotation: player.rotation
+            });
+          }
+        }
       }
 
       // Convert resolved position back to plain object for validation/update

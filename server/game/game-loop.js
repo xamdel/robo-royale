@@ -3,6 +3,9 @@ const gameConfig = require('../config/game-config');
 const collisionModule = require('./server-collision');
 // Access the class from the imported module
 const ServerCollisionSystem = collisionModule.ServerCollisionSystem;
+// Import environment generator
+const terrainGenerator = require('../environment/terrain-generator');
+const EnvironmentGenerator = require('../environment/environment-generator');
 
 class GameLoop {
   constructor(io, playerManager, projectileManager) {
@@ -10,17 +13,26 @@ class GameLoop {
     this.playerManager = playerManager;
     this.projectileManager = projectileManager;
     this.projectileController = null; // Will be set by server/index.js
+    
+    // Initialize collision system with world dimensions
     this.collisionSystem = new ServerCollisionSystem(
         gameConfig.WORLD_WIDTH || 600, // Get dimensions from config or use defaults
         gameConfig.WORLD_DEPTH || 600
         // Add cellSize if needed
     );
+    
     this.moveRateLimit = new Map();
     this.droppedItems = new Map(); // Map<string, {id: string, type: string, position: object}>
     this.pickupIdCounter = 0; // Simple counter for unique pickup IDs
-
-    // TODO: Populate the collision system with static environment data
-    this.populateCollisionSystem();
+    
+    // Environment generation components
+    this.terrainGenerator = terrainGenerator;
+    this.environmentGenerator = null; // Will be initialized in initEnvironment
+    
+    // Environment objects storage
+    this.trees = [];
+    this.rocks = [];
+    this.buildings = [];
   }
 
   start() {
@@ -165,16 +177,101 @@ class GameLoop {
     return removed;
   }
 
-  // Placeholder for populating the collision system
+  /**
+   * Initialize environment with a seed - must be called before start()
+   * @param {string} seed - Map seed for deterministic generation
+   */
+  initEnvironment(seed) {
+    console.log(`[GameLoop] Initializing environment with seed: ${seed}`);
+    
+    // Initialize terrain generator
+    this.terrainGenerator.init(seed);
+    
+    // Set world dimensions from game config
+    this.terrainGenerator.generationParams.width = gameConfig.WORLD_WIDTH || 600;
+    this.terrainGenerator.generationParams.height = gameConfig.WORLD_DEPTH || 600;
+    
+    // Initialize environment generator
+    this.environmentGenerator = new EnvironmentGenerator(this.terrainGenerator);
+    
+    // Generate environment objects using the same deterministic approach as client
+    this.generateEnvironmentObjects();
+    
+    // Now register all the objects with the collision system
+    this.populateCollisionSystem();
+    
+    console.log(`[GameLoop] Environment initialization complete.`);
+  }
+  
+  /**
+   * Generate environment objects using the environment generator
+   */
+  generateEnvironmentObjects() {
+    console.log("[GameLoop] Generating environment objects...");
+    
+    if (!this.environmentGenerator || !this.environmentGenerator.isInitialized) {
+      console.error("[GameLoop] Environment generator not initialized. Call initEnvironment() first.");
+      return;
+    }
+    
+    // Generate trees and rocks
+    const { trees, rocks } = this.environmentGenerator.generateEnvironmentalObjects();
+    this.trees = trees;
+    this.rocks = rocks;
+    
+    // Generate buildings
+    const { buildings } = this.environmentGenerator.generateBuildings();
+    this.buildings = buildings;
+    
+    console.log(`[GameLoop] Generated ${this.trees.length} trees, ${this.rocks.length} rocks, and ${this.buildings.length} buildings`);
+  }
+
+  /**
+   * Register all environment objects with the collision system
+   */
   populateCollisionSystem() {
-      console.log("[GameLoop] Populating ServerCollisionSystem...");
-      // TODO: Load or generate static collider data (trees, rocks, buildings)
-      // This data needs positions and dimensions matching the client generation.
-      // Example:
-      // const treeData = { position: {x: 10, y: 0, z: 5}, radius: 0.5, height: 8 };
-      // this.collisionSystem.registerCollider(treeData, 'tree');
-      // ... repeat for all static objects ...
-      console.log("[GameLoop] ServerCollisionSystem population placeholder complete.");
+    console.log("[GameLoop] Populating ServerCollisionSystem...");
+    
+    if (!this.trees.length && !this.rocks.length && !this.buildings.length) {
+      console.warn("[GameLoop] No environment objects to register. Call generateEnvironmentObjects() first.");
+      return;
+    }
+    
+    let treeCount = 0;
+    let rockCount = 0;
+    let buildingCount = 0;
+    
+    // Register trees
+    for (const tree of this.trees) {
+      this.collisionSystem.registerCollider({
+        position: tree.position,
+        radius: tree.radius,
+        height: tree.height
+      }, 'tree');
+      treeCount++;
+    }
+    
+    // Register rocks
+    for (const rock of this.rocks) {
+      this.collisionSystem.registerCollider({
+        position: rock.position,
+        radius: rock.radius
+      }, 'rock');
+      rockCount++;
+    }
+    
+    // Register buildings
+    for (const building of this.buildings) {
+      this.collisionSystem.registerCollider({
+        position: building.position,
+        width: building.width,
+        height: building.height,
+        depth: building.depth
+      }, 'building');
+      buildingCount++;
+    }
+    
+    console.log(`[GameLoop] Registered ${treeCount} trees, ${rockCount} rocks, and ${buildingCount} buildings with collision system`);
   }
 }
 
