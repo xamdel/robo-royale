@@ -11,6 +11,8 @@ import { EnvironmentalObjectSystem } from './environmentalObjectSystem.js'; // I
 import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGenerator
 import { modelManager } from './ModelManager.js'; // Import ModelManager
 import { audioManager } from './audio/AudioManager.js'; // Import the audio manager instance
+import { CollisionSystem } from './collision/CollisionSystem.js'; // Import CollisionSystem
+import { ObjectColliders } from './collision/ObjectColliders.js'; // Import ObjectColliders
 import * as THREE from 'three';
 
 // Debug variables
@@ -284,14 +286,56 @@ async function initializeGame() {
       audioManager.loadSound('gatling-spindown.wav');
       console.log("[Main] Weapon sounds preloading initiated.");
     } else {
-      console.error("[Main] Cannot initialize AudioManager: SceneManager camera not ready.");
+    console.error("[Main] Cannot initialize AudioManager: SceneManager camera not ready.");
     }
 
-    // Initialize environmental objects AFTER scene and terrain are ready
+    // Initialize Collision System immediately after SceneManager/TerrainGenerator are ready
+    if (TerrainGenerator.isInitialized && TerrainGenerator.generationParams.width > 0) {
+        console.log('[Main] Initializing CollisionSystem & ObjectColliders...');
+        Game.collisionSystem = new CollisionSystem(
+            TerrainGenerator.generationParams.width,
+            TerrainGenerator.generationParams.height
+        );
+        Game.objectColliders = new ObjectColliders(Game.collisionSystem);
+        console.log('[Main] CollisionSystem & ObjectColliders initialized.');
+
+        // Now that colliders are ready, tell SceneManager to place objects
+        SceneManager.placeSceneObjects();
+
+    } else {
+        console.error("[Main] Cannot initialize CollisionSystem: TerrainGenerator not ready or dimensions unknown.");
+        // Handle this critical error? Maybe prevent further initialization?
+    }
+
+
+    // 5. Initialize Game AFTER network, scene, and base collision systems are ready
+    await Game.init(Network.socket);
+
+    // Initialize environmental objects AFTER scene, terrain, AND Game are ready
     if (TerrainGenerator.isInitialized && SceneManager.scene) {
       console.log("[Main] Initializing EnvironmentalObjectSystem...");
       const envSystem = new EnvironmentalObjectSystem(SceneManager.scene, TerrainGenerator);
       await envSystem.initialize(); // Call the async initialize method
+
+      // --- Register Colliders for Environmental Objects ---
+      if (Game.objectColliders && envSystem.isInitialized) {
+          console.log("[Main] Registering environmental object colliders...");
+          if (envSystem.instancedTrees) {
+              Game.objectColliders.registerTreeColliders(envSystem.instancedTrees);
+          } else {
+               console.warn("[Main] envSystem.instancedTrees not found after initialization.");
+          }
+          if (envSystem.instancedRocks) {
+              Game.objectColliders.registerRockColliders(envSystem.instancedRocks);
+          } else {
+               console.warn("[Main] envSystem.instancedRocks not found after initialization.");
+          }
+          console.log("[Main] Environmental object colliders registered.");
+      } else {
+          console.error("[Main] Cannot register environmental colliders: Game.objectColliders not ready or envSystem failed initialization.");
+      }
+      // --- End Collider Registration ---
+
       // No need to store envSystem globally unless other systems need it
     } else {
       console.error("[Main] Cannot initialize EnvironmentalObjectSystem: TerrainGenerator or Scene not ready.");
@@ -322,8 +366,7 @@ async function initializeGame() {
     console.log('[Network Stats]', stats);
   });
 
-  // 5. Initialize Game AFTER network and scene are ready
-  await Game.init(Network.socket);
+  // Game.init() moved earlier
 
   // Initialize HUD after game is initialized
   HUD.init();

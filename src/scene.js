@@ -7,6 +7,7 @@ import { TerrainGenerator } from './terrainGenerator.js'; // Import the terrain 
 import { BuildingPlacer } from './buildingPlacer.js'; // Import the building placer
 import { modelManager } from './ModelManager.js'; // Import the model manager
 import { WeaponSpawnManager } from './weaponSpawnManager.js'; // Import the weapon spawn manager
+import { Game } from './game.js'; // Import Game
 
 export const SceneManager = {
   scene: new THREE.Scene(),
@@ -90,20 +91,7 @@ export const SceneManager = {
     // Initialize WeaponSpawnManager after TerrainGenerator
     this.weaponSpawnManager = new WeaponSpawnManager(this, TerrainGenerator);
 
-    // Place buildings and spawn weapons after terrain is generated and models are loaded
-    if (this.terrainMesh && TerrainGenerator.isInitialized && modelManager.isLoaded) {
-        console.log("[SceneManager] Placing buildings...");
-        BuildingPlacer.placeBuildings(this.scene, TerrainGenerator, modelManager); // Pass modelManager
-
-        // Spawn weapon pickups using the manager
-        console.log("[SceneManager] Spawning weapon pickups...");
-        this.weaponSpawnManager.spawnWeapons(); // Use await if spawnWeapons becomes async
-
-    } else {
-        console.warn("[SceneManager] Skipping building placement and weapon spawning because terrain and/or models are not ready.");
-        if (!this.terrainMesh || !TerrainGenerator.isInitialized) console.warn(" - Terrain not ready.");
-        if (!modelManager.isLoaded) console.warn(" - Models not loaded.");
-    }
+    // REMOVED building/weapon placement from init - it's now handled by placeSceneObjects()
 
     // Set initial camera position (adjust Y based on terrain height if needed later)
     this.camera.position.set(0, 20, 10); // Increased Y slightly for better view
@@ -115,6 +103,29 @@ export const SceneManager = {
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     });
+  },
+
+  // New method to place objects after collision system is ready
+  placeSceneObjects() {
+    // Place buildings and spawn weapons after terrain is generated and models are loaded
+    if (this.terrainMesh && TerrainGenerator.isInitialized && modelManager.isLoaded) {
+        console.log("[SceneManager] Placing buildings...");
+        // Pass Game.objectColliders to BuildingPlacer (Use imported Game)
+        if (Game.objectColliders) {
+             BuildingPlacer.placeBuildings(this.scene, TerrainGenerator, modelManager, Game.objectColliders); // Use imported Game
+        } else {
+            console.error("[SceneManager] Cannot place buildings: Game.objectColliders not available."); // This should not happen if called correctly from main.js
+        }
+
+        // Spawn weapon pickups using the manager
+        console.log("[SceneManager] Spawning weapon pickups...");
+        this.weaponSpawnManager.spawnWeapons(); // Use await if spawnWeapons becomes async
+
+    } else {
+        console.warn("[SceneManager] Skipping building placement and weapon spawning because terrain and/or models are not ready.");
+        if (!this.terrainMesh || !TerrainGenerator.isInitialized) console.warn(" - Terrain not ready.");
+        if (!modelManager.isLoaded) console.warn(" - Models not loaded.");
+    }
   },
 
   add(object) {

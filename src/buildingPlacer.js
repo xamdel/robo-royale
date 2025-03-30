@@ -43,11 +43,20 @@ const LARGE_BUILDING_ZONE_RADIUS = 120;
 // Small buildings will be placed outside the large building zone
 
 export const BuildingPlacer = {
-  // Add modelManager to the parameters
-  placeBuildings: (scene, terrainGenerator, modelManager, maxBuildings = 500, placementAttemptsMultiplier = 4) => {
+  // Add modelManager and objectColliders to the parameters
+  placeBuildings: (scene, terrainGenerator, modelManager, objectColliders, maxBuildings = 500, placementAttemptsMultiplier = 4) => {
     if (!terrainGenerator || !terrainGenerator.isInitialized) {
       console.error("[BuildingPlacer] TerrainGenerator not initialized.");
       return;
+    }
+    if (!modelManager || !modelManager.isLoaded) {
+        console.error("[BuildingPlacer] ModelManager not initialized or models not loaded.");
+        return;
+    }
+    // Add check for objectColliders
+    if (!objectColliders) {
+        console.error("[BuildingPlacer] ObjectColliders instance not provided.");
+        return { roads: null }; // Return empty object or handle error appropriately
     }
     if (!modelManager || !modelManager.isLoaded) {
         console.error("[BuildingPlacer] ModelManager not initialized or models not loaded.");
@@ -270,6 +279,13 @@ export const BuildingPlacer = {
 
                 // Add the cloned building directly to the scene
                 scene.add(clonedBuilding);
+
+                // --- Register Building Collider ---
+                if (objectColliders) {
+                    objectColliders.registerBuildingCollider(clonedBuilding, category);
+                }
+                // --- End Collider Registration ---
+
 
                 // Mark cell as occupied and increment counts
                 occupiedCells.add(cellKey);

@@ -74,30 +74,70 @@ class ProjectileController {
     });
   }
 
-  update(deltaTime) {
+  // Modified update to accept collisionSystem
+  update(deltaTime, collisionSystem) {
     const activeProjectiles = this.projectileManager.getAllProjectiles();
     const updatedProjectiles = [];
     const destroyedProjectiles = [];
-    
+    // Destructure Vec3 (it's already required at the top level, but ensure consistency if needed)
+    const { Vec3 } = require('../game/server-collision'); // Correctly destructure Vec3
+
     // Process each active projectile
     for (const projectile of activeProjectiles) {
       // Skip inactive projectiles
       if (!projectile.active) continue;
       
-      // Update projectile position
+      // Store previous position
+      const prevPos = projectile.prevPosition ? new Vec3(projectile.prevPosition.x, projectile.prevPosition.y, projectile.prevPosition.z) : new Vec3(projectile.position.x, projectile.position.y, projectile.position.z);
+
+      // Update projectile position logically
       const updateResult = projectile.update(deltaTime);
-      
-      // If projectile is still active after update
+      const currentPos = new Vec3(projectile.position.x, projectile.position.y, projectile.position.z); // Use Vec3
+
+      // --- Environment Collision Check ---
+      let environmentHit = null;
+      const moveVector = currentPos.clone().sub(prevPos);
+      const moveDistance = Math.sqrt(moveVector.lengthSq());
+
+      if (moveDistance > 0.001 && collisionSystem) {
+          const moveDirection = moveVector.clone().normalize();
+          environmentHit = collisionSystem.raycast(prevPos, moveDirection, moveDistance);
+
+          // Filter out hits against players if raycast returns them (it shouldn't based on current plan)
+          if (environmentHit && (environmentHit.objectType === 'tree' || environmentHit.objectType === 'rock' || environmentHit.objectType === 'building')) {
+               console.log(`[Server] Projectile ${projectile.id} hit environment object ${environmentHit.objectId} (${environmentHit.objectType})`);
+               // Set position to hit point
+               projectile.position = { x: environmentHit.point.x, y: environmentHit.point.y, z: environmentHit.point.z };
+               projectile.active = false; // Deactivate
+
+               destroyedProjectiles.push({
+                   id: projectile.id,
+                   position: projectile.position, // Send final hit position
+                   reason: 'environmentHit',
+                   objectType: environmentHit.objectType // Optionally send what was hit
+               });
+               this.projectileManager.removeProjectile(projectile.id);
+               continue; // Skip player collision check for this projectile
+          } else if (environmentHit) {
+              // Log if raycast hit something unexpected (like another projectile?)
+              console.warn(`[Server] Projectile raycast hit unexpected object type: ${environmentHit.objectType}`);
+          }
+      }
+      // --- End Environment Collision Check ---
+
+
+      // If projectile is still active after update and environment check
       if (projectile.active) {
         updatedProjectiles.push({
           id: projectile.id,
-          position: projectile.position,
+          position: projectile.position, // Send updated position
           weaponType: projectile.weaponType
         });
-        
-        // Check for collisions with players
-        this.checkProjectileCollisions(projectile);
-      } else {
+
+        // Check for collisions with players ONLY if no environment hit
+        this.checkProjectileCollisions(projectile); // This method handles deactivation on player hit
+
+      } else if (!environmentHit) { // Only add to destroyed if not already handled by environment hit
         // Projectile was deactivated during update (max distance/lifetime)
         destroyedProjectiles.push({
           id: projectile.id,

@@ -1,6 +1,7 @@
 const { PlayerManager } = require('../models/player');
 const ValidationService = require('../services/validation');
 const gameConfig = require('../config/game-config');
+const { Vec3 } = require('../game/server-collision'); // Correctly destructure Vec3
 
 class PlayerController {
   constructor(io, gameLoop) {
@@ -58,11 +59,43 @@ class PlayerController {
         return;
       }
 
-      // Validate movement
-      if (ValidationService.isValidMovement(player.position, data.position)) {
-        player.updatePosition(data, data.inputId);
+      // --- Server-Side Collision Check & Resolution ---
+      const collisionSystem = this.gameLoop.collisionSystem;
+      const playerRadius = gameConfig.PLAYER_CONFIG.radius || 1.0; // Get radius from config or default
+
+      // Convert positions to Vec3 for collision system
+      const currentPosVec3 = new Vec3(player.position.x, player.position.y, player.position.z);
+      const desiredPosVec3 = new Vec3(data.position.x, data.position.y, data.position.z);
+
+      // Check for collisions at the desired position
+      const collisions = collisionSystem.checkPlayerCollision(desiredPosVec3, playerRadius);
+
+      // Resolve collisions if necessary (modifies desiredPosVec3)
+      if (collisions.length > 0) {
+          collisionSystem.resolvePlayerCollision(
+              currentPosVec3,
+              desiredPosVec3,
+              playerRadius,
+              collisions
+          );
+      }
+
+      // Convert resolved position back to plain object for validation/update
+      const resolvedPositionObject = { x: desiredPosVec3.x, y: desiredPosVec3.y, z: desiredPosVec3.z };
+      // --- End Collision Check & Resolution ---
+
+
+      // Validate movement using the *resolved* position
+      if (ValidationService.isValidMovement(player.position, resolvedPositionObject)) {
+         // Update player position using the *resolved* position
+         // We need to modify the 'data' object or create a new one
+         const updateData = {
+             ...data, // Copy original data (like inputId, rotation, input state)
+             position: resolvedPositionObject // Use the resolved position
+         };
+        player.updatePosition(updateData, data.inputId); // Pass modified data
       } else {
-        // If invalid movement, force client position reset
+        // If invalid movement *after* collision resolution, force client position reset
         socket.emit('positionCorrection', {
           position: player.position,
           rotation: player.rotation

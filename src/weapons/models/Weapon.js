@@ -301,7 +301,8 @@ export class Weapon {
     projectile.prevPosition = position.clone();
     projectile.maxDistance = projectileConfig.maxDistance;
     projectile.sourceWeapon = this;
-    
+    projectile.active = true; // Mark as active initially
+
     // Add userData for tracking
     projectile.userData = projectile.userData || {};
     
@@ -322,8 +323,40 @@ export class Weapon {
       }
     // } <-- This closing brace was incorrect and is removed.
 
+    // --- Initial Collision Check ---
+    let initialHit = null;
+    if (window.Game?.collisionSystem) {
+        // Raycast from spawn position along initial direction for a very small distance
+        // to catch immediate collisions (e.g., firing inside an object)
+        const immediateCheckDistance = 0.1; // Check just in front
+        initialHit = window.Game.collisionSystem.raycast(
+            position, // Use original fire position for check
+            direction,
+            immediateCheckDistance
+        );
+
+        if (initialHit) {
+            console.log(`[WEAPON] Projectile immediate collision detected with ${initialHit.objectType} ID: ${initialHit.objectId}`);
+            this.handleHit(initialHit.point); // Trigger hit effects at collision point
+            projectile.active = false; // Mark as inactive immediately
+            // Don't add to scene or projectiles set if it hits instantly
+            if (projectile.isMesh) {
+                 SceneManager.remove(projectile); // Remove visual if added
+            }
+            return projectile; // Return the inactive projectile
+        }
+    } else {
+        console.warn("[WEAPON] CollisionSystem not available for initial projectile check.");
+    }
+    // --- End Initial Collision Check ---
+
+
+    // If no initial hit, add to scene and active projectiles
+    if (projectile.isMesh) { // Only add visual meshes
+        SceneManager.add(projectile);
+    }
     this.projectiles.add(projectile);
-    // SceneManager.add(projectile); // Moved this up to only add visual meshes
+
 
     return projectile;
   }
@@ -365,10 +398,37 @@ export class Weapon {
     for (const projectile of this.projectiles) {
       // Store previous position for collision detection
       projectile.prevPosition.copy(projectile.position);
-      
-      // Update position
-      projectile.position.addScaledVector(projectile.velocity, deltaTime);
-      
+
+      // Calculate potential new position
+      const moveVector = projectile.velocity.clone().multiplyScalar(deltaTime);
+      const newPosition = projectile.position.clone().add(moveVector);
+      const moveDistance = moveVector.length();
+
+      // --- Collision Check Before Update ---
+      let collisionHit = null;
+      if (moveDistance > 0.001 && window.Game?.collisionSystem) { // Only check if moving significantly
+          const moveDirection = moveVector.clone().normalize();
+          collisionHit = window.Game.collisionSystem.raycast(
+              projectile.prevPosition, // Start ray from previous position
+              moveDirection,
+              moveDistance // Check only along the path segment for this frame
+          );
+      }
+      // --- End Collision Check ---
+
+      if (collisionHit) {
+          // Collision occurred!
+          // console.log(`[WEAPON] Projectile collision detected with ${collisionHit.objectType} ID: ${collisionHit.objectId}`);
+          projectile.position.copy(collisionHit.point); // Move projectile to hit point
+          this.handleHit(collisionHit.point); // Trigger hit effects
+          this.removeProjectile(projectile); // Remove the projectile
+          continue; // Skip rest of the update for this projectile
+      } else {
+          // No collision, update position normally
+          projectile.position.copy(newPosition);
+      }
+
+
       // If it's a rocket, handle flare effects and orientation
       if (projectile.isRocket) {
         // Handle initial flare effect timing
@@ -459,9 +519,13 @@ export class Weapon {
     SceneManager.remove(projectile);
   }
 
-  handleHit(position) {
+  handleHit(position, hitObjectType = null) { // Added optional hitObjectType
     // Create hit effects
+    // Customize effect based on what was hit?
     particleEffectSystem.addCollisionEffect(position, this.config.projectileConfig.color);
+
+    // TODO: Send hit confirmation to server? Or let server detect hits authoritatively?
+    // For now, client handles visual effect. Server should ideally validate hits.
   }
 
   isLocalPlayerWeapon() {

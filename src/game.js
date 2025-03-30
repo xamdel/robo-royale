@@ -10,9 +10,14 @@ import { Network } from './network.js';
 import { WeaponSpawnManager } from './weaponSpawnManager.js'; // Import WeaponSpawnManager
 import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGenerator
 import { HUD } from './hud/index.js';
+import { CollisionSystem } from './collision/CollisionSystem.js'; // Import CollisionSystem
+import { ObjectColliders } from './collision/ObjectColliders.js'; // Import ObjectColliders
+import { CylinderCollider, SphereCollider } from './collision/CollisionPrimitives.js'; // Import specific colliders
 
 export const Game = {
   player: null,
+  collisionSystem: null, // Add CollisionSystem instance
+  objectColliders: null, // Add ObjectColliders instance
   otherPlayers: {},
   moveForward: false,
   moveBackward: false,
@@ -103,17 +108,24 @@ export const Game = {
     console.log('[GAME] Weapon models preloaded successfully');
 
     // Add colliders to the local player's mesh
+    // Note: Using offset as the initial position relative to the player model origin.
+    // The CollisionSystem might need to update world positions based on player movement.
     this.player.colliders = {
-        body: new Collider('capsule', {
-            height: 4.0,
-            radius: 1,
-            offset: new THREE.Vector3(0, 2, 0)
-        }),
-        cabin: new Collider('sphere', {
-            radius: 0.7,
-            offset: new THREE.Vector3(0, 4, 0)
-        })
+        body: new CylinderCollider(
+            new THREE.Vector3(0, 0, 0), // Base position (offset will be handled by ObjectColliders/CollisionSystem)
+            1,  // radius
+            4.0 // height
+            // TODO: Verify how offset should be applied. Assuming ObjectColliders handles it.
+        ),
+        cabin: new SphereCollider(
+            new THREE.Vector3(0, 4, 0), // Center position (using offset directly for sphere center)
+            0.7 // radius
+        )
     };
+    // Assign the offsets separately if needed by the system later
+    this.player.colliders.body.offset = new THREE.Vector3(0, 0, 0); // Cylinder base at origin
+    this.player.colliders.cabin.offset = new THREE.Vector3(0, 4, 0);
+
     this.mixer = playerData.mixer;
     this.actions = playerData.actions;
     this.currentAction = null;
@@ -153,6 +165,24 @@ export const Game = {
     // Initialize player stats for HUD
     this.health = this.maxHealth;
     
+    // Initialize Collision System (after TerrainGenerator is ready)
+    // NOTE: CollisionSystem and ObjectColliders are now initialized in main.js
+    //       and assigned to Game.collisionSystem and Game.objectColliders externally.
+    if (this.collisionSystem && this.objectColliders) {
+        console.log('[GAME] CollisionSystem and ObjectColliders already initialized by main.js.');
+        // TODO: Call registration methods AFTER objects are created
+        // Example placeholders (actual calls might be in main.js or scene.js):
+      // if (EnvironmentalObjectSystem.isInitialized) {
+      //   this.objectColliders.registerTreeColliders(EnvironmentalObjectSystem.instancedTrees);
+      //   this.objectColliders.registerRockColliders(EnvironmentalObjectSystem.instancedRocks);
+      // }
+      // Building registration would happen individually as they are placed.
+
+    } else {
+        console.error("[GAME] CollisionSystem or ObjectColliders not initialized by main.js before Game.init().");
+    }
+
+
     // Initialize HUD
     HUD.init();
     
@@ -487,18 +517,22 @@ export const Game = {
     const playerData = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions);
 
     // Add compound colliders
+    // Note: Using offset as the initial position relative to the player model origin.
     playerData.mesh.colliders = {
-      body: new Collider('capsule', {
-        height: 4.0,
-        radius: 1,
-        offset: new THREE.Vector3(0, 2, 0)
-      }),
-      cabin: new Collider('sphere', {
-        radius: 0.7,
-        offset: new THREE.Vector3(0, 4, 0)
-      })
+      body: new CylinderCollider(
+        new THREE.Vector3(0, 0, 0), // Base position
+        1,  // radius
+        4.0 // height
+      ),
+      cabin: new SphereCollider(
+        new THREE.Vector3(0, 4, 0), // Center position
+        0.7 // radius
+      )
     };
-    
+    // Assign the offsets separately
+    playerData.mesh.colliders.body.offset = new THREE.Vector3(0, 0, 0); // Cylinder base at origin
+    playerData.mesh.colliders.cabin.offset = new THREE.Vector3(0, 4, 0);
+
     // Store player ID on mesh for debugging
     playerData.mesh.playerId = id;
     playerData.mesh.isRemotePlayer = true;
@@ -640,19 +674,55 @@ export const Game = {
 
     const moveVector = this.applyInput(input, cameraDirections);
     let moved = false;
+    const playerCollisionRadius = 1.0; // Define player collision radius
 
     if (moveVector.lengthSq() > 0 && !this.isDead) {
-      moved = true;
-      this.player.position.add(moveVector);
-      // Adjust player height based on terrain
-      const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
-      this.player.position.setY(terrainHeight);
+        moved = true;
+        const currentPosition = this.player.position.clone();
+        const desiredPosition = currentPosition.add(moveVector);
+
+        // --- Collision Detection & Resolution ---
+        let finalPosition = desiredPosition;
+        if (this.collisionSystem) {
+            // 1. Check for collisions at the desired position
+            const collisions = this.collisionSystem.checkPlayerCollision(
+                desiredPosition,
+                playerCollisionRadius
+            );
+
+            // 2. Resolve collisions if any occurred
+            if (collisions.length > 0) {
+                // Resolve collisions using the original position and the desired position
+                // The function will modify desiredPosition if resolution occurs.
+                this.collisionSystem.resolvePlayerCollision(
+                    currentPosition, // Pass the position *before* movement
+                    desiredPosition, // Pass the desired position (will be modified)
+                    playerCollisionRadius,
+                    collisions
+                );
+                finalPosition = desiredPosition; // Use the (potentially modified) desired position
+                 // console.log(`[GAME] Collision detected. Original: ${currentPosition.add(moveVector).toArray()}, Resolved: ${finalPosition.toArray()}`);
+            }
+        } else {
+             console.warn("[GAME] CollisionSystem not initialized, skipping object collision check.");
+        }
+        // --- End Collision ---
+
+        // Apply the (potentially resolved) final position
+        this.player.position.copy(finalPosition);
+
+        // Adjust player height based on terrain AFTER resolving horizontal collisions
+        // TODO: Replace SceneManager.getTerrainHeight with TerrainGenerator.getTerrainInfo if available
+        const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
+        this.player.position.setY(terrainHeight); // Assuming player base should be on terrain
+
     } else if (!this.isDead) {
-      // Ensure player stays on terrain even when not moving (e.g., after respawn)
-      const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
-      if (Math.abs(this.player.position.y - terrainHeight) > 0.01) { // Add tolerance
-        this.player.position.setY(terrainHeight);
-      }
+        // Ensure player stays on terrain even when not moving
+        // TODO: Replace SceneManager.getTerrainHeight
+        const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
+        if (Math.abs(this.player.position.y - terrainHeight) > 0.01) { // Add tolerance
+            this.player.position.setY(terrainHeight);
+        }
     }
 
 
@@ -700,11 +770,12 @@ export const Game = {
   },
 };
 
-class Collider {
-  constructor(type, params) {
-    this.type = type; // 'capsule' or 'sphere'
-    this.params = params;
-    // For capsule: height, radius, offset
-    // For sphere: radius, offset
-  }
-}
+// Remove the old simple Collider class if it exists at the end of the file
+// class Collider {
+//   constructor(type, params) {
+//     this.type = type; // 'capsule' or 'sphere'
+//     this.params = params;
+//     // For capsule: height, radius, offset
+//     // For sphere: radius, offset
+//   }
+// }
