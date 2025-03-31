@@ -2,9 +2,10 @@ import { elements } from './elements.js';
 import { weaponSystem } from '../weapons/index.js'; // Need weaponSystem to check mount availability
 
 // --- Context Menu State ---
-let contextMenuElement = null;
-let currentContextMenuTarget = null; // { id, type, model, distance }
-let highlightedMountId = null;
+let contextMenuElement = null; // For desktop radial menu
+let mobileMountSelectorElement = null; // For mobile grid menu
+let currentContextMenuTarget = null; // { id, type, model, distance } - Shared state
+let highlightedMountId = null; // For desktop radial menu highlight
 let mousePosition = { x: 0, y: 0 };
 
 // --- Mouse Tracking ---
@@ -35,12 +36,27 @@ function createContextMenuElement() {
   contextMenuElement.style.display = 'none'; // Initially hidden
   // contextMenuElement.style.pointerEvents = 'none'; // Container is non-interactive, quadrants are
   contextMenuElement.style.zIndex = '2000';
-  document.body.appendChild(contextMenuElement); // Append to body to overlay everything
-  console.log("[HUD ContextMenu] Context menu element created.");
+  document.body.appendChild(contextMenuElement);
+  console.log("[HUD ContextMenu] Desktop context menu element created.");
 }
 
-function updateContextMenuHighlight() {
-  if (!contextMenuElement || contextMenuElement.style.display === 'none') return;
+// Create the mobile grid selector element
+function createMobileMountSelectorElement() {
+    if (mobileMountSelectorElement) return;
+
+    mobileMountSelectorElement = document.createElement('div');
+    mobileMountSelectorElement.id = 'mobile-mount-selector';
+    mobileMountSelectorElement.style.position = 'absolute';
+    mobileMountSelectorElement.style.display = 'none'; // Initially hidden
+    mobileMountSelectorElement.style.zIndex = '2100'; // Ensure it's above other HUD elements
+    document.body.appendChild(mobileMountSelectorElement);
+    console.log("[HUD ContextMenu] Mobile mount selector element created.");
+}
+
+
+// --- Desktop Radial Menu Highlighting ---
+function updateContextMenuHighlight() { // Only used for desktop now
+  if (!contextMenuElement || contextMenuElement.style.display === 'none') return null; // Return null if not applicable
 
   const menuRect = contextMenuElement.getBoundingClientRect();
   const centerX = menuRect.left + menuRect.width / 2;
@@ -95,41 +111,52 @@ function updateContextMenuHighlight() {
     }
   });
    // console.log("[HUD ContextMenu] Highlighted Mount ID:", highlightedMountId); // Debug
-}
+   return highlightedMountId; // Return the ID for the manager
+  } // Closing brace for updateContextMenuHighlight
+// Removed extra closing brace here
 
 
 // --- Exported Functions ---
-// Modified to accept all mounts and display current weapon if occupied
-export function showWeaponContextMenu(position, allMounts, pickupInfo) {
-  console.log("[HUD ContextMenu] Showing context menu for:", pickupInfo.type, "All mounts:", allMounts.map(m => m.id ? `${m.id}(${m.getWeapon()?.type || 'empty'})` : 'unknown'));
-  if (!contextMenuElement) {
-    createContextMenuElement();
+// Shows either the desktop radial menu or the mobile grid selector
+export function showWeaponContextMenu(position, allMounts, pickupInfo, isMobile = false) {
+  console.log(`[HUD] Showing weapon selection UI (Mobile: ${isMobile}) for:`, pickupInfo.type);
+
+  currentContextMenuTarget = pickupInfo; // Store the weapon info being picked up
+
+  if (isMobile) {
+    showMobileMountSelector(allMounts, pickupInfo);
+  } else {
+    showDesktopContextMenu(position, allMounts, pickupInfo);
   }
+}
 
-  currentContextMenuTarget = pickupInfo;
-  highlightedMountId = null; // Reset highlight
+// --- Desktop Radial Menu Logic ---
+function showDesktopContextMenu(position, allMounts, pickupInfo) {
+    if (!contextMenuElement) {
+        createContextMenuElement();
+    }
+    highlightedMountId = null; // Reset highlight for desktop
 
-  // Position the menu near the mouse cursor
-  // Use last known mouse position as fallback if position is null
-  const menuSize = 220; // Updated size from CSS
-  const menuX = (position?.x ?? mousePosition.x) - menuSize / 2; // Center horizontally
-  const menuY = (position?.y ?? mousePosition.y) - menuSize / 2; // Center vertically
-  contextMenuElement.style.left = `${menuX}px`;
-  contextMenuElement.style.top = `${menuY}px`;
+    // Position near mouse cursor
+    const menuSize = 220; // Desktop size
+    const menuX = (position?.x ?? mousePosition.x) - menuSize / 2;
+    const menuY = (position?.y ?? mousePosition.y) - menuSize / 2;
+    contextMenuElement.style.left = `${Math.max(0, Math.min(window.innerWidth - menuSize, menuX))}px`;
+    contextMenuElement.style.top = `${Math.max(0, Math.min(window.innerHeight - menuSize, menuY))}px`;
 
-  // Clear previous quadrants
-  contextMenuElement.innerHTML = '';
+    // Clear previous content
+    contextMenuElement.innerHTML = '';
+    contextMenuElement.classList.remove('mobile-context-menu'); // Ensure mobile class is absent
 
-  // Define quadrants (shoulders on top, arms on bottom)
-  const quadrantMap = {
-    rightShoulder: { name: 'R Shoulder' },
-    leftShoulder:  { name: 'L Shoulder' },
-    rightArm:      { name: 'R Arm' },
-    leftArm:       { name: 'L Arm' }
-  };
-
-  // Create quadrants based on all mounts, indicating occupied status
-  const allMountsMap = new Map(allMounts.map(m => [m.id, m]));
+    // Define quadrants (Using the one defined outside the function scope is intended, removing duplicate)
+    const quadrantMap = {
+        rightShoulder: { name: 'R Shoulder' },
+        leftShoulder:  { name: 'L Shoulder' },
+        rightArm:      { name: 'R Arm' },
+        leftArm:       { name: 'L Arm' }
+    };
+    // Create quadrants
+    const allMountsMap = new Map(allMounts.map(m => [m.id, m]));
 
   for (const mountId in quadrantMap) {
     const quadrant = quadrantMap[mountId];
@@ -172,25 +199,126 @@ export function showWeaponContextMenu(position, allMounts, pickupInfo) {
   const centerText = document.createElement('div');
   centerText.className = 'context-menu-center';
   centerText.textContent = (pickupInfo.config?.displayName || pickupInfo.type).toUpperCase();
-  contextMenuElement.appendChild(centerText);
+    // contextMenuElement.appendChild(centerText); // Already appended above loop
 
-
-  contextMenuElement.style.display = 'block'; // Use block display (CSS handles quadrant positioning)
-  updateContextMenuHighlight(); // Initial highlight check
+    contextMenuElement.style.display = 'block';
+    updateContextMenuHighlight(); // Initial highlight check for desktop
 }
 
+// --- Mobile Grid Selector Logic ---
+function showMobileMountSelector(allMounts, pickupInfo) {
+    if (!mobileMountSelectorElement) {
+        createMobileMountSelectorElement();
+    }
+
+    // Center the grid on screen
+    const gridWidth = 240; // Adjust as needed via CSS
+    const gridHeight = 240; // Adjust as needed via CSS
+    mobileMountSelectorElement.style.left = `${(window.innerWidth - gridWidth) / 2}px`;
+    mobileMountSelectorElement.style.top = `${(window.innerHeight - gridHeight) / 2}px`;
+
+    // Clear previous content
+    mobileMountSelectorElement.innerHTML = '';
+
+    // Add title (weapon being picked up)
+    const title = document.createElement('div');
+    title.className = 'mount-selector-title';
+    title.textContent = `Equip ${pickupInfo.config?.displayName || pickupInfo.type}?`;
+    mobileMountSelectorElement.appendChild(title);
+
+    // Create 2x2 grid container
+    const gridContainer = document.createElement('div');
+    gridContainer.className = 'mount-selector-grid';
+    mobileMountSelectorElement.appendChild(gridContainer);
+
+    // Define grid order (matches visual layout)
+    const gridOrder = ['leftShoulder', 'rightShoulder', 'leftArm', 'rightArm'];
+    const mountMap = new Map(allMounts.map(m => [m.id, m]));
+
+    gridOrder.forEach(mountId => {
+        const mount = mountMap.get(mountId);
+        const cell = document.createElement('button'); // Use button for interaction
+        cell.className = 'mount-selector-cell';
+        cell.dataset.mountId = mountId;
+
+        let cellContent = '';
+        const mountNameMap = { // Simple mapping for display names
+             leftShoulder: 'L Shoulder', rightShoulder: 'R Shoulder',
+             leftArm: 'L Arm', rightArm: 'R Arm'
+        };
+        const mountDisplayName = mountNameMap[mountId] || mountId;
+
+        if (mount) {
+            const currentWeapon = mount.getWeapon();
+            cellContent = `<div class="mount-name">${mountDisplayName}</div>`;
+            if (currentWeapon) {
+                cellContent += `<div class="current-weapon">${currentWeapon.config.displayName || currentWeapon.type}</div>`;
+                cell.classList.add('occupied');
+            } else {
+                cellContent += `<div class="current-weapon">(Empty)</div>`;
+                cell.classList.add('available');
+            }
+        } else {
+            cellContent = `<div class="mount-name">${mountDisplayName}</div><div class="current-weapon">N/A</div>`;
+            cell.classList.add('unavailable');
+            cell.disabled = true; // Disable unavailable slots
+        }
+        cell.innerHTML = cellContent;
+
+        // Add event listener for tap/click
+        if (mount) { // Only add listener if mount exists
+             cell.addEventListener('click', () => handleMobileMountSelection(mountId));
+             // Use 'touchstart' for potentially faster response on mobile, but 'click' is more robust
+             // cell.addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileMountSelection(mountId); });
+        }
+
+        gridContainer.appendChild(cell);
+    });
+
+    // Add a cancel button
+    const cancelButton = document.createElement('button');
+    cancelButton.className = 'mount-selector-cancel';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', hideWeaponContextMenu); // Reuse hide function
+    mobileMountSelectorElement.appendChild(cancelButton);
+
+
+    mobileMountSelectorElement.style.display = 'flex'; // Use flex for column layout
+}
+
+// Handles the tap on a mobile grid cell
+function handleMobileMountSelection(mountId) {
+    console.log(`[HUD] Mobile mount selected: ${mountId}`);
+    hideWeaponContextMenu(); // Hide the grid first
+
+    // Trigger the actual weapon equip logic (needs access to Game state)
+    if (window.Game && typeof window.Game.handleContextMenuSelection === 'function' && currentContextMenuTarget) {
+        window.Game.handleContextMenuSelection(mountId, currentContextMenuTarget); // Pass target weapon info
+    } else {
+        console.warn("[HUD] Game.handleContextMenuSelection function not found or target weapon missing.");
+    }
+}
+
+
+// --- Common Hide Function ---
 export function hideWeaponContextMenu() {
+  // Hide both potential menus
   if (contextMenuElement) {
     contextMenuElement.style.display = 'none';
   }
-  highlightedMountId = null;
-  currentContextMenuTarget = null;
-  console.log("[HUD ContextMenu] Context menu hidden.");
+  if (mobileMountSelectorElement) {
+      mobileMountSelectorElement.style.display = 'none';
+  }
+
+  highlightedMountId = null; // Reset desktop highlight state
+  currentContextMenuTarget = null; // Reset shared target state
+  console.log("[HUD] Weapon selection UI hidden.");
 }
 
+
+// --- Desktop-Specific Function ---
 export function getSelectedMountFromContextMenu() {
-  // Return the ID that was last highlighted AND available
-  // highlightedMountId is already updated in updateContextMenuHighlight to only store available+targeted mounts
+  // Return the ID that was last highlighted
   console.log("[HUD ContextMenu] Returning selected mount:", highlightedMountId);
   return highlightedMountId;
 }

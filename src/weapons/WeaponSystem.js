@@ -668,43 +668,58 @@ export class WeaponSystem {
         const mobileInput = MobileControlsManager.getInputState(); // Get fresh state
 
         // --- Firing ---
-        // Set firing state based on mobile buttons (overrides mouse/key if active)
-        // Note: This assumes continuous firing while button is held.
-        // If tap-to-fire is desired, logic needs adjustment here and in TouchButton.
-        this.isFiringPrimary = mobileInput.buttonStates.firePrimary || this.isFiringPrimary; // Allow mouse/key to also trigger
-        this.isFiringSecondary = mobileInput.buttonStates.fireSecondary || this.isFiringSecondary;
+        // Determine combined firing state from keyboard/mouse AND mobile buttons
+        const firePrimaryPressed = this.isFiringPrimary || mobileInput.buttonStates.firePrimary || mobileInput.buttonStates.firePrimaryLeft;
+        const fireSecondaryPressed = this.isFiringSecondary || mobileInput.buttonStates.fireSecondary || mobileInput.buttonStates.fireSecondaryLeft;
 
-        // Handle gatling spin-up/down based on mobile button state changes
+        // Handle gatling spin-up/down based on combined state
         const primaryWeapon = this.getSelectedWeapon('primary');
         if (primaryWeapon?.type === 'gatling') {
-            if (mobileInput.buttonStates.firePrimary && !primaryWeapon.isFiringSequenceActive) {
+            if (firePrimaryPressed && !primaryWeapon.isFiringSequenceActive) {
                 primaryWeapon.startFiringSequence();
-            } else if (!mobileInput.buttonStates.firePrimary && primaryWeapon.isFiringSequenceActive && !this.isFiringPrimary /* Check if mouse isn't firing */) {
+            } else if (!firePrimaryPressed && primaryWeapon.isFiringSequenceActive) {
                  primaryWeapon.stopFiringSequence();
             }
         }
         const secondaryWeapon = this.getSelectedWeapon('secondary');
          if (secondaryWeapon?.type === 'gatling') {
-            if (mobileInput.buttonStates.fireSecondary && !secondaryWeapon.isFiringSequenceActive) {
+            if (fireSecondaryPressed && !secondaryWeapon.isFiringSequenceActive) {
                 secondaryWeapon.startFiringSequence();
-            } else if (!mobileInput.buttonStates.fireSecondary && secondaryWeapon.isFiringSequenceActive && !this.isFiringSecondary /* Check if key isn't firing */) {
+            } else if (!fireSecondaryPressed && secondaryWeapon.isFiringSequenceActive) {
                  secondaryWeapon.stopFiringSequence();
             }
         }
 
-
-        // --- Swapping ---
-        // Trigger swap only on the frame the button becomes pressed
-        if (mobileInput.buttonStates.swapPrimary && !this.wasSwapPrimaryPressed) {
-            this.cyclePrimaryWeapon('next'); // Or determine direction if needed
+        // Handle continuous firing for non-gatling based on combined state
+        if (firePrimaryPressed && primaryWeapon && primaryWeapon.type !== 'gatling') {
+            this.fireWeaponByControl('mouse0'); // Use existing control key logic
         }
-        if (mobileInput.buttonStates.swapSecondary && !this.wasSwapSecondaryPressed) {
+        if (fireSecondaryPressed && secondaryWeapon && secondaryWeapon.type !== 'gatling') {
+             this.fireWeaponByControl('keyR'); // Use existing control key logic
+        }
+
+
+        // --- Swapping (Using Widget Buttons) ---
+        // Trigger swap only on the frame the button becomes pressed
+        if (mobileInput.buttonStates.swapPrimary && !this.wasSwapPrimaryPressed) { // Check state from manager
+            this.cyclePrimaryWeapon('next');
+        }
+        if (mobileInput.buttonStates.swapSecondary && !this.wasSwapSecondaryPressed) { // Check state from manager
             this.cycleSecondaryWeapon();
         }
 
-        // Update previous swap button states for next frame
+        // Update previous swap button states for next frame's edge detection
         this.wasSwapPrimaryPressed = mobileInput.buttonStates.swapPrimary;
         this.wasSwapSecondaryPressed = mobileInput.buttonStates.swapSecondary;
+
+        // Reset the swap button states in the manager immediately after processing tap
+        // (Ensures it only triggers once per press)
+        if (MobileControlsManager.buttonStates.swapPrimary) {
+             MobileControlsManager.buttonStates.swapPrimary = false;
+        }
+         if (MobileControlsManager.buttonStates.swapSecondary) {
+             MobileControlsManager.buttonStates.swapSecondary = false;
+        }
 
         // TODO: Handle other mobile buttons like interact, jump if added
     }

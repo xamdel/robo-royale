@@ -1017,3 +1017,378 @@
 .item-badge-stats span {
   margin: 0 calc(3px * var(--hud-scale));
 }
+
+
+/* --- Platform Specific Visibility --- */
+
+/* Hide mobile controls container on desktop */
+body.desktop-device #mobile-controls-container {
+  display: none !important;
+}
+
+/* Hide standard HUD elements on touch devices, except health/scanner */
+body.touch-device #mech-hud > *:not(#mobile-controls-container):not(.health-container):not(.scanner-container) {
+  display: none !important;
+}
+
+/* Ensure mobile controls container is visible only on touch devices */
+body.touch-device #mobile-controls-container {
+    display: block; /* Make the container visible */
+}
+/* Ensure individual mobile controls are visible (redundant but safe) */
+body.touch-device .mobile-control-zone,
+body.touch-device .mobile-touch-button,
+body.touch-device .mobile-weapon-widget {
+    display: flex !important; /* Use flex for buttons/widgets */
+}
+body.touch-device .joystick-zone,
+body.touch-device .look-area-zone {
+    display: block !important; /* Joysticks are block */
+}
+
+
+/* --- Mobile HUD Element Adjustments --- */
+
+/* Health Bar (Top Left) */
+body.touch-device .health-container {
+    position: absolute; /* Ensure absolute positioning */
+    top: calc(15px * var(--hud-scale));
+    left: calc(15px * var(--hud-scale));
+    bottom: auto; /* Override bottom positioning */
+    transform: none; /* Reset transform */
+    width: calc(250px * var(--hud-scale)); /* Adjust width as needed */
+    height: calc(40px * var(--hud-scale)); /* Adjust height */
+    padding: calc(6px * var(--hud-scale));
+    z-index: 1150; /* Ensure it's above mobile controls container */
+}
+body.touch-device .health-container .status-icon {
+    width: calc(30px * var(--hud-scale));
+    height: calc(30px * var(--hud-scale));
+}
+body.touch-device .health-container .bar-wrapper {
+    height: calc(20px * var(--hud-scale));
+}
+body.touch-device .health-container .health-percent {
+    font-size: calc(14px * var(--hud-scale));
+}
+
+/* Radar/Scanner (Top Right) */
+body.touch-device .scanner-container.top-left { /* Selector might need adjustment if class changes */
+    position: absolute; /* Ensure absolute positioning */
+    top: calc(15px * var(--hud-scale));
+    right: calc(15px * var(--hud-scale));
+    left: auto; /* Override left positioning */
+    transform: none; /* Reset transform */
+    z-index: 1150; /* Ensure it's above mobile controls container */
+}
+body.touch-device .scanner-display {
+    width: calc(80px * var(--hud-scale)); /* Adjust size */
+    height: calc(80px * var(--hud-scale));
+}
+body.touch-device .scanner-label {
+    font-size: calc(8px * var(--hud-scale));
+}
+body.touch-device .player-indicator {
+    width: calc(6px * var(--hud-scale));
+    height: calc(6px * var(--hud-scale));
+    margin-left: calc(-3px * var(--hud-scale));
+    margin-top: calc(-3px * var(--hud-scale));
+}
+body.touch-device .enemy-indicator {
+    width: calc(5px * var(--hud-scale));
+    height: calc(5px * var(--hud-scale));
+    margin-left: calc(-2.5px * var(--hud-scale));
+    margin-top: calc(-2.5px * var(--hud-scale));
+}
+
+
+/* --- Mobile Control Styles (from MobileControlsManager.js) --- */
+/* These styles are now defined directly here */
+
+.mobile-control-zone {
+    position: absolute;
+    /* background-color: rgba(255, 0, 0, 0.1); */ /* Debug: Shows zone */
+    box-sizing: border-box;
+    pointer-events: none; /* Zones don't capture events unless styled otherwise */
+}
+
+/* --- Joysticks --- */
+.joystick-zone, .look-area-zone {
+    bottom: 30px; /* Consistent bottom margin */
+    width: 160px; /* Slightly larger */
+    height: 160px;
+    background-color: rgba(0, 20, 40, 0.3);
+    border: 2px solid var(--hud-primary-color);
+    border-radius: 50%;
+    box-shadow: var(--hud-glow);
+    pointer-events: auto; /* Allow touch */
+    z-index: 1110; /* Below buttons/widgets */
+}
+.joystick-zone { left: 30px; }
+.look-area-zone { right: 30px; }
+
+.joystick-stick {
+    width: 70px; /* Larger stick */
+    height: 70px;
+    background-color: rgba(0, 170, 255, 0.5);
+    border: 2px solid rgba(0, 170, 255, 0.8);
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(0, 170, 255, 0.4);
+    position: absolute; /* Positioned by JS */
+    transform: translate(-50%, -50%); /* Center based on top/left */
+    pointer-events: none; /* Stick itself doesn't capture events */
+}
+/* No separate stick needed for look area, it's the whole zone */
+
+/* --- Buttons --- */
+.mobile-touch-button {
+    position: absolute;
+    background-color: rgba(0, 40, 80, 0.6);
+    border: 2px solid var(--hud-primary-color);
+    border-radius: 50%; /* Default to circular */
+    color: var(--hud-primary-color);
+    font-family: 'Orbitron', 'Roboto Mono', monospace;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: var(--hud-glow);
+    text-transform: uppercase;
+    pointer-events: auto; /* Buttons are interactive */
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: background-color 0.1s ease, transform 0.05s ease;
+    z-index: 1120; /* Above joysticks */
+}
+.mobile-touch-button:active { /* Visual feedback on press */
+    background-color: rgba(0, 170, 255, 0.7);
+    transform: scale(0.95);
+}
+
+/* Fire Buttons (Above Movement Joystick) */
+.fire-button {
+    width: 75px;
+    height: 75px;
+    font-size: 12px;
+    left: 110px; /* Position relative to joystick center */
+    /* transform: translateX(-50%); */ /* Removed, position directly */
+}
+#fire-primary-left-button { bottom: 200px; } /* Adjusted position */
+#fire-secondary-left-button { bottom: 115px; } /* Spaced out */
+
+/* Pickup Button (Lower Left of Aiming Joystick) */
+.pickup-button {
+    width: 70px;
+    height: 70px;
+    font-size: 11px;
+    bottom: 40px; /* Align near joystick bottom */
+    right: 200px; /* Left of aiming joystick */
+    background-color: rgba(0, 80, 40, 0.6); /* Greenish tint */
+    border-color: rgba(0, 200, 100, 0.8);
+}
+.pickup-button:active {
+     background-color: rgba(0, 200, 100, 0.8);
+}
+
+/* Leaderboard Button (Under Radar - Top Right) */
+.leaderboard-toggle {
+    top: 105px; /* Position below radar */
+    right: 25px; /* Align near radar */
+    width: 60px;
+    height: 40px;
+    font-size: 14px;
+    border-radius: 5px; /* Rectangular */
+}
+
+/* --- Weapon Widgets (Above Aiming Joystick) --- */
+.mobile-weapon-widget {
+    position: absolute;
+    right: 30px; /* Align with aiming joystick */
+    width: 180px; /* Wider */
+    height: 55px;
+    background-color: rgba(0, 20, 40, 0.5);
+    border: 2px solid var(--hud-primary-color);
+    border-radius: 8px;
+    padding: 5px 8px;
+    box-shadow: var(--hud-glow);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    pointer-events: auto; /* Allow interaction */
+    z-index: 1120; /* Above joysticks */
+}
+#primary-swap-widget { bottom: 260px; } /* Positioned higher */
+#secondary-swap-widget { bottom: 195px; }
+
+.widget-info {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    color: #eee;
+    overflow: hidden;
+    pointer-events: none;
+}
+.widget-name {
+    font-size: 13px;
+    color: var(--hud-primary-color);
+    margin-bottom: 2px;
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.widget-ammo {
+    font-size: 11px;
+    font-family: 'Roboto Mono', monospace;
+}
+.widget-cooldown {
+    height: 5px;
+    background-color: rgba(0, 0, 0, 0.5);
+    margin-top: 3px;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.widget-cooldown-bar {
+    height: 100%;
+    width: 0%; /* Updated dynamically */
+    background-color: var(--hud-primary-color);
+    transition: width 0.1s linear, background-color 0.1s linear;
+}
+
+.swap-widget-button {
+    position: relative; /* Reset position for flex layout */
+    width: 45px;
+    height: 45px;
+    flex-shrink: 0;
+    font-size: 22px; /* Larger icon */
+    padding: 0;
+    border-radius: 5px; /* Match widget */
+    z-index: 1121; /* Ensure button is clickable */
+}
+
+
+/* --- Mobile Mount Selector Grid --- */
+#mobile-mount-selector {
+  position: absolute; /* Positioned by JS */
+  display: none; /* Hidden by default */
+  flex-direction: column;
+  align-items: center;
+  background-color: rgba(10, 30, 50, 0.9);
+  border: 2px solid var(--hud-primary-color);
+  border-radius: 10px;
+  padding: 15px;
+  box-shadow: 0 0 15px rgba(0, 170, 255, 0.5);
+  width: 260px; /* Fixed width */
+  z-index: 2100;
+  font-family: 'Orbitron', 'Roboto Mono', monospace;
+  color: #eee;
+}
+
+.mount-selector-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--hud-primary-color);
+  margin-bottom: 15px;
+  text-align: center;
+  text-shadow: var(--hud-glow);
+}
+
+.mount-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 15px;
+}
+
+.mount-selector-cell {
+  background-color: rgba(0, 40, 80, 0.7);
+  border: 1px solid var(--hud-primary-color);
+  border-radius: 5px;
+  padding: 10px;
+  text-align: center;
+  color: #eee;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 60px; /* Ensure decent tap area */
+}
+
+.mount-selector-cell:hover:not(:disabled) {
+  background-color: rgba(0, 60, 120, 0.8);
+}
+.mount-selector-cell:active:not(:disabled) {
+  background-color: rgba(0, 80, 150, 0.9);
+  transform: scale(0.98);
+}
+
+
+.mount-selector-cell .mount-name {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--hud-primary-color);
+  margin-bottom: 4px;
+}
+
+.mount-selector-cell .current-weapon {
+  font-size: 11px;
+  color: #ccc;
+}
+
+.mount-selector-cell.occupied .current-weapon {
+  color: #eee; /* Make occupied weapon name clearer */
+}
+
+.mount-selector-cell.available .current-weapon {
+  color: #888; /* Dim empty slot text */
+  font-style: italic;
+}
+
+.mount-selector-cell.unavailable {
+  opacity: 0.5;
+  cursor: default;
+}
+.mount-selector-cell.unavailable .mount-name {
+  color: #aaa;
+}
+.mount-selector-cell.unavailable .current-weapon {
+  color: #777;
+}
+
+
+.mount-selector-cancel {
+  background-color: rgba(100, 0, 0, 0.7);
+  border: 1px solid var(--hud-danger-color);
+  color: #eee;
+  padding: 8px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 14px;
+  font-weight: bold;
+  width: 50%;
+  align-self: center;
+}
+
+.mount-selector-cancel:hover {
+  background-color: rgba(150, 0, 0, 0.8);
+}
+.mount-selector-cancel:active {
+  background-color: rgba(200, 0, 0, 0.9);
+  transform: scale(0.98);
+}
+
+
+/* Remove obsolete mobile radial menu styles */
+/* body.touch-device #weapon-context-menu { ... } */
+/* body.touch-device .context-menu-quadrant::before { ... } */
+/* body.touch-device .quadrant-label { ... } */
+/* body.touch-device .quadrant-weapon-name { ... } */
+/* body.touch-device .context-menu-center { ... } */

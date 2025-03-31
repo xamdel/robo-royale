@@ -28,13 +28,13 @@ export const Game = {
   weaponOrientationDebugger: null,
   weaponSpawnManager: null, // Add property for the manager
   killLog: [], // Added kill log array
-  
+
   // Player stats for HUD
   health: 200, // Initialize to maxHealth
   maxHealth: 200, // Updated to match the intended max health
   isDead: false,
   respawnPosition: new THREE.Vector3(0, 0, 0),
-  
+
   // Network and prediction properties
   inputBuffer: [],
   stateHistory: [],
@@ -43,15 +43,10 @@ export const Game = {
   networkUpdateRate: 60, // Updates per second
   lastNetworkUpdate: 0,
 
-  // State for 'E' key hold interaction
-  isHoldingE: false,
-  eKeyDownTime: 0,
-  pickupTarget: null, // Stores info about the pickup item being targeted { id, type, weaponType?, model, distance }
-  contextMenuActive: false,
-  eKeyHoldTimeout: null,
-  holdThreshold: 250, // ms to hold 'E' before context menu appears
-  isContextMenuActive: false, // Flag to disable camera controls
-  
+  // Pickup state
+  pickupTarget: null, // Stores info about the pickup item being targeted { id, type, weaponType?, model, distance, config? }
+  isContextMenuActive: false, // Flag to disable camera controls (still needed, set by MobileControlsManager)
+
   loadMechModel() {
     return new Promise((resolve) => {
       const loader = new GLTFLoader();
@@ -59,11 +54,11 @@ export const Game = {
         const model = gltf.scene;
         console.log('Loaded mech model with animations:', gltf.animations);
 
-        
+
         // Set up animations
         this.mixer = new THREE.AnimationMixer(model);
         this.actions = {};
-        
+
         gltf.animations.forEach((clip) => {
           const action = this.mixer.clipAction(clip);
           this.actions[clip.name] = action;
@@ -126,19 +121,19 @@ export const Game = {
     this.mixer = playerData.mixer;
     this.actions = playerData.actions;
     this.currentAction = null;
-    
-    // Initialize weapon system first
-    console.log('[GAME] Initializing weapon system...');
-    await weaponSystem.init(this.player);
-    
-    // Preload all weapon models
-    console.log('[GAME] Preloading weapon models...');
-    await weaponSystem.weaponFactory.preloadWeaponModels();
-    console.log('[GAME] Weapon models preloaded successfully');
+
+    // Initialize weapon system first (redundant call removed)
+    // console.log('[GAME] Initializing weapon system...');
+    // await weaponSystem.init(this.player);
+
+    // Preload all weapon models (redundant call removed)
+    // console.log('[GAME] Preloading weapon models...');
+    // await weaponSystem.weaponFactory.preloadWeaponModels();
+    // console.log('[GAME] Weapon models preloaded successfully');
 
     this.player.position.set(0, this.player.position.y, 0);
     this.previousPosition = this.player.position.clone();
-    
+
     // Add identifying properties to help with weapon parent checks
     this.player.isPlayerModel = true;
     this.player.name = "PlayerMech"; // Internal name, not display name
@@ -175,10 +170,10 @@ export const Game = {
 
     // Initialize player stats for HUD
     this.health = this.maxHealth;
-    
+
     // Initialize HUD
     HUD.init();
-    
+
     // Show welcome messages after a short delay
     setTimeout(() => {
       if (window.HUD) {
@@ -195,7 +190,7 @@ export const Game = {
       }
     }, 1000);
 
-    // Input handling
+    // Input handling (Keyboard - WASD, Shift)
     document.addEventListener('keydown', (event) => {
       switch (event.code) {
         case 'KeyW': this.moveForward = true; break;
@@ -204,13 +199,7 @@ export const Game = {
         case 'KeyD': this.moveRight = true; break;
         case 'ShiftLeft':
         case 'ShiftRight': this.isRunning = true; break;
-        
-        // Handle 'E' key down for pickup / context menu
-        case 'KeyE':
-          if (!this.isHoldingE) { // Prevent multiple triggers if held
-            this.handlePickupKeyDown();
-          }
-          break;
+        // Removed 'E' keydown handler
       }
     });
     document.addEventListener('keyup', (event) => {
@@ -221,205 +210,19 @@ export const Game = {
         case 'KeyD': this.moveRight = false; break;
         case 'ShiftLeft':
         case 'ShiftRight': this.isRunning = false; break;
-        
-        // Handle 'E' key release for pickup / context menu selection
-        case 'KeyE':
-          this.handlePickupKeyUp();
-          break;
+        // Removed 'E' keyup handler
       }
     });
-
   },
 
-  // Handles 'E' key down event
-  handlePickupKeyDown() {
-    // Log the state of the early exit conditions
-    // console.log(`[GAME.handlePickupKeyDown] Checking conditions: isDead=${this.isDead}, playerExists=${!!this.player}, spawnManagerExists=${!!this.weaponSpawnManager}, weaponSystemExists=${!!weaponSystem}`); // Removed log
-    if (this.isDead || !this.player || !this.weaponSpawnManager || !weaponSystem) {
-        // console.warn("[GAME.handlePickupKeyDown] Early exit triggered."); // Removed log
-        return;
-    }
-
-    this.isHoldingE = true;
-    this.eKeyDownTime = Date.now();
-    this.pickupTarget = null; // Reset target
-    this.contextMenuActive = false; // Reset menu state
-    clearTimeout(this.eKeyHoldTimeout); // Clear previous timeout
-
-    const playerWorldPos = new THREE.Vector3();
-    this.player.getWorldPosition(playerWorldPos);
-    // console.log(`[GAME.handlePickupKeyDown] Player world position:`, playerWorldPos.toArray()); // Removed log
-    const pickupRange = 4.0; // Increased pickup range
-    const nearestPickup = this.weaponSpawnManager.findNearestPickup(playerWorldPos, pickupRange);
-
-    if (nearestPickup) {
-      this.pickupTarget = nearestPickup;
-      console.log(`[GAME] Targeting pickup: Type=${this.pickupTarget.type}, ID=${this.pickupTarget.id}`);
-
-      // --- Show Item Badge ---
-      if (this.pickupTarget.model && SceneManager.camera && window.HUD?.showItemBadge) {
-        const screenPos = this.worldToScreen(this.pickupTarget.model.position, SceneManager.camera);
-        if (screenPos) {
-          // Pass relevant info (adjust based on actual pickupTarget structure)
-          const badgeInfo = {
-            type: this.pickupTarget.weaponType || this.pickupTarget.type, // Use weaponType if available
-            config: this.pickupTarget.config || {}, // Pass config if available
-            // Add other relevant stats if needed
-          };
-          window.HUD.showItemBadge(badgeInfo, screenPos);
-        } else {
-          window.HUD.hideItemBadge(); // Hide if off-screen
-        }
-      }
-      // ---------------------
-
-      // Set timeout to show context menu *only for weapons* if key is still held
-      if (this.pickupTarget.type === 'weapon') {
-        this.eKeyHoldTimeout = setTimeout(() => {
-          if (this.isHoldingE && this.pickupTarget && this.pickupTarget.type === 'weapon') { // Double check target is still valid weapon
-             console.log("[GAME] Hold threshold met for weapon, showing context menu.");
-             this.contextMenuActive = true; // This flag indicates the menu *should* be shown
-             this.isContextMenuActive = true; // This flag disables camera controls while menu is up
-           // Use standard document method to exit pointer lock
-           if (document.pointerLockElement === document.body) {
-             document.exitPointerLock(); 
-             console.log("[GAME] Exited PointerLock for context menu.");
-           }
-             if (window.HUD && window.HUD.showWeaponContextMenu) {
-               // Pass mouse position (or center screen?), ALL mounts, and pickup info
-              // For now, let's assume HUD centers it or uses mouse pos internally
-              // Hide item badge before showing context menu
-              if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
-
-              const allMounts = weaponSystem.mountManager.getAllMounts(); // Get all mounts
-              window.HUD.showWeaponContextMenu(null, allMounts, this.pickupTarget); // Pass all mounts
-            } else {
-               console.error("[GAME] HUD or showWeaponContextMenu not available!");
-            }
-          }
-        }, this.holdThreshold);
-      } else if (this.pickupTarget.type === 'ammo') {
-        console.log(`[GAME] Targeting pickup: Type=ammo, ID=${this.pickupTarget.id}`);
-        // No context menu for ammo boxes
-      }
-    } else {
-       console.log("[GAME] 'E' pressed, but no pickups nearby.");
-       // No target, so key hold won't do anything further
-    }
-  },
-
-  // Handles 'E' key up event
-  async handlePickupKeyUp() {
-    if (!this.isHoldingE) return; // Ignore if not holding
-
-    clearTimeout(this.eKeyHoldTimeout); // Clear the timeout regardless
-
-    // Check if context menu was active (only possible for weapons)
-    if (this.contextMenuActive && this.pickupTarget?.type === 'weapon') {
-      // --- Weapon Context Menu Selection Logic ---
-      console.log("[GAME] 'E' released while weapon context menu active.");
-      if (window.HUD && window.HUD.getSelectedMountFromContextMenu) {
-        const selectedMountId = window.HUD.getSelectedMountFromContextMenu();
-        if (selectedMountId && this.pickupTarget) { // Ensure pickupTarget still exists
-          console.log(`[GAME] Context menu selected mount: ${selectedMountId} for weapon pickup ID: ${this.pickupTarget.id}`);
-
-          // Check if the selected mount is currently occupied
-          const targetMount = weaponSystem.mountManager.getMountPoint(selectedMountId);
-          let droppedWeapon = null;
-          if (targetMount && targetMount.hasWeapon()) {
-            console.log(`[GAME] Target mount ${selectedMountId} is occupied. Detaching and dropping current weapon.`);
-            droppedWeapon = await weaponSystem.detachAndDropWeapon(selectedMountId);
-            // Small delay to ensure detach completes before attach (optional, might not be needed)
-            // await new Promise(resolve => setTimeout(resolve, 10)); 
-          }
-
-          // Attempt to attach the new weapon (pickupTarget.weaponType) to the selected mount
-          const attachSuccess = await weaponSystem.attachToSpecificMount(this.pickupTarget.weaponType, selectedMountId); // Use weaponType
-
-          if (attachSuccess) {
-            console.log(`[GAME] Successfully attached ${this.pickupTarget.weaponType} to mount ${selectedMountId}.`);
-            // Remove the *original pickup item* from the world
-            const pickupIdToRemove = this.pickupTarget.id; // Get the ID from the target
-            // console.log(`[GAME] Removing pickup item with ID: ${pickupIdToRemove}`); // Removed log
-            this.weaponSpawnManager.removePickup(pickupIdToRemove); // Remove locally
-
-            // Notify server about collecting this specific pickup ID
-            // Server will handle removing the item state and notifying others
-            console.log(`[GAME] Sending pickup collected network message for ID: ${pickupIdToRemove}`);
-            Network.sendPickupCollected({ pickupId: pickupIdToRemove });
-
-          } else {
-            console.warn(`[GAME] Failed to attach ${this.pickupTarget.weaponType} to specific mount ${selectedMountId}.`);
-            if (window.HUD) window.HUD.showAlert("SELECTED MOUNT UNAVAILABLE", "warning");
-          }
-        } else {
-          console.log("[GAME] No mount selected from context menu or pickup target invalid.");
-        }
-      } else {
-         console.error("[GAME] HUD or getSelectedMountFromContextMenu not available!");
-      }
-      // Hide context menu
-       if (window.HUD && window.HUD.hideWeaponContextMenu) {
-         window.HUD.hideWeaponContextMenu();
-       }
-       this.contextMenuActive = false;
-       this.isContextMenuActive = false; // Re-enable camera controls
-       // No need to explicitly re-lock; user click will handle it.
-
-     } else if (this.pickupTarget) { // No context menu was shown, handle quick press
-        const pickupId = this.pickupTarget.id;
-        const pickupType = this.pickupTarget.type;
-
-        console.log(`[GAME] 'E' released quickly (before context menu), attempting pickup for Type=${pickupType}, ID=${pickupId}`);
-
-        if (pickupType === 'weapon') {
-            // --- Quick Press (Weapon Auto-Attach) Logic ---
-            try {
-                // Pass the full pickupTarget object which includes the ID and weaponType
-                const success = await weaponSystem.tryPickupAndAttach(this.pickupTarget);
-                if (success) {
-                    console.log(`[GAME] Quick weapon pickup successful via tryPickupAndAttach for ${this.pickupTarget.weaponType} (ID: ${pickupId})`);
-                    // Note: tryPickupAndAttach handles removing the pickup locally and notifying server
-                } else {
-                    console.log(`[GAME] Quick weapon pickup failed via tryPickupAndAttach for ${this.pickupTarget.weaponType} (ID: ${pickupId}) (e.g., no suitable mounts)`);
-                }
-            } catch (error) {
-                console.error(`[GAME] Error during quick weapon pickup tryPickupAndAttach:`, error);
-            }
-        } else if (pickupType === 'ammo') {
-            // --- Quick Press (Ammo Box Pickup) Logic ---
-            console.log(`[GAME] Attempting to collect ammo box (ID: ${pickupId})`);
-            // Send network request to server to collect the ammo box
-            Network.sendPickupCollected({ pickupId: pickupId });
-            // DO NOT remove the pickup locally here.
-            // The removal will be triggered by the 'pickupRemoved' event from the server
-            // if the pickup is successful (i.e., player is alive).
-            console.log(`[GAME] Sent pickup request for ammo box ${pickupId}. Waiting for server confirmation.`);
-        } else {
-            console.warn(`[GAME] Unknown pickup type encountered during quick press: ${pickupType}`);
-        }
-    } else {
-       // Key released, but no pickup was targeted (e.g., pressed 'E' with nothing nearby)
-       console.log("[GAME] 'E' released, but no pickup was targeted.");
-    }
-
-    // Hide item badge on key up
-    if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
-
-    // Reset state
-    this.isHoldingE = false;
-    this.pickupTarget = null;
-     // contextMenuActive is already reset above
-     this.isContextMenuActive = false; // Ensure camera controls are re-enabled
-   },
-
+  // Removed handlePickupKeyDown and handlePickupKeyUp - logic moved to update loop and MobileControlsManager
 
   handleDeath(killerPlayerId) {
     this.isDead = true;
-    
+
     // Store current position as respawn position
     this.respawnPosition.copy(this.player.position);
-    
+
     // Clear movement states
     this.moveForward = false;
     this.moveBackward = false;
@@ -442,8 +245,8 @@ export const Game = {
 
     // NOTE: Spawning dropped weapons is now handled by receiving messages from the server
     // based on the server's authoritative action after processing the death event.
-    
-    // Hide player model (actual hiding is done in the network handler 
+
+    // Hide player model (actual hiding is done in the network handler
     // since we need to sync it with the explosion effect)
   },
 
@@ -451,13 +254,13 @@ export const Game = {
     console.log('Player respawning!');
     this.isDead = false;
     this.health = this.maxHealth;
-    
+
     // Reset position to respawn point
     this.player.position.copy(this.respawnPosition);
-    
+
     // Make player visible again (actual showing is done in the network handler
     // to ensure proper synchronization)
-    
+
     // Clear any pending inputs
     this.inputBuffer = [];
     this.stateHistory = [];
@@ -469,7 +272,7 @@ export const Game = {
     } else {
         console.warn("[GAME] WeaponSystem not available during handleRespawn.");
     }
-    
+
     // Add visual effect
     if (window.HUD) {
       window.HUD.showAlert("SYSTEMS REBOOT COMPLETE", "success");
@@ -485,36 +288,91 @@ export const Game = {
     // Update local player's animation mixer
     this.mixer.update(deltaTime);
 
+    // --- Pickup Target Detection & Badge ---
+    if (this.weaponSpawnManager && !this.isDead && !this.isContextMenuActive) {
+        const playerWorldPos = new THREE.Vector3();
+        this.player.getWorldPosition(playerWorldPos);
+        const pickupRange = 4.0;
+        const nearestPickup = this.weaponSpawnManager.findNearestPickup(playerWorldPos, pickupRange);
+
+        if (nearestPickup) {
+            // If we weren't targeting this before, or weren't targeting anything
+            if (!this.pickupTarget || this.pickupTarget.id !== nearestPickup.id) {
+                this.pickupTarget = nearestPickup; // Store as current target
+                // Attempt to get config data for the badge
+                const pickupDataWithConfig = this.weaponSpawnManager.getPickupById(this.pickupTarget.id);
+                this.pickupTarget.config = pickupDataWithConfig?.config || {}; // Add config to target
+
+                // Show badge
+                if (this.pickupTarget.model && SceneManager.camera && window.HUD?.showItemBadge) {
+                    const screenPos = this.worldToScreen(this.pickupTarget.model.position, SceneManager.camera);
+                    if (screenPos) {
+                        const badgeInfo = {
+                            type: this.pickupTarget.weaponType || this.pickupTarget.type,
+                            config: this.pickupTarget.config,
+                        };
+                        window.HUD.showItemBadge(badgeInfo, screenPos);
+                    } else {
+                        window.HUD.hideItemBadge(); // Hide if off-screen
+                    }
+                }
+            } else {
+                // Already targeting this pickup, just update badge position
+                 if (this.pickupTarget.model && SceneManager.camera && window.HUD?.showItemBadge) {
+                    const screenPos = this.worldToScreen(this.pickupTarget.model.position, SceneManager.camera);
+                     if (screenPos) {
+                         // Re-show/update position (showItemBadge handles positioning)
+                         const badgeInfo = { type: this.pickupTarget.weaponType || this.pickupTarget.type, config: this.pickupTarget.config };
+                         window.HUD.showItemBadge(badgeInfo, screenPos);
+                     } else {
+                         window.HUD.hideItemBadge();
+                     }
+                 }
+            }
+        } else {
+            // No pickup nearby
+            if (this.pickupTarget) {
+                // If we were targeting something, hide the badge and clear target
+                if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
+                this.pickupTarget = null;
+            }
+        }
+    } else if (this.pickupTarget) {
+        // If dead or context menu is active, ensure badge is hidden
+        if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
+        // Don't clear pickupTarget here, context menu might need it
+    }
+    // --- End Pickup Target Detection & Badge ---
+
+
     // Update weapon spawn manager (for animations like rotation)
     if (this.weaponSpawnManager) {
       this.weaponSpawnManager.update(deltaTime);
-
-      // Collision-based pickup logic removed - will be replaced by 'E' key interaction
     }
 
     // Update other player animations
     Object.values(this.otherPlayers).forEach(player => {
       if (player.mixer) {
         player.mixer.update(deltaTime);
-        
+
         // Check if the player position has changed, with different thresholds for walking/running
         const movementThreshold = player.isRunning ? 0.03 : 0.01; // Lower threshold for walking
-        const positionChanged = player.previousPosition && 
+        const positionChanged = player.previousPosition &&
           player.mesh.position.distanceTo(player.previousPosition) > movementThreshold;
-        
+
         // Track the time of the last detected movement
         if (positionChanged) {
           player.lastMovementTime = Date.now();
         }
-        
+
         // Consider a player definitively stopped if no movement for 250ms
         const movementTimeout = 250; // ms
-        const hasStoppedMoving = !player.lastMovementTime || 
+        const hasStoppedMoving = !player.lastMovementTime ||
           (Date.now() - player.lastMovementTime > movementTimeout);
-        
+
         // Updated logic
         let isMoving;
-        
+
         if (player.isMoving) {
           // If server says they're moving, consider them moving until timeout
           isMoving = !hasStoppedMoving || positionChanged;
@@ -522,10 +380,10 @@ export const Game = {
           // If server says they're not moving, still allow local detection of movement
           isMoving = positionChanged && !hasStoppedMoving;
         }
-        
+
         // Update animation using unified system
         PlayerAnimations.updateAnimation(player, isMoving);
-        
+
         // Store position for next frame
         if (player.previousPosition) {
           player.previousPosition.copy(player.mesh.position);
@@ -537,8 +395,41 @@ export const Game = {
         NameTagSystem.updateTagPosition(player.mesh.playerId, player.mesh);
       }
     });
-    
-    weaponSystem.update(deltaTime);
+
+    weaponSystem.update(deltaTime); // Includes handling mobile fire/swap buttons
+
+    // --- Handle Mobile Pickup Button Tap ---
+    const mobileInput = MobileControlsManager.getInputState(); // Get fresh state
+    if (mobileInput.buttonStates.pickup && this.pickupTarget && !this.isContextMenuActive) {
+        console.log(`[GAME] Mobile pickup button tapped for target: ${this.pickupTarget.type} (ID: ${this.pickupTarget.id})`);
+        const pickupId = this.pickupTarget.id;
+        const pickupType = this.pickupTarget.type;
+
+        if (pickupType === 'weapon') {
+            // Trigger Quick Attach
+            weaponSystem.tryPickupAndAttach(this.pickupTarget).then(success => {
+                if (success) {
+                    console.log(`[GAME] Mobile quick weapon pickup successful.`);
+                    this.pickupTarget = null; // Clear target after successful pickup
+                    if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge(); // Hide badge
+                } else {
+                    console.log(`[GAME] Mobile quick weapon pickup failed.`);
+                }
+            }).catch(error => {
+                 console.error(`[GAME] Error during mobile quick weapon pickup:`, error);
+            });
+        } else if (pickupType === 'ammo') {
+            // Trigger Ammo Pickup
+            console.log(`[GAME] Attempting mobile ammo pickup (ID: ${pickupId})`);
+            Network.sendPickupCollected({ pickupId: pickupId });
+            console.log(`[GAME] Sent pickup request for ammo box ${pickupId}. Waiting for server confirmation.`);
+            // Don't clear target or hide badge until server confirms removal
+        }
+        // Reset the pickup button state in the manager immediately after processing tap
+        MobileControlsManager.buttonStates.pickup = false;
+    }
+    // --- End Handle Mobile Pickup Button Tap ---
+
 
     // Update camera and process input
     const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
@@ -550,7 +441,7 @@ export const Game = {
       console.error("Mech model not loaded yet");
       return null;
     }
-    
+
     const playerData = PlayerAnimations.createPlayerMesh(this.mechModel, this.actions);
 
     // Add compound colliders
@@ -565,14 +456,14 @@ export const Game = {
         offset: new THREE.Vector3(0, 4, 0)
       })
     };
-    
+
     // Store player ID on mesh for debugging
     playerData.mesh.playerId = id;
     playerData.mesh.isRemotePlayer = true;
-    
+
     // Add to scene
     SceneManager.add(playerData.mesh);
-    
+
     return playerData;
   },
 
@@ -663,14 +554,14 @@ export const Game = {
         player.previousPosition.copy(player.mesh.position);
       }
     }
-    
+
     // Update target position/rotation for interpolation
     player.targetPosition = new THREE.Vector3(
       playerData.position.x,
       playerData.position.y,
       playerData.position.z
     );
-    
+
     player.targetRotation = new THREE.Quaternion(
       playerData.rotation.x,
       playerData.rotation.y,
@@ -685,25 +576,25 @@ export const Game = {
       player.moveLeft = playerData.moveState.moveLeft;
       player.moveRight = playerData.moveState.moveRight;
       player.isRunning = playerData.moveState.isRunning;
-      
+
       // Track previous movement state
       const wasMoving = player.isMoving;
-      
+
       // Calculate if player is actually moving based on state
       player.isMoving = (
-        playerData.moveState.moveForward || 
-        playerData.moveState.moveBackward || 
-        playerData.moveState.moveLeft || 
+        playerData.moveState.moveForward ||
+        playerData.moveState.moveBackward ||
+        playerData.moveState.moveLeft ||
         playerData.moveState.moveRight
       );
-      
+
       // If movement state changes from moving to stopped, force animation update
       if (wasMoving && !player.isMoving) {
         // Reset last movement time to force idle animation immediately
         player.lastMovementTime = 0;
       }
     }
-    
+
     return player;
   },
 
@@ -714,15 +605,15 @@ export const Game = {
     if (input.isRunning) {
       speed *= 2;
     }
-    
+
     // Calculate movement vector based on input
     const moveVector = new THREE.Vector3();
-    
+
     if (input.moveForward) moveVector.add(forward.clone().multiplyScalar(speed));
     if (input.moveBackward) moveVector.add(forward.clone().multiplyScalar(-speed));
     if (input.moveLeft) moveVector.add(right.clone().multiplyScalar(-speed));
     if (input.moveRight) moveVector.add(right.clone().multiplyScalar(speed));
-    
+
     return moveVector;
   },
 
@@ -789,7 +680,7 @@ export const Game = {
 
     // Apply the calculated moveVector
     if (moved && !this.isDead) {
-      moved = true;
+      // moved = true; // This line is redundant
       this.player.position.add(moveVector);
       // Adjust player height based on terrain
       const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
@@ -826,35 +717,40 @@ export const Game = {
       },
       timestamp: input.timestamp,
       input: {
-        moveForward: this.moveForward,
-        moveBackward: this.moveBackward,
-        moveLeft: this.moveLeft,
-        moveRight: this.moveRight,
-        isRunning: this.isRunning,
+        moveForward: finalMoveForward, // Use final states
+        moveBackward: finalMoveBackward,
+        moveLeft: finalMoveLeft,
+        moveRight: finalMoveRight,
+        isRunning: finalIsRunning,
         deltaTime: input.deltaTime
       }
     } : null;
 
     // Update previous position
-    if (moved) this.previousPosition.copy(this.player.position);
+    // if (moved) this.previousPosition.copy(this.player.position); // This seems redundant with the check below
 
     // --- Hide Item Badge if player moves away ---
-    // (This is a simple check, might need refinement)
-    if (!this.isHoldingE && this.pickupTarget && window.HUD?.hideItemBadge) {
+    // Check moved *away* from target, not just general movement
+    if (this.pickupTarget && window.HUD?.hideItemBadge) {
         const playerWorldPos = new THREE.Vector3();
         this.player.getWorldPosition(playerWorldPos);
         const pickupRange = 4.0;
         if (playerWorldPos.distanceTo(this.pickupTarget.model.position) > pickupRange + 0.5) { // Add buffer
             // console.log("[GAME] Player moved away from pickup target, hiding badge."); // Debug
             window.HUD.hideItemBadge();
-            this.pickupTarget = null; // Clear target if moved away without interacting
+            this.pickupTarget = null; // Clear target if moved away
         }
     }
     // ------------------------------------------
 
 
-    // Update previous position
-    if (moved) this.previousPosition.copy(this.player.position);
+    // Update previous position for next frame's comparison
+    if (this.previousPosition) {
+        this.previousPosition.copy(this.player.position);
+    } else {
+         this.previousPosition = this.player.position.clone();
+    }
+
 
     return moveData;
   },

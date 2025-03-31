@@ -28,6 +28,7 @@
   },
   "homepage": "https://github.com/xamdel/robo-royale#readme",
   "dependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.38.0",
     "express": "^4.21.2",
     "path": "^0.12.7",
     "simplex-noise": "^4.0.3",

@@ -1,12 +1,15 @@
 import { weaponSystem } from '../weapons/index.js';
 import { elements } from './elements.js';
+import { MobileControlsManager } from '../mobileControls/MobileControlsManager.js'; // Import MobileControlsManager
 
 export function createWeaponSystem() {
-  // Create a combined weapons container
-  const weaponsContainer = document.createElement('div');
-  weaponsContainer.className = 'weapons-container bottom-element';
+  // Only create desktop weapon UI if not on a touch device
+  if (!MobileControlsManager.isTouchDevice) {
+    // Create a combined weapons container for desktop
+    const weaponsContainer = document.createElement('div');
+    weaponsContainer.className = 'weapons-container bottom-element';
 
-  // Create a section for secondary weapon
+    // Create a section for secondary weapon
   const secondarySection = createWeaponSection('SECONDARY', 'R <span class="key-hint">Fire</span> | <span class="key-hint">Tab</span> Switch');
 
   // Add divider
@@ -18,17 +21,23 @@ export function createWeaponSystem() {
 
   // Add all sections to the container
   weaponsContainer.appendChild(secondarySection.container);
-  weaponsContainer.appendChild(divider);
-  weaponsContainer.appendChild(primarySection.container);
+    weaponsContainer.appendChild(divider);
+    weaponsContainer.appendChild(primarySection.container);
 
-  // Add to HUD
-  elements.container.appendChild(weaponsContainer);
+    // Add to HUD
+    elements.container.appendChild(weaponsContainer);
 
-  // Store references to both weapon sections
-  elements.primaryWeapon = primarySection;
-  elements.secondaryWeapon = secondarySection;
+    // Store references to both weapon sections for desktop
+    elements.primaryWeapon = primarySection;
+    elements.secondaryWeapon = secondarySection;
+  }
+  // Mobile weapon UI is handled entirely by MobileControlsManager creating widgets
+  // and updateWeaponDisplay populating them.
 }
 
+
+// This function remains largely the same, creating the structure for a weapon section
+// It's used by createWeaponSystem for the desktop view.
 function createWeaponSection(label, keyBindingText) {
   // Create section container
   const sectionContainer = document.createElement('div');
@@ -211,6 +220,17 @@ export function updateWeaponDisplay(mountType) {
 
     // Show the section
     display.container.style.display = 'block';
+
+    // --- Update Mobile Weapon Widget ---
+    if (MobileControlsManager.isTouchDevice) {
+        MobileControlsManager.updateWeaponWidget(mountType, {
+            name: weapon.config.displayName || weapon.type,
+            ammo: weapon.ammo,
+            maxAmmo: weapon.maxAmmo,
+            cooldownPercent: cooldownPercent
+        });
+    }
+    // ---------------------------------
   } else {
     // No weapon available
     display.name.textContent = 'None';
@@ -230,5 +250,11 @@ export function updateWeaponDisplay(mountType) {
 
     // Update weapon icon
     display.icon.style.color = '#ff0000';
+
+    // --- Update Mobile Weapon Widget (No Weapon) ---
+     if (MobileControlsManager.isTouchDevice) {
+        MobileControlsManager.updateWeaponWidget(mountType, null); // Pass null for no weapon
+    }
+    // -------------------------------------------
   }
 }
