@@ -52,7 +52,7 @@ class GameLoop {
         playerId: player.id,
         position: player.position, // Send initial respawn position
         primaryColor: player.primaryColor, // Include primary color
-        secondaryColor: player.secondaryColor, // Include secondary color
+        // secondaryColor: player.secondaryColor, // Removed secondary color
         clearWeapons: true // Add flag to signal weapon clearing
       });
     });

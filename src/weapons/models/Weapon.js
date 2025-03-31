@@ -42,6 +42,38 @@ export class Weapon {
     }
   }
 
+  applyColor(colorString) {
+    if (!this.model || !colorString) {
+        console.warn(`[Weapon ${this.type}] Cannot apply color: Missing model or color string.`);
+        return;
+    }
+
+    try {
+        const color = new THREE.Color(colorString);
+        console.log(`[Weapon ${this.type}] Applying color: ${colorString}`);
+
+        this.model.traverse((child) => {
+            if (child.isMesh && child.material) {
+                // Ensure material is cloneable and suitable
+                if (typeof child.material.clone === 'function' &&
+                    (child.material instanceof THREE.MeshStandardMaterial || child.material instanceof THREE.MeshPhongMaterial)) {
+
+                    // Clone material to avoid modifying shared instances across different weapon instances
+                    child.material = child.material.clone();
+                    child.material.color.set(color);
+                    // Optional: Mark for update if needed, though cloning usually suffices
+                    // child.material.needsUpdate = true;
+                } else {
+                     // Log materials that cannot be colored
+                     // console.log(`[Weapon ${this.type}] Skipping non-standard/non-cloneable material on child: ${child.name}`);
+                }
+            }
+        });
+    } catch (error) {
+        console.error(`[Weapon ${this.type}] Error applying color ${colorString}:`, error);
+    }
+  }
+
   // --- Firing Sequence Logic (Gatling) ---
 
   startFiringSequence() {
@@ -142,12 +174,12 @@ export class Weapon {
   // Actual single shot logic
   fire(position, direction) {
     // console.log(`[WEAPON] ${this.type} fire method called from position`, position.toArray());
-    
+
     if (!this.active) {
       console.log(`[WEAPON] ${this.type} is not active`);
       return false;
     }
-    
+
     if (this.ammo <= 0) {
       // console.log(`[WEAPON] ${this.type} is out of ammo`);
       if (window.HUD) {
@@ -173,7 +205,7 @@ export class Weapon {
     // Only send to server and manage ammo for local player weapons
     if (this.isLocalPlayerWeapon()) {
       // console.log(`[WEAPON] ${this.type} confirmed as local player weapon`);
-      
+
       // Send shot data to server
       // console.log(`[WEAPON] ${this.type} sending shot data to server, weapon ID: ${this.id}`);
       Network.sendShot({
@@ -204,13 +236,13 @@ export class Weapon {
       // Create a rocket-shaped projectile
       const rocketLength = 0.8;
       const rocketRadius = 0.15;
-      
+
       // Create rocket body (cylinder) - oriented along Z axis for forward direction
       const bodyGeometry = new THREE.CylinderGeometry(rocketRadius, rocketRadius, rocketLength, 8);
       bodyGeometry.rotateX(Math.PI / 2); // Rotate geometry to align with forward direction
       const bodyMaterial = new THREE.MeshBasicMaterial({ color: projectileConfig.color });
       projectile = new THREE.Mesh(bodyGeometry, bodyMaterial);
-      
+
       // Create rocket nose cone
       const noseGeometry = new THREE.ConeGeometry(rocketRadius, rocketLength * 0.4, 8);
       noseGeometry.rotateX(Math.PI / 2);
@@ -218,13 +250,13 @@ export class Weapon {
       const noseCone = new THREE.Mesh(noseGeometry, noseMaterial);
       noseCone.position.z = rocketLength * 0.7; // Position at front
       projectile.add(noseCone);
-      
+
       // Create rocket fins (simple planes)
-      const finMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xcccccc, 
-        side: THREE.DoubleSide 
+      const finMaterial = new THREE.MeshBasicMaterial({
+        color: 0xcccccc,
+        side: THREE.DoubleSide
       });
-      
+
       // Add 4 fins around the rocket
       for (let i = 0; i < 4; i++) {
         const finGeometry = new THREE.PlaneGeometry(rocketRadius * 2, rocketRadius * 2);
@@ -233,11 +265,11 @@ export class Weapon {
         fin.rotation.y = Math.PI / 4 + (i * Math.PI / 2); // Position around cylinder
         projectile.add(fin);
       }
-      
+
       // Create a large initial flame effect at the back of the rocket (visual only)
       const flameGeometry = new THREE.ConeGeometry(rocketRadius * 1.2, rocketLength * 1.0, 8);
       flameGeometry.rotateX(-Math.PI / 2);
-      const flameMaterial = new THREE.MeshBasicMaterial({ 
+      const flameMaterial = new THREE.MeshBasicMaterial({
         color: 0xff5500,
         transparent: true,
         opacity: 0.9,
@@ -266,7 +298,7 @@ export class Weapon {
             // Manually set rotation to align the cylinder (local Z) with the direction vector
             const quaternion = new THREE.Quaternion();
             // Assuming Z is forward for the cylinder after rotateX
-            const cylinderForward = new THREE.Vector3(0, 0, 1); 
+            const cylinderForward = new THREE.Vector3(0, 0, 1);
             quaternion.setFromUnitVectors(cylinderForward, direction.clone().normalize());
             projectile.quaternion.copy(quaternion);
         } else {
@@ -293,28 +325,28 @@ export class Weapon {
 
     // Common projectile properties (apply to both visual and non-visual projectiles)
     projectile.position.copy(position);
-    
+
     // All projectiles use their configured speed immediately
     projectile.velocity = direction.clone().multiplyScalar(projectileConfig.speed);
-    
+
     projectile.startPosition = position.clone();
     projectile.prevPosition = position.clone();
     projectile.maxDistance = projectileConfig.maxDistance;
     projectile.sourceWeapon = this;
-    
+
     // Add userData for tracking
     projectile.userData = projectile.userData || {};
-    
+
     // Set up the rocket to always face its direction of travel
     if (this.config.projectileType === 'rocket') {
         projectile.lookAt(position.clone().add(direction));
-        
+
         projectile.isRocket = true;
         projectile.initialFlare = true; // Flag for initial flare effect
         projectile.flareEndTime = performance.now() + 150; // Flare lasts for 150ms
-        
+
         // Scale up initial flame effect
-        const flameElement = projectile.children.find(child => 
+        const flameElement = projectile.children.find(child =>
           child.material && child.material.color.getHex() === 0xff5500);
         if (flameElement) {
           flameElement.scale.set(3.0, 3.0, 3.0);
@@ -333,7 +365,7 @@ export class Weapon {
       if (this.config.effects.muzzleFlash && particleEffectSystem) { // Check particleEffectSystem exists
         // Pass direction to muzzle flash
         particleEffectSystem.addMuzzleFlash(position, direction, this.config.projectileConfig.color);
-        
+
         // Add larger muzzle flash for rocket launcher
         if (this.config.projectileType === 'rocket') {
           // Create intense launch effect for rocket
@@ -342,7 +374,7 @@ export class Weapon {
             // Create intense launch effect for rocket
             // Add a big initial flash (passing direction)
             particleEffectSystem.addMuzzleFlash(position, direction, 0xff5500, 3.0); // Bigger flash
-            
+
             // Create staggered smaller flashes for lingering effect
             for (let i = 1; i < 4; i++) {
               setTimeout(() => {
@@ -355,7 +387,7 @@ export class Weapon {
           }
         }
       }
-      
+
       // We've removed smoke effects since they didn't look good
     }
   }
@@ -365,10 +397,10 @@ export class Weapon {
     for (const projectile of this.projectiles) {
       // Store previous position for collision detection
       projectile.prevPosition.copy(projectile.position);
-      
+
       // Update position
       projectile.position.addScaledVector(projectile.velocity, deltaTime);
-      
+
       // If it's a rocket, handle flare effects and orientation
       if (projectile.isRocket) {
         // Handle initial flare effect timing
@@ -377,21 +409,21 @@ export class Weapon {
           projectile.initialFlare = false;
           // Hide large flame after initial flare
           if (projectile.children.length > 0) {
-            const flame = projectile.children.find(child => 
+            const flame = projectile.children.find(child =>
               child.material && (child.material.color.getHex() === 0xff5500 || child.material.color.getHex() === 0xff7700));
             if (flame) {
               flame.visible = false;
             }
           }
         }
-        
+
         // Make rocket always face its direction of travel
         if (projectile.velocity.lengthSq() > 0.00001) {
           const lookAtPos = projectile.position.clone().add(projectile.velocity.clone().normalize());
           projectile.lookAt(lookAtPos);
         }
       }
-      
+
       // Check if projectile has exceeded max distance
       const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
       if (distanceTraveled > projectile.maxDistance) {
@@ -470,16 +502,16 @@ export class Weapon {
       // console.log(`[WEAPON] ${this.type} cannot check if local player weapon - Game.player not available`);
       return false;
     }
-    
+
     // Traverse up the object hierarchy to find if this is connected to the player
     let currentObj = this.model;
     let depth = 0;
     const maxDepth = 10; // Prevent infinite loops
-    
+
     while (currentObj && depth < maxDepth) {
       // Check multiple ways to identify if this is the player model
       if (
-        currentObj === window.Game.player || 
+        currentObj === window.Game.player ||
         currentObj.isPlayerModel === true ||
         (currentObj.userData && currentObj.userData.id === window.Game.player.userData?.id) ||
         (currentObj.name === "PlayerMech" && currentObj.type === "Group")
@@ -487,12 +519,12 @@ export class Weapon {
         // console.log(`[WEAPON] ${this.type} is attached to local player (found at depth ${depth})`);
         return true;
       }
-      
+
       // Move up the hierarchy
       currentObj = currentObj.parent;
       depth++;
     }
-    
+
     // Log detailed debug info
     // console.log(`[WEAPON] ${this.type} is NOT attached to local player:`, {
     //   weaponModelName: this.model.name,
@@ -501,19 +533,19 @@ export class Weapon {
     //   playerModelId: window.Game.player.userData?.id || 'unknown',
     //   weaponParentChain: this.getParentChain(this.model, 5)
     // });
-    
+
     // TEMPORARY FIX: Force weapons to be recognized as local player weapons
     // until the hierarchy issue is resolved
     // console.log(`[WEAPON] ${this.type} - TEMPORARY FIX: Forcing recognition as local player weapon`);
     return true;
   }
-  
+
   // Helper method to get a parent chain for debugging
   getParentChain(obj, maxDepth = 5) {
     const chain = [];
     let current = obj;
     let depth = 0;
-    
+
     while (current && depth < maxDepth) {
       chain.push({
         name: current.name || 'unnamed',
@@ -523,7 +555,7 @@ export class Weapon {
       current = current.parent;
       depth++;
     }
-    
+
     return chain;
   }
 

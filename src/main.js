@@ -214,15 +214,15 @@ async function initializeGame() {
 
   // --- Welcome Screen Logic ---
   // Show welcome screen only if it hasn't been shown before (based on localStorage)
-  let playerColors = { primary: '#00ffff', secondary: '#ff00ff' }; // Default colors
+  let playerColor = { primary: '#00ffff' }; // Default color
   if (!WelcomeScreen.hasBeenShown()) {
     console.log("[Main] Showing Welcome Screen...");
-    playerColors = await WelcomeScreen.show(); // Wait for user interaction
-    console.log("[Main] Welcome Screen finished. Selected colors:", playerColors);
+    playerColor = await WelcomeScreen.show(); // Wait for user interaction (returns { primary: '...' })
+    console.log("[Main] Welcome Screen finished. Selected color:", playerColor);
   } else {
     console.log("[Main] Welcome Screen already shown, skipping.");
-    // Optionally load saved colors even if screen isn't shown again
-    // playerColors = WelcomeScreen.getSavedColors(); // Need to expose getSavedColors or similar
+    // Optionally load saved color even if screen isn't shown again
+    // playerColor = WelcomeScreen.getSavedColor(); // Need to expose getSavedColor or similar
   }
   // --- End Welcome Screen Logic ---
 
@@ -233,7 +233,7 @@ async function initializeGame() {
   Network.init();
 
   // Send player customization data after network is initialized
-  Network.sendPlayerCustomization(playerColors);
+  Network.sendPlayerCustomization(playerColor); // Send only primary
 
 
   // 2. Load building models asynchronously
@@ -344,8 +344,8 @@ async function initializeGame() {
     console.log('[Network Stats]', stats);
   });
 
-  // 5. Initialize Game AFTER network and scene are ready, passing the chosen colors
-  await Game.init(Network.socket, playerColors);
+  // 5. Initialize Game AFTER network and scene are ready, passing the chosen color
+  await Game.init(Network.socket, playerColor);
 
   // Initialize HUD after game is initialized
   HUD.init();

@@ -108,15 +108,14 @@ class PlayerController {
     socket.on('playerCustomization', (data) => {
       if (!player) return; // Player might have disconnected
 
-      // Basic validation for color data
-      if (data && typeof data.primary === 'string' && typeof data.secondary === 'string' &&
-          /^#[0-9A-F]{6}$/i.test(data.primary) && /^#[0-9A-F]{6}$/i.test(data.secondary)) {
+      // Basic validation for primary color data
+      if (data && typeof data.primary === 'string' && /^#[0-9A-F]{6}$/i.test(data.primary)) {
 
-        console.log(`[PlayerController] Received customization for ${socket.id}: Primary=${data.primary}, Secondary=${data.secondary}`);
+        console.log(`[PlayerController] Received customization for ${socket.id}: Primary=${data.primary}`);
         player.primaryColor = data.primary;
-        player.secondaryColor = data.secondary;
+        // player.secondaryColor = data.secondary; // Removed secondary
 
-        // The updated colors will be sent out in the next gameState broadcast.
+        // The updated color will be sent out in the next gameState broadcast.
         // No need to broadcast immediately unless required for instant updates.
 
       } else {

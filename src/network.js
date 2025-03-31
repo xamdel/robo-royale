@@ -21,7 +21,7 @@ export const Network = {
   smoothedRTT: 0, // Running average of round-trip time
   adaptiveBufferSize: 3, // Dynamic buffer size based on network conditions
   adaptiveInterpolationSpeed: 5, // Dynamic interpolation speed
-  
+
   init() {
     this.socket = io('http://localhost:3000', {
       reconnection: true,
@@ -29,7 +29,7 @@ export const Network = {
       reconnectionDelayMax: 5000,
       timeout: 10000
     });
-    
+
     this.setupHandlers();
   },
 
@@ -52,24 +52,24 @@ export const Network = {
         if (playerData.id !== this.socket.id) {
           // Handle other players
           let buffer = this.interpolationBuffer.get(playerData.id) || [];
-          
+
           buffer.push({
             position: playerData.position,
             rotation: playerData.rotation,
             timestamp: state.timestamp,
             moveState: playerData.moveState
           });
-          
+
           while (buffer.length > this.BUFFER_SIZE) {
             buffer.shift();
           }
-          
+
           this.interpolationBuffer.set(playerData.id, buffer);
           Game.updateOtherPlayer(playerData);
         } else if (Game.lastProcessedInputId < playerData.lastProcessedInput) {
           // Server reconciliation for local player
           Game.lastProcessedInputId = playerData.lastProcessedInput;
-          Game.inputBuffer = Game.inputBuffer.filter(input => 
+          Game.inputBuffer = Game.inputBuffer.filter(input =>
             input.id > playerData.lastProcessedInput
           );
         }
@@ -122,7 +122,7 @@ export const Network = {
           direction: data.direction,
           id: data.id  // Pass the server-assigned ID
         });
-        
+
         // Store the server ID in the projectile for tracking
         if (projectile && projectile.userData) {
           projectile.userData.serverId = data.id;
@@ -160,7 +160,7 @@ export const Network = {
             }
           }
         }
-        
+
         // Also check template weapons (for remote projectiles)
         for (const weapon of weaponSystem.weaponTemplates.values()) {
           // Find projectile in this weapon's projectiles
@@ -173,7 +173,7 @@ export const Network = {
           }
         }
       }
-      
+
       // Show hit effect if projectile was destroyed due to hit
       if (data.reason === 'hit' && data.position) {
         const hitPosition = new THREE.Vector3(
@@ -181,14 +181,14 @@ export const Network = {
           data.position.y,
           data.position.z
         );
-        
+
         console.log('Server confirmed hit at position:', hitPosition);
-        
+
         // Get weapon config to determine projectile color
         const { getWeaponConfig } = await import('./weapons/configs/weapon-configs.js');
         const config = getWeaponConfig(data.weaponType);
         const color = config?.projectileConfig?.color || 0xffff00; // Fallback to yellow
-        
+
         // Create appropriate effect based on projectile type
         if (window.particleEffectSystem) {
           // Rockets should create explosions rather than simple collision effects
@@ -236,9 +236,9 @@ export const Network = {
       // Update local player health if we were hit (INCOMING DAMAGE)
       if (data.hitPlayerId === this.socket.id) {
         Game.health = data.currentHealth;
-        
+
         console.log('Player hit! Current health:', data.currentHealth, 'Was killed:', data.wasKilled);
-        
+
         if (window.HUD) {
           window.HUD.updateHealth();
           // Show damage alert (optional, maybe remove if world numbers are sufficient)
@@ -257,8 +257,8 @@ export const Network = {
             }
           );
         }
-        
-        // Handle death 
+
+        // Handle death
         if (data.wasKilled) {
           Game.handleDeath(data.sourcePlayerId);
           if (window.HUD) {
@@ -266,13 +266,13 @@ export const Network = {
           }
         }
       }
-      
+
       // If we're the shooter, show hit confirmation (OUTGOING DAMAGE)
       if (data.sourcePlayerId === this.socket.id) {
         if (window.HUD) {
           // Show HUD alert (optional)
           // window.HUD.showAlert(`Hit! Damage: ${data.damage}`, "success"); // Removed hit damage alert
-          
+
           if (data.wasKilled) {
             window.HUD.showAlert("Enemy destroyed!", "success");
           }
@@ -299,14 +299,14 @@ export const Network = {
         data.position.y,
         data.position.z
       );
-      
+
       // If it's the local player who died
       if (data.playerId === this.socket.id) {
         Game.handleDeath(data.killerPlayerId);
         if (window.HUD) {
           window.HUD.showAlert("YOU WERE DESTROYED", "danger");
         }
-        
+
         // Hide the player model during death state
         Game.player.visible = false;
       } else {
@@ -316,12 +316,12 @@ export const Network = {
           remotePlayer.mesh.visible = false;
         }
       }
-      
+
       // Create explosion at player position using the particle effect system
       if (window.particleEffectSystem) {
         window.particleEffectSystem.createPlayerExplosion(position);
       }
-      
+
       // Play explosion sound
       if (window.AudioManager) {
         window.AudioManager.playGlobalEffect('explosion.wav', position);
@@ -338,7 +338,7 @@ export const Network = {
         Game.handleRespawn(); // Handles local state reset
         targetPlayer = Game; // Local player data is directly on Game object
         targetMesh = Game.player; // Local player mesh
-        
+
         if (targetMesh) {
           targetMesh.visible = true; // Make local player visible
         }
@@ -347,14 +347,14 @@ export const Network = {
           window.HUD.showAlert("SYSTEMS REBOOT COMPLETE", "success");
         }
 
-        // Apply colors to local player after respawn
-        if (targetMesh && data.primaryColor && data.secondaryColor) {
-           console.log(`[Network] Applying colors to local player after respawn: P=${data.primaryColor}, S=${data.secondaryColor}`);
-           Game.applyPlayerColors(targetMesh, data.primaryColor, data.secondaryColor);
+        // Apply color to local player after respawn
+        if (targetMesh && data.primaryColor) {
+           console.log(`[Network] Applying color to local player after respawn: P=${data.primaryColor}`);
+           Game.applyPlayerColor(targetMesh, data.primaryColor);
         } else {
-           console.warn(`[Network] Missing color data in local player respawn event.`);
+           console.warn(`[Network] Missing primary color data in local player respawn event.`);
         }
-        
+
         // When local player respawns, clear all other players and request updates
         // This ensures we can see all other players after respawning with proper mounts
         console.log('Refreshing all other players after local respawn');
@@ -364,26 +364,26 @@ export const Network = {
           const player = Game.otherPlayers[playerId];
           if (player && player.mesh) {
             console.log(`Cleaning up player ${playerId} after local respawn`);
-            
+
             // Remove player's mesh from scene
             if (player.mesh.parent) {
               player.mesh.parent.remove(player.mesh);
             }
-            
+
             // Clear any weapon references
             if (player.mountManager) {
               player.mountManager.detachAllWeapons();
             }
           }
-          
+
           // Remove player from our memory
           delete Game.otherPlayers[playerId];
-          
+
           // Clear interpolation buffers for this player
           this.interpolationBuffer.delete(playerId);
           this.playerVelocities.delete(playerId);
         });
-        
+
         // Request a fresh gameState update from the server
         // This will trigger creation of new players with proper mount managers
         console.log('Requesting fresh game state after respawn');
@@ -396,7 +396,7 @@ export const Network = {
           targetPlayer = remotePlayer; // Remote player data object
           targetMesh = remotePlayer.mesh; // Remote player mesh
           targetMesh.visible = true; // Make remote player visible
-          
+
           // Update position if provided
           if (data.position) {
             targetMesh.position.set(
@@ -406,17 +406,17 @@ export const Network = {
             );
           }
 
-          // Apply colors to remote player after respawn
-          if (data.primaryColor && data.secondaryColor) {
-             console.log(`[Network] Applying colors to remote player ${data.playerId} after respawn: P=${data.primaryColor}, S=${data.secondaryColor}`);
-             Game.applyPlayerColors(targetMesh, data.primaryColor, data.secondaryColor);
-             // Update stored applied colors
+          // Apply color to remote player after respawn
+          if (data.primaryColor) {
+             console.log(`[Network] Applying color to remote player ${data.playerId} after respawn: P=${data.primaryColor}`);
+             Game.applyPlayerColor(targetMesh, data.primaryColor);
+             // Update stored applied color
              targetPlayer.appliedPrimaryColor = data.primaryColor;
-             targetPlayer.appliedSecondaryColor = data.secondaryColor;
+             // targetPlayer.appliedSecondaryColor = data.secondaryColor; // Removed secondary
           } else {
-             console.warn(`[Network] Missing color data in remote player respawn event for ${data.playerId}.`);
+             console.warn(`[Network] Missing primary color data in remote player respawn event for ${data.playerId}.`);
           }
-          
+
           // If the server indicates weapons should be cleared (e.g., on respawn)
           if (data.clearWeapons && remotePlayer.mountManager) {
              console.log(`[Network] Clearing weapons for remote player ${data.playerId} due to respawn.`);
@@ -431,7 +431,7 @@ export const Network = {
     // Handle ammo updates
     this.socket.on('ammoUpdate', (data) => {
       Game.ammo = data.ammo;
-      
+
       if (window.HUD) {
         // No need for separate method since updateWeaponStatus already reads Game.ammo
       }
@@ -445,27 +445,27 @@ export const Network = {
         SceneManager.cannon = null;
         SceneManager.cannonCollider = null;
       }
-      
+
       // If we're the one who picked up the weapon, we've already attached it locally
       if (data.playerId === this.socket.id) {
         return;
       }
-      
+
       // Validate required weapon data
       if (!data.weaponType || !data.socketName) {
         console.error('Missing weapon data in pickup event:', data);
         return;
       }
-      
+
       // For other players picking up weapons, attach to their model
       const remotePlayer = Game.otherPlayers[data.playerId];
       if (!remotePlayer) {
         console.warn('Remote player not found for weapon pickup:', data.playerId);
         return;
       }
-      
+
       console.log(`Attaching ${data.weaponType} to remote player ${data.playerId}`);
-      
+
       // Make sure the remote player's mesh is visible
       if (remotePlayer.mesh) {
         remotePlayer.mesh.visible = true;
@@ -473,13 +473,13 @@ export const Network = {
         console.error('Remote player has no mesh for weapon attachment');
         return;
       }
-      
+
       const weaponClone = await SceneManager.cloneWeapon(data.weaponType);
       if (!weaponClone) {
         console.error('Failed to clone weapon of type:', data.weaponType);
         return;
       }
-      
+
       // Create a separate mount manager for each remote player
       if (!remotePlayer.mountManager) {
         console.log('Creating dedicated mount manager for remote player');
@@ -487,38 +487,46 @@ export const Network = {
         const mountsInitialized = remotePlayer.mountManager.initMounts(remotePlayer.mesh);
         console.log(`Remote player mount initialization result: ${mountsInitialized}`);
       }
-      
+
       // Create a weapon and attach it to the remote player
       weaponSystem.weaponFactory.createWeapon(data.weaponType, weaponClone).then(weapon => {
         if (weapon) {
           // Assign the weapon ID from server
           weapon.id = data.weaponId;
-          
+
           // Find the right mount point on the remote player using player's dedicated mount manager
           const mountPoint = remotePlayer.mountManager.getAllMounts().find(m => m.socketName === data.socketName);
           if (mountPoint) {
             console.log(`Attaching ${data.weaponType} to socket ${data.socketName}`);
             const success = mountPoint.attachWeapon(weapon);
             console.log(`Weapon attachment result: ${success}`);
+
+            // Apply the remote player's color to the weapon
+            const remotePlayerColor = remotePlayer.appliedPrimaryColor || '#00ffff'; // Get remote player's stored color
+            if (typeof weapon.applyColor === 'function') {
+               console.log(`[Network] Applying color ${remotePlayerColor} to remote player ${data.playerId}'s weapon ${weapon.type}`);
+               weapon.applyColor(remotePlayerColor);
+            }
+
           } else {
             console.error(`Mount point with socket ${data.socketName} not found on remote player ${data.playerId}`);
-            
+
                   // Debug: log all available mount points for this remote player
             const allMounts = remotePlayer.mountManager.getAllMounts();
             console.log(`Available mounts for remote player ${data.playerId}:`, allMounts.map(m => ({
               id: m.id,
               socketName: m.socketName
             })));
-            
+
             // Try reinitializing this player's mount points as a fallback
             console.log('Attempting to reinitialize mount points for remote player');
-            
+
             // Create a new mount manager if needed
             if (!remotePlayer.mountManager) {
               console.log('Creating new mount manager for remote player');
               remotePlayer.mountManager = new MountManager();
             }
-            
+
             // Reinitialize the mount points
             const success = remotePlayer.mountManager.initMounts(remotePlayer.mesh);
             console.log(`Mount reinitialization result: ${success}`);
@@ -548,7 +556,7 @@ export const Network = {
         // Convert position back to THREE.Vector3
         const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
         // Use the spawn manager to create the visual pickup, passing the server ID
-        Game.weaponSpawnManager.spawnDroppedWeapon(data.type, position, data.id) 
+        Game.weaponSpawnManager.spawnDroppedWeapon(data.type, position, data.id)
           .then(clientPickupData => {
              if (clientPickupData) {
                // The pickup is now tracked client-side using the server's ID (data.id)
@@ -576,7 +584,7 @@ export const Network = {
             console.warn('[Network] Invalid data or WeaponSpawnManager not ready for droppedWeaponRemoved event.');
         }
     });
-    
+
     // Handle kill feed notifications
     this.socket.on('killNotification', (data) => {
       console.log('[Network] Received kill notification:', data);
@@ -585,7 +593,7 @@ export const Network = {
         if (Game.killLog) {
           Game.killLog.push({ killerName: data.killerName, victimName: data.victimName });
           // Optional: Limit log size if needed
-          // if (Game.killLog.length > 50) Game.killLog.shift(); 
+          // if (Game.killLog.length > 50) Game.killLog.shift();
         } else {
           console.warn('[Network] Game.killLog not initialized.');
         }
@@ -679,35 +687,35 @@ export const Network = {
     for (const [playerId, buffer] of this.interpolationBuffer) {
       const player = Game.otherPlayers[playerId];
       if (!player || !player.mesh) continue;
-      
+
       // Need at least 2 states to interpolate
       if (buffer.length < 2) continue;
-      
+
       // Use most recent states for interpolation
       const prevState = buffer[buffer.length - 2];
       const nextState = buffer[buffer.length - 1];
-      
+
       // Calculate how far we are between the two states (0 to 1)
       const duration = nextState.timestamp - prevState.timestamp;
       if (duration <= 0) continue; // Skip invalid time data
-      
+
       // Calculate normalized time position between the two states
       let alpha = (now - prevState.timestamp) / duration;
       alpha = Math.max(0, Math.min(1, alpha));
-      
+
       // Create position vectors from state data
       const prevPosition = new THREE.Vector3(
         prevState.position.x,
         prevState.position.y,
         prevState.position.z
       );
-      
+
       const nextPosition = new THREE.Vector3(
         nextState.position.x,
         nextState.position.y,
         nextState.position.z
       );
-      
+
       // Create quaternions from rotation data
       const prevRotation = new THREE.Quaternion(
         prevState.rotation.x,
@@ -715,35 +723,35 @@ export const Network = {
         prevState.rotation.z,
         prevState.rotation.w
       );
-      
+
       const nextRotation = new THREE.Quaternion(
         nextState.rotation.x,
         nextState.rotation.y,
         nextState.rotation.z,
         nextState.rotation.w
       );
-      
+
       // Calculate velocity
       const velocity = this.playerVelocities.get(playerId) || new THREE.Vector3();
       const newVelocity = nextPosition.clone().sub(prevPosition).multiplyScalar(1 / duration);
-      
+
       // Smooth velocity changes
       velocity.lerp(newVelocity, deltaTime * this.interpolationSpeed);
       this.playerVelocities.set(playerId, velocity);
-      
+
       // Apply velocity-based prediction
       const predictedPosition = new THREE.Vector3();
       predictedPosition.lerpVectors(prevPosition, nextPosition, alpha);
       predictedPosition.add(velocity.clone().multiplyScalar(deltaTime));
-      
+
       // Smooth final position
       player.mesh.position.lerp(predictedPosition, deltaTime * this.interpolationSpeed);
-      
+
       // Interpolate rotation with smoother transitions
       const newRotation = new THREE.Quaternion();
       newRotation.slerpQuaternions(prevRotation, nextRotation, alpha);
       player.mesh.quaternion.slerp(newRotation, deltaTime * this.interpolationSpeed);
-      
+
       // Only remove old states if we have enough buffer and have completed interpolation
       if (alpha >= 0.99 && buffer.length > Math.ceil(this.BUFFER_SIZE / 2)) {
         buffer.shift();

@@ -39,7 +39,7 @@ export class WeaponSystem {
 
   async createWeaponTemplates() {
     const { weaponConfigs } = await import('./configs/weapon-configs.js');
-    
+
     for (const [weaponType, config] of Object.entries(weaponConfigs)) {
       const weapon = await this.weaponFactory.createWeapon(weaponType);
       if (weapon) {
@@ -53,7 +53,7 @@ export class WeaponSystem {
     // Track selected weapon indexes
     this.selectedPrimaryIndex = 0;
     this.selectedSecondaryIndex = 0;
-    
+
     // Mouse controls for primary weapons (arms)
     document.addEventListener('mousedown', (event) => {
       if (event.button === 0) { // Left click
@@ -106,7 +106,7 @@ export class WeaponSystem {
           break;
       }
     });
-    
+
     // Mouse wheel for cycling primary weapons
     document.addEventListener('wheel', (event) => {
       if (event.deltaY < 0) {
@@ -137,16 +137,22 @@ export class WeaponSystem {
     const success = mountPoint.attachWeapon(weapon);
     if (success) {
       this.activeWeapons.set(weapon.id, weapon);
-      
+
+      // Apply player color
+      const localPlayerColor = window.Game?.playerColor?.primary || '#00ffff'; // Get stored color
+      if (typeof weapon.applyColor === 'function') {
+        weapon.applyColor(localPlayerColor);
+      }
+
       // Determine mount type for appropriate notification
       const mountType = mountPoint.config.mountType;
       const displayName = weapon.config.displayName || weapon.type;
-      
+
       // Show weapon pickup message in HUD
       if (window.HUD) {
         window.HUD.showAlert(`${mountType.toUpperCase()}: ${displayName.toUpperCase()} EQUIPPED`, "info");
         window.HUD.addMessage(`${displayName} equipped as ${mountType} weapon. Ammo: ${weapon.ammo}/${weapon.maxAmmo}`);
-        
+
         // Update HUD display for this weapon type
         if (window.HUD.updateWeaponDisplay) {
           window.HUD.updateWeaponDisplay(mountType);
@@ -179,7 +185,7 @@ export class WeaponSystem {
       // Check if mount exists and is available
       if (mount && !mount.hasWeapon()) {
         console.log(`[WEAPON SYSTEM] Found available mount: ${mountId}`);
-        
+
         // Create a new weapon instance for this pickup
         const weapon = await this.weaponFactory.createWeapon(weaponType);
         if (!weapon) {
@@ -192,6 +198,13 @@ export class WeaponSystem {
         if (success) {
           console.log(`[WEAPON SYSTEM] Successfully attached ${weaponType} to ${mountId}`);
           this.activeWeapons.set(weapon.id, weapon);
+
+          // Apply player color
+          const localPlayerColor = window.Game?.playerColor?.primary || '#00ffff'; // Get stored color
+          if (typeof weapon.applyColor === 'function') {
+            console.log(`[WEAPON SYSTEM] Applying color ${localPlayerColor} to attached weapon ${weapon.type}`);
+            weapon.applyColor(localPlayerColor);
+          }
 
           // Update HUD
           const mountType = mount.config.mountType;
@@ -294,7 +307,7 @@ export class WeaponSystem {
     } else {
       console.error("[WEAPON SYSTEM] Cannot spawn dropped weapon: Game.weaponSpawnManager not found!");
     }
-    
+
     // Update HUD for the mount type that just became empty
     if (window.HUD && window.HUD.updateWeaponDisplay) {
         window.HUD.updateWeaponDisplay(mount.config.mountType);
@@ -312,7 +325,7 @@ export class WeaponSystem {
     // Check if mount exists and is available
     if (mount && !mount.hasWeapon()) {
       console.log(`[WEAPON SYSTEM] Mount ${mountId} is available.`);
-      
+
       // Create a new weapon instance
       const weapon = await this.weaponFactory.createWeapon(weaponType);
       if (!weapon) {
@@ -325,6 +338,13 @@ export class WeaponSystem {
       if (success) {
         console.log(`[WEAPON SYSTEM] Successfully attached ${weaponType} to specific mount ${mountId}`);
         this.activeWeapons.set(weapon.id, weapon);
+
+        // Apply player color
+        const localPlayerColor = window.Game?.playerColor?.primary || '#00ffff'; // Get stored color
+        if (typeof weapon.applyColor === 'function') {
+          console.log(`[WEAPON SYSTEM] Applying color ${localPlayerColor} to attached weapon ${weapon.type}`);
+          weapon.applyColor(localPlayerColor);
+        }
 
         // Update HUD
         const mountType = mount.config.mountType;
@@ -344,7 +364,7 @@ export class WeaponSystem {
           weaponType: weaponType,
           socketName: mount.socketName // Send socketName (bone name)
         });
-        
+
         // Note: The pickup removal and server notification for collection
         // should happen in the calling function (Game.handlePickupKeyUp)
         // after this method returns successfully.
@@ -362,16 +382,16 @@ export class WeaponSystem {
 
   fireWeaponByControl(controlKey) {
     // console.log(`[WEAPON SYSTEM] Fire attempt for control key: ${controlKey}`);
-    
+
     // Get all mounts for this control key
     const mounts = this.mountManager.getAllMounts().filter(mount => mount.config.controlKey === controlKey);
     if (mounts.length === 0) {
       // console.log(`[WEAPON SYSTEM] No mounts found for control key: ${controlKey}`);
       return false;
     }
-    
+
     // Debug log all mount points for this control key
-    // console.log(`[WEAPON SYSTEM] Found ${mounts.length} mounts for control key ${controlKey}:`, 
+    // console.log(`[WEAPON SYSTEM] Found ${mounts.length} mounts for control key ${controlKey}:`,
     //   mounts.map(m => ({
     //     id: m.id,
     //     socketName: m.socketName,
@@ -379,24 +399,24 @@ export class WeaponSystem {
     //     weaponType: m.hasWeapon() ? m.getWeapon().type : 'none'
     //   }))
     // );
-    
+
     // Filter by mount type
     const mountType = mounts[0].config.mountType; // Get mount type from first mount
     const selectedIndex = mountType === 'primary' ? this.selectedPrimaryIndex : this.selectedSecondaryIndex;
-    
+
     // Only use mounts that have weapons
     const mountsWithWeapons = mounts.filter(mount => mount.hasWeapon());
     if (mountsWithWeapons.length === 0) {
       // console.log(`[WEAPON SYSTEM] No armed mounts found for control key: ${controlKey}`);
       return false;
     }
-    
+
     // Select the active mount based on selection index (clamped to valid range)
     const activeIndex = Math.min(selectedIndex, mountsWithWeapons.length - 1);
     const activeMount = mountsWithWeapons[activeIndex];
-    
+
     // console.log(`[WEAPON SYSTEM] Firing mount ${activeMount.id} for control key: ${controlKey}`);
-    
+
     // Make sure the weapon is visible before firing
     const weapon = activeMount.getWeapon();
     if (weapon && weapon.model) {
@@ -407,7 +427,7 @@ export class WeaponSystem {
         }
       });
     }
-    
+
     const result = activeMount.fire();
     // console.log(`[WEAPON SYSTEM] Fire result for ${activeMount.id}: ${result}`);
     return result;
@@ -433,7 +453,7 @@ export class WeaponSystem {
   cyclePrimaryWeapon(direction = 'next') {
     const primaryMounts = this.mountManager.getMountsByType('primary');
     const mountsWithWeapons = primaryMounts.filter(mount => mount.hasWeapon());
-    
+
     if (mountsWithWeapons.length <= 1) return; // Nothing to cycle
 
     // Stop firing sequence of the current weapon if it's a gatling
@@ -441,13 +461,13 @@ export class WeaponSystem {
     if (currentWeapon?.type === 'gatling') {
       currentWeapon.stopFiringSequence();
     }
-    
+
     if (direction === 'next') {
       this.selectedPrimaryIndex = (this.selectedPrimaryIndex + 1) % mountsWithWeapons.length;
     } else {
       this.selectedPrimaryIndex = (this.selectedPrimaryIndex - 1 + mountsWithWeapons.length) % mountsWithWeapons.length;
     }
-    
+
     // Update HUD to show the newly selected weapon
     if (window.HUD) {
       const weapon = mountsWithWeapons[this.selectedPrimaryIndex].getWeapon();
@@ -456,11 +476,11 @@ export class WeaponSystem {
       window.HUD.updateWeaponDisplay('primary');
     }
   }
-  
+
   cycleSecondaryWeapon() {
     const secondaryMounts = this.mountManager.getMountsByType('secondary');
     const mountsWithWeapons = secondaryMounts.filter(mount => mount.hasWeapon());
-    
+
     if (mountsWithWeapons.length <= 1) return; // Nothing to cycle
 
     // Stop firing sequence of the current weapon if it's a gatling
@@ -468,9 +488,9 @@ export class WeaponSystem {
     if (currentWeapon?.type === 'gatling') {
       currentWeapon.stopFiringSequence();
     }
-    
+
     this.selectedSecondaryIndex = (this.selectedSecondaryIndex + 1) % mountsWithWeapons.length;
-    
+
     // Update HUD to show the newly selected weapon
     if (window.HUD) {
       const weapon = mountsWithWeapons[this.selectedSecondaryIndex].getWeapon();
@@ -523,31 +543,31 @@ export class WeaponSystem {
   getSelectedWeapon(mountType) {
     const mounts = this.mountManager.getMountsByType(mountType);
     const mountsWithWeapons = mounts.filter(mount => mount.hasWeapon());
-    
+
     if (mountsWithWeapons.length === 0) return null;
-    
+
     const selectedIndex = mountType === 'primary' ? this.selectedPrimaryIndex : this.selectedSecondaryIndex;
     const activeIndex = Math.min(selectedIndex, mountsWithWeapons.length - 1);
-    
+
     return mountsWithWeapons[activeIndex].getWeapon();
   }
-  
+
   // Get the next weapon in cycle (for HUD display)
   getNextWeapon(mountType) {
     const mounts = this.mountManager.getMountsByType(mountType);
     const mountsWithWeapons = mounts.filter(mount => mount.hasWeapon());
-    
+
     if (mountsWithWeapons.length <= 1) return null;
-    
+
     const selectedIndex = mountType === 'primary' ? this.selectedPrimaryIndex : this.selectedSecondaryIndex;
     const nextIndex = (selectedIndex + 1) % mountsWithWeapons.length;
-    
+
     return mountsWithWeapons[nextIndex].getWeapon();
   }
 
   handleRemoteWeaponPickup(data) {
     const { weaponId, weaponType, mountId } = data;
-    
+
     // Find the mount point
     const mountPoint = this.mountManager.getMountPoint(mountId);
     if (!mountPoint) return;
@@ -564,10 +584,10 @@ export class WeaponSystem {
 
   handleRemoteShot(data) {
     // console.log(`[WeaponSystem] Handling remote shot for weapon type: ${data.weaponType}`);
-    
+
     // Try to find weapon template for this type
     const weapon = this.weaponTemplates.get(data.weaponType);
-    
+
     if (weapon) {
       const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
       const direction = new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z);

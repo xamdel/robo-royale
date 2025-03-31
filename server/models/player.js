@@ -7,7 +7,7 @@ class Player {
     this.position = { x: 0, y: 0, z: 0 };
     this.rotation = { x: 0, y: 0, z: 0, w: 1 };
     this.primaryColor = '#00ffff'; // Default primary color (cyan)
-    this.secondaryColor = '#ff00ff'; // Default secondary color (magenta)
+    // this.secondaryColor = '#ff00ff'; // Removed secondary color
     this.lastProcessedInput = 0;
     this.lastActive = Date.now();
     this.lastUpdateTime = Date.now();
@@ -55,8 +55,8 @@ class Player {
       timeSinceLastUpdate: Date.now() - this.lastUpdateTime,
       health: this.health,
       isDead: this.isDead,
-      primaryColor: this.primaryColor,
-      secondaryColor: this.secondaryColor
+      primaryColor: this.primaryColor
+      // secondaryColor: this.secondaryColor // Removed secondary color
     };
   }
 

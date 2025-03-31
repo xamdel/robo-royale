@@ -85,7 +85,7 @@
 .color-pickers {
     margin-top: 20px;
     display: flex;
-    justify-content: space-around; /* Space out pickers */
+    justify-content: center; /* Center the single picker */
     align-items: center;
 }
 

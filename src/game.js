@@ -81,7 +81,7 @@ export const Game = {
     });
   },
 
-  async init(socket, playerColors) { // Accept playerColors
+  async init(socket, playerColor) { // Accept playerColor (singular)
     await this.loadMechModel();
 
     // Create player using the same system as remote players, but specify it's the local player
@@ -90,14 +90,14 @@ export const Game = {
     // In Game.init() after creating player:
     this.player.userData = { id: socket.id };
 
-    // Apply chosen colors to the local player model
-    if (playerColors) {
-      console.log(`[GAME] Applying local player colors: P=${playerColors.primary}, S=${playerColors.secondary}`);
-      this.applyPlayerColors(this.player, playerColors.primary, playerColors.secondary);
+    // Apply chosen color to the local player model
+    if (playerColor && playerColor.primary) {
+      console.log(`[GAME] Applying local player color: P=${playerColor.primary}`);
+      this.applyPlayerColor(this.player, playerColor.primary);
     } else {
-      console.warn("[GAME] No playerColors provided to Game.init. Using defaults for local player.");
-      // Apply default colors if none provided (optional, depends on desired behavior)
-      this.applyPlayerColors(this.player, '#00ffff', '#ff00ff');
+      console.warn("[GAME] No playerColor provided to Game.init. Using default for local player.");
+      // Apply default color if none provided
+      this.applyPlayerColor(this.player, '#00ffff');
     }
 
     // Initialize weapon system first
@@ -549,14 +549,14 @@ export const Game = {
       const mountsInitialized = player.mountManager.initMounts(player.mesh);
       console.log(`Mount initialization for remote player result: ${mountsInitialized}`);
 
-      // Apply custom colors received from server
-      if (playerData.primaryColor && playerData.secondaryColor) {
-        console.log(`Applying colors to remote player ${playerData.id}: P=${playerData.primaryColor}, S=${playerData.secondaryColor}`);
-        this.applyPlayerColors(player.mesh, playerData.primaryColor, playerData.secondaryColor);
+      // Apply custom color received from server
+      if (playerData.primaryColor) {
+        console.log(`Applying color to remote player ${playerData.id}: P=${playerData.primaryColor}`);
+        this.applyPlayerColor(player.mesh, playerData.primaryColor);
       } else {
-        console.warn(`[GAME] Missing color data for player ${playerData.id}. Using defaults.`);
-        // Apply default colors if needed (ensure defaults match server/welcome screen)
-        this.applyPlayerColors(player.mesh, '#00ffff', '#ff00ff');
+        console.warn(`[GAME] Missing color data for player ${playerData.id}. Using default.`);
+        // Apply default color if needed
+        this.applyPlayerColor(player.mesh, '#00ffff');
       }
 
       // Request weapon data for this player
@@ -566,22 +566,21 @@ export const Game = {
           playerId: playerData.id
         });
       }
-      // Store applied colors to avoid re-applying unnecessarily
+      // Store applied color to avoid re-applying unnecessarily
       player.appliedPrimaryColor = playerData.primaryColor || '#00ffff';
-      player.appliedSecondaryColor = playerData.secondaryColor || '#ff00ff';
+      // player.appliedSecondaryColor = playerData.secondaryColor || '#ff00ff'; // Removed secondary
 
     } // End of if (!player) block
 
     // --- Apply color updates for EXISTING players ---
-    // Check if new color data exists and differs from currently applied colors
-    if (playerData.primaryColor && playerData.secondaryColor &&
-        (player.appliedPrimaryColor !== playerData.primaryColor || player.appliedSecondaryColor !== playerData.secondaryColor))
+    // Check if new color data exists and differs from currently applied color
+    if (playerData.primaryColor && player.appliedPrimaryColor !== playerData.primaryColor)
     {
-        console.log(`[GAME] Updating colors for existing player ${playerData.id}: P=${playerData.primaryColor}, S=${playerData.secondaryColor}`);
-        this.applyPlayerColors(player.mesh, playerData.primaryColor, playerData.secondaryColor);
-        // Update the stored applied colors
+        console.log(`[GAME] Updating color for existing player ${playerData.id}: P=${playerData.primaryColor}`);
+        this.applyPlayerColor(player.mesh, playerData.primaryColor);
+        // Update the stored applied color
         player.appliedPrimaryColor = playerData.primaryColor;
-        player.appliedSecondaryColor = playerData.secondaryColor;
+        // player.appliedSecondaryColor = playerData.secondaryColor; // Removed secondary
     }
     // --- End color update logic ---
 
@@ -737,12 +736,11 @@ export const Game = {
     return Object.values(this.otherPlayers).some(p => p.mesh === player);
   },
 
-  // Helper function to apply colors to a player model
-  applyPlayerColors(mesh, primaryColorStr, secondaryColorStr) {
-    if (!mesh || !primaryColorStr || !secondaryColorStr) return;
+  // Helper function to apply the primary color to a player model
+  applyPlayerColor(mesh, primaryColorStr) {
+    if (!mesh || !primaryColorStr) return;
 
     const primary = new THREE.Color(primaryColorStr);
-    const secondary = new THREE.Color(secondaryColorStr);
 
     mesh.traverse((child) => {
         if (child.isMesh && child.material) {
@@ -752,16 +750,10 @@ export const Game = {
 
                 // Clone material to avoid modifying shared instances
                 child.material = child.material.clone();
-
-                // Apply color based on material name convention
-                // Assumes secondary parts have 'secondary' in their material name
-                if (child.material.name && child.material.name.toLowerCase().includes('secondary')) {
-                    child.material.color.set(secondary);
-                } else {
-                    child.material.color.set(primary);
-                }
+                // Apply primary color to all materials
+                child.material.color.set(primary);
                  // Optional: Mark for update if needed, though cloning usually suffices
-                // child.material.needsUpdate = true;
+                // child.material.needsUpdate = true; // Generally not needed after clone + color set
             }
         }
     });

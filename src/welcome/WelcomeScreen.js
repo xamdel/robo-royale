@@ -7,62 +7,53 @@ const WELCOME_STORAGE_KEY = 'roboRoyaleWelcomeData';
 let scene, camera, renderer, controls, mechModel;
 let resolvePromise; // To resolve the promise when the user clicks start
 
-// Default colors
-const defaultColors = {
-    primary: '#00ffff', // Cyan
-    secondary: '#ff00ff' // Magenta
+// Default color
+const defaultColor = {
+    primary: '#00ffff' // Cyan
 };
 
-// Function to get saved colors or defaults
-function getSavedColors() {
+// Function to get saved color or default
+function getSavedColor() {
     try {
         const saved = localStorage.getItem(WELCOME_STORAGE_KEY);
         if (saved) {
             const data = JSON.parse(saved);
             // Basic validation
-            if (data.primary && data.secondary &&
-                /^#[0-9A-F]{6}$/i.test(data.primary) &&
-                /^#[0-9A-F]{6}$/i.test(data.secondary)) {
-                return data;
+            if (data.primary && /^#[0-9A-F]{6}$/i.test(data.primary)) {
+                return data; // Contains only { primary: '...' }
             }
         }
     } catch (e) {
         console.error("Error reading welcome screen data from localStorage:", e);
     }
-    return { ...defaultColors }; // Return a copy of defaults
+    return { ...defaultColor }; // Return a copy of default
 }
 
-// Function to save colors
-function saveColors(primary, secondary) {
+// Function to save color
+function saveColor(primary) {
     try {
-        localStorage.setItem(WELCOME_STORAGE_KEY, JSON.stringify({ primary, secondary }));
+        localStorage.setItem(WELCOME_STORAGE_KEY, JSON.stringify({ primary }));
     } catch (e) {
         console.error("Error saving welcome screen data to localStorage:", e);
     }
 }
 
-// Function to apply colors to the model
-function applyColorsToModel(primaryColor, secondaryColor) {
+// Function to apply the primary color to the model
+function applyColorToModel(primaryColor) {
     if (!mechModel) return;
 
     const primary = new THREE.Color(primaryColor);
-    const secondary = new THREE.Color(secondaryColor);
 
     mechModel.traverse((child) => {
         if (child.isMesh && child.material) {
-            // Simple coloring: Assign primary to most materials, secondary to specific ones
-            // This needs refinement based on the actual model structure/material names
-            if (child.material.name && child.material.name.toLowerCase().includes('secondary')) {
-                 // Clone material to avoid modifying shared materials
-                child.material = child.material.clone();
-                child.material.color.set(secondary);
-            } else if (child.material instanceof THREE.MeshStandardMaterial || child.material instanceof THREE.MeshPhongMaterial) {
-                 // Clone material
+            // Apply primary color to all suitable materials
+            if (child.material instanceof THREE.MeshStandardMaterial || child.material instanceof THREE.MeshPhongMaterial) {
+                 // Clone material to avoid modifying shared instances
                 child.material = child.material.clone();
                 child.material.color.set(primary);
             }
-            // Ensure materials are updated
-            if(child.material.needsUpdate !== undefined) {
+            // Ensure materials are updated (optional, cloning often suffices)
+            if (child.material.needsUpdate !== undefined) {
                 child.material.needsUpdate = true;
             }
         }
@@ -126,9 +117,9 @@ function loadMechModel() { // No longer async as GLTFLoader uses callbacks
             mechModel.scale.set(1, 1, 1);
             scene.add(mechModel);
 
-            // Apply initial colors
-            const colors = getSavedColors();
-            applyColorsToModel(colors.primary, colors.secondary);
+            // Apply initial color
+            const colorData = getSavedColor();
+            applyColorToModel(colorData.primary);
         },
         undefined, // onProgress callback (optional)
         (error) => {
@@ -185,7 +176,7 @@ export const WelcomeScreen = {
         return new Promise((resolve) => {
             resolvePromise = resolve; // Store the resolver
 
-            const savedColors = getSavedColors();
+            const savedColorData = getSavedColor();
 
             // Create welcome screen elements
             const welcomeScreen = document.createElement('div');
@@ -214,14 +205,10 @@ export const WelcomeScreen = {
                         <div class="preview-instructions">Click and drag to rotate</div>
                         <div class="color-pickers">
                             <div class="color-picker-group">
-                                <label for="primary-color">Primary</label>
-                                <input type="color" id="primary-color" value="${savedColors.primary}">
+                                <label for="primary-color">Mech Color</label>
+                                <input type="color" id="primary-color" value="${savedColorData.primary}">
                             </div>
-                            <div class="color-picker-group">
-                                <label for="secondary-color">Secondary</label>
-                                <input type="color" id="secondary-color" value="${savedColors.secondary}">
                             </div>
-                        </div>
                          <button id="start-game-button">Enter Battle</button>
                     </div>
                 </div>
@@ -232,7 +219,7 @@ export const WelcomeScreen = {
             // Get elements
             const canvas = document.getElementById('mech-preview-canvas');
             const primaryColorPicker = document.getElementById('primary-color');
-            const secondaryColorPicker = document.getElementById('secondary-color');
+            // const secondaryColorPicker = document.getElementById('secondary-color'); // Removed
             const startButton = document.getElementById('start-game-button');
 
             // Initialize 3D preview
@@ -242,22 +229,17 @@ export const WelcomeScreen = {
                 console.error("WelcomeScreen: Canvas element not found!");
             }
 
-            // Add event listeners for color pickers
+            // Add event listener for color picker
             primaryColorPicker.addEventListener('input', (event) => {
-                applyColorsToModel(event.target.value, secondaryColorPicker.value);
-            });
-
-            secondaryColorPicker.addEventListener('input', (event) => {
-                applyColorsToModel(primaryColorPicker.value, event.target.value);
+                applyColorToModel(event.target.value);
             });
 
             // Add event listener for start button
             startButton.addEventListener('click', () => {
                 const selectedPrimary = primaryColorPicker.value;
-                const selectedSecondary = secondaryColorPicker.value;
 
-                // Save the chosen colors
-                saveColors(selectedPrimary, selectedSecondary);
+                // Save the chosen color
+                saveColor(selectedPrimary);
 
                 // Hide the welcome screen with transition
                 welcomeScreen.classList.add('hidden');
@@ -265,7 +247,8 @@ export const WelcomeScreen = {
                 // Wait for transition to finish before resolving and cleaning up
                 setTimeout(() => {
                     if (resolvePromise) {
-                        resolvePromise({ primary: selectedPrimary, secondary: selectedSecondary });
+                        // Resolve with only the primary color
+                        resolvePromise({ primary: selectedPrimary });
                     }
                     cleanup(); // Clean up Three.js resources
                     welcomeScreen.remove(); // Remove from DOM
