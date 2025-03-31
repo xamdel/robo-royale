@@ -58,6 +58,9 @@ function createMobileMountSelectorElement() {
 function updateContextMenuHighlight() { // Only used for desktop now
   if (!contextMenuElement || contextMenuElement.style.display === 'none') return null; // Return null if not applicable
 
+  // Log current mouse position being used for highlight calculation
+  // console.log(`[HUD ContextMenu] updateContextMenuHighlight - Mouse Pos: x=${mousePosition.x}, y=${mousePosition.y}`);
+
   const menuRect = contextMenuElement.getBoundingClientRect();
   const centerX = menuRect.left + menuRect.width / 2;
   const centerY = menuRect.top + menuRect.height / 2;
@@ -108,9 +111,9 @@ function updateContextMenuHighlight() { // Only used for desktop now
     } else {
       // Should not happen, but handle defensively
       q.classList.add('unavailable'); 
-    }
-  });
-   // console.log("[HUD ContextMenu] Highlighted Mount ID:", highlightedMountId); // Debug
+     }
+   });
+   console.log("[HUD ContextMenu] Highlight Update - Resulting highlightedMountId:", highlightedMountId); // Log the result
    return highlightedMountId; // Return the ID for the manager
   } // Closing brace for updateContextMenuHighlight
 // Removed extra closing brace here

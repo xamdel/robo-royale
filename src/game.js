@@ -46,6 +46,11 @@ export const Game = {
   // Pickup state
   pickupTarget: null, // Stores info about the pickup item being targeted { id, type, weaponType?, model, distance, config? }
   isContextMenuActive: false, // Flag to disable camera controls (still needed, set by MobileControlsManager)
+  isEKeyDown: false, // Track E key state for hold detection
+  eKeyHoldTimeout: null, // Timer for E key hold
+  eKeyHoldTriggered: false, // Flag if hold action was triggered
+  eKeyHoldDuration: 500, // ms hold time (match mobile)
+  contextMenuClickListener: null, // Store reference to the click listener
 
   loadMechModel() {
     return new Promise((resolve) => {
@@ -199,7 +204,22 @@ export const Game = {
         case 'KeyD': this.moveRight = true; break;
         case 'ShiftLeft':
         case 'ShiftRight': this.isRunning = true; break;
-        // Removed 'E' keydown handler
+        case 'KeyE':
+          if (!this.isEKeyDown) { // Prevent multiple triggers if key is held down
+            this.isEKeyDown = true;
+            this.eKeyHoldTriggered = false; // Reset hold trigger flag
+            clearTimeout(this.eKeyHoldTimeout); // Clear any existing timer
+
+            // Start the hold timer
+            this.eKeyHoldTimeout = setTimeout(() => {
+              if (this.isEKeyDown) { // Check if key is still held
+                console.log("[GAME] E key hold detected.");
+                this.eKeyHoldTriggered = true; // Mark hold as triggered
+                this.triggerKeyboardContextMenu(); // Call the context menu function
+              }
+            }, this.eKeyHoldDuration);
+          }
+          break;
       }
     });
     document.addEventListener('keyup', (event) => {
@@ -210,7 +230,52 @@ export const Game = {
         case 'KeyD': this.moveRight = false; break;
         case 'ShiftLeft':
         case 'ShiftRight': this.isRunning = false; break;
-        // Removed 'E' keyup handler
+        case 'KeyE':
+          this.isEKeyDown = false; // Mark key as up
+          clearTimeout(this.eKeyHoldTimeout); // Clear the hold timer
+
+          // If the hold action *wasn't* triggered (i.e., it was a tap)
+          if (!this.eKeyHoldTriggered) {
+            // Perform the quick pickup action (moved from keydown)
+            if (this.pickupTarget && !this.isContextMenuActive) {
+              console.log(`[GAME] 'E' key tap detected for target: ${this.pickupTarget.type} (ID: ${this.pickupTarget.id})`);
+              const pickupType = this.pickupTarget.type;
+
+              if (pickupType === 'weapon') {
+                // Trigger Quick Attach
+                weaponSystem.tryPickupAndAttach(this.pickupTarget).then(success => {
+                  if (success) {
+                    console.log(`[GAME] Keyboard quick weapon pickup successful.`);
+                    this.pickupTarget = null; // Clear target after successful pickup
+                    if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge(); // Hide badge
+                  } else {
+                    console.log(`[GAME] Keyboard quick weapon pickup failed.`);
+                  }
+                }).catch(error => {
+                   console.error(`[GAME] Error during keyboard quick weapon pickup:`, error);
+                });
+              }
+              // Note: Ammo pickup is handled by collision, so 'E' tap only handles weapons.
+            }
+          }
+          // If the hold action *was* triggered, releasing E now dismisses without selection
+          else if (this.eKeyHoldTriggered) {
+              console.log("[GAME] Context menu dismissed via E key release.");
+              // Ensure listener is removed if key is released before click
+              if (this.contextMenuClickListener) {
+                  document.removeEventListener('click', this.contextMenuClickListener, { capture: true });
+                  this.contextMenuClickListener = null;
+                  console.log("[GAME] Removed context menu click listener on E key release.");
+              }
+              window.HUD.hideWeaponContextMenu();
+              this.isContextMenuActive = false;
+              if (document.pointerLockElement !== document.body) {
+                  document.body.requestPointerLock(); // Re-acquire pointer lock
+              }
+          }
+          // Reset the hold trigger flag (always reset)
+          this.eKeyHoldTriggered = false;
+          break;
       }
     });
   },
@@ -418,17 +483,47 @@ export const Game = {
             }).catch(error => {
                  console.error(`[GAME] Error during mobile quick weapon pickup:`, error);
             });
-        } else if (pickupType === 'ammo') {
-            // Trigger Ammo Pickup
-            console.log(`[GAME] Attempting mobile ammo pickup (ID: ${pickupId})`);
-            Network.sendPickupCollected({ pickupId: pickupId });
-            console.log(`[GAME] Sent pickup request for ammo box ${pickupId}. Waiting for server confirmation.`);
-            // Don't clear target or hide badge until server confirms removal
         }
         // Reset the pickup button state in the manager immediately after processing tap
+        // Note: Ammo pickup is now handled by collision, so the button only handles weapons.
         MobileControlsManager.buttonStates.pickup = false;
     }
     // --- End Handle Mobile Pickup Button Tap ---
+
+    // --- Automatic Ammo Pickup on Collision ---
+    if (this.weaponSpawnManager && !this.isDead) {
+        const playerPos = this.player.position;
+        for (const [pickupId, pickup] of this.weaponSpawnManager.activePickups.entries()) {
+            if (pickup.type === 'ammo') {
+                // Use a slightly smaller radius for collision to feel more like "walking over"
+                const collisionRadius = pickup.collider.radius * 0.8;
+                if (playerPos.distanceTo(pickup.collider.center) < collisionRadius) {
+                    console.log(`[GAME] Player collided with ammo box (ID: ${pickupId}). Refilling ammo.`);
+
+                    // 1. Refill ammo locally
+                    if (weaponSystem) {
+                        weaponSystem.refillAllAmmo(); // Handles HUD updates
+                    }
+
+                    // 2. Notify server
+                    Network.sendPickupCollected({ pickupId: pickupId });
+
+                    // 3. Remove pickup locally
+                    this.weaponSpawnManager.removePickup(pickupId);
+
+                    // 4. Clear target if it was this ammo box
+                    if (this.pickupTarget && this.pickupTarget.id === pickupId) {
+                        this.pickupTarget = null;
+                        if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
+                    }
+
+                    // Break after collecting one ammo box per frame
+                    break;
+                }
+            }
+        }
+    }
+    // --- End Automatic Ammo Pickup ---
 
 
     // Update camera and process input
@@ -807,6 +902,130 @@ export const Game = {
             }
         }
     });
+  },
+
+  // Function to trigger context menu from keyboard hold
+  triggerKeyboardContextMenu() {
+    if (!this.pickupTarget || this.pickupTarget.type !== 'weapon') {
+        console.log("[GAME] E key hold did not target a weapon pickup.");
+        return;
+    }
+    if (!window.HUD || !weaponSystem || !weaponSystem.mountManager) {
+        console.warn("[GAME] Cannot trigger keyboard context menu, HUD or weaponSystem not available.");
+        return;
+    }
+
+    console.log("[GAME] Triggering weapon context menu via E key hold.");
+    this.isContextMenuActive = true; // Disable camera controls
+    document.exitPointerLock(); // Release pointer lock to show cursor
+
+    // Add temporary click listener to handle selection/dismissal
+    // Use bind to ensure 'this' context is correct inside the handler
+    this.contextMenuClickListener = this.handleContextMenuClick.bind(this);
+    // Use capture phase to catch the click early, 'once' to auto-remove after first click
+    document.addEventListener('click', this.contextMenuClickListener, { capture: true, once: true });
+    console.log("[GAME] Added context menu click listener.");
+
+    // Hide item badge if it was shown
+    if (window.HUD.hideItemBadge) window.HUD.hideItemBadge();
+
+    const allMounts = weaponSystem.mountManager.getAllMounts();
+
+    // Show context menu - for desktop, position based on mouse event (or center screen if no event)
+    // Since we don't have the original event here, let's center it for now.
+    // We pass null for the event and false for isMobile.
+    window.HUD.showWeaponContextMenu(null, allMounts, this.pickupTarget, false);
+  },
+
+  // Handles weapon attachment after context menu selection (desktop or mobile)
+  handleContextMenuSelection(mountId, pickupInfo) {
+    if (!pickupInfo || pickupInfo.type !== 'weapon') {
+        console.warn("[GAME] Invalid pickup info for context menu selection.");
+        return;
+    }
+    if (!weaponSystem) {
+        console.warn("[GAME] Weapon system not available for context menu selection.");
+        return;
+    }
+
+    console.log(`[GAME] Attaching ${pickupInfo.config?.displayName || pickupInfo.weaponType} to mount ${mountId}`); // Use weaponType for logging
+
+    // Use the correct weaponSystem function: attachToSpecificMount
+    // Pass weaponType from pickupInfo and the selected mountId
+    weaponSystem.attachToSpecificMount(pickupInfo.weaponType, mountId).then(success => {
+        if (success) {
+            console.log(`[GAME] Weapon attached successfully via context menu to ${mountId}.`);
+
+            // --- Remove the pickup item from the world ---
+            if (window.Game && window.Game.weaponSpawnManager) {
+                const pickupIdToRemove = pickupInfo.id;
+                window.Game.weaponSpawnManager.removePickup(pickupIdToRemove); // Remove locally
+                console.log(`[GAME] Removed pickup item ${pickupIdToRemove} from world after context menu pickup.`);
+
+                // Notify server only if it's a dropped item (server tracks these)
+                if (pickupIdToRemove && pickupIdToRemove.startsWith('pickup_')) {
+                    Network.sendPickupCollected({ pickupId: pickupIdToRemove });
+                    console.log(`[GAME] Sent pickup collected network message for dropped item ID: ${pickupIdToRemove}`);
+                }
+            } else {
+                 console.error("[GAME] Cannot remove pickup: Game.weaponSpawnManager not found!");
+            }
+            // --- End pickup removal ---
+
+            // Clear target only after successful attachment and removal
+            if (this.pickupTarget && this.pickupTarget.id === pickupInfo.id) {
+                this.pickupTarget = null;
+            }
+        } else {
+            console.log(`[GAME] Failed to attach weapon to ${mountId}.`);
+            // Optionally show feedback to the user
+        }
+    }).catch(error => {
+        console.error(`[GAME] Error during context menu weapon attachment:`, error);
+    });
+
+    // Reset context menu state immediately after initiating action
+    this.isContextMenuActive = false;
+    // --- HIDE/RESET/RELOCK MOVED HERE ---
+    // This function is now called ONLY after a valid selection is made (via click or mobile tap)
+    window.HUD.hideWeaponContextMenu(); // Hide the menu
+    this.isContextMenuActive = false; // Reset the flag
+
+    // Re-request pointer lock
+    if (document.pointerLockElement !== document.body) {
+        console.log("[GAME] Re-acquiring pointer lock after context menu selection.");
+        document.body.requestPointerLock();
+    }
+    // --- END MOVE ---
+  },
+
+  // Handles clicks while the context menu is active (desktop only)
+  handleContextMenuClick(event) {
+      // Listener should be removed automatically by {once: true}, but clear reference anyway
+      this.contextMenuClickListener = null;
+      console.log("[GAME] Context menu click detected.");
+      console.log("[GAME] Click Target:", event.target); // Log the element clicked
+
+      // We need to prevent this click from triggering game actions (like firing)
+      event.stopPropagation();
+      event.preventDefault();
+
+      const selectedMountId = window.HUD.getSelectedMountFromContextMenu();
+      console.log("[GAME] Click handler - Selected Mount ID from HUD:", selectedMountId); // Log the selected ID
+
+      if (selectedMountId && this.pickupTarget) {
+          console.log(`[GAME] Context menu selection confirmed via click: ${selectedMountId}`);
+          // Call selection handler (which will hide menu and re-lock pointer)
+          this.handleContextMenuSelection(selectedMountId, this.pickupTarget);
+      } else {
+          console.log("[GAME] Context menu dismissed via click (no valid selection).");
+          // Manually hide, reset flag, and re-lock pointer if no selection was made
+          window.HUD.hideWeaponContextMenu();
+          this.isContextMenuActive = false;
+          if (document.pointerLockElement !== document.body) {
+              document.body.requestPointerLock();
+          }
+      }
   },
 };
 
