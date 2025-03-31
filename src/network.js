@@ -24,7 +24,7 @@ export const Network = {
   pendingInitialPickups: null, // Store initial pickups if manager isn't ready
 
   init() {
-    this.socket = io('http://localhost:3000', {
+    this.socket = ioio(import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000', {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
