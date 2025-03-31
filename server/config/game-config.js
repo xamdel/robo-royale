@@ -6,7 +6,7 @@ module.exports = {
   INACTIVE_TIMEOUT: 300000, // 5 minutes
   MIN_MOVE_INTERVAL: 16, // ~60fps max
   PORT: process.env.NODE_ENV === 'production' ? (process.env.PORT || 3000) : 3000,
-  CORS_ORIGIN: "http://localhost:5173",
+  CORS_ORIGIN: process.env.NODE_ENV === 'production' ? (process.env.CORS_ORIGIN) : 'http://localhost:5173',
   
   PROJECTILE_CONFIGS: {
     cannon: {
