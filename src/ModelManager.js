@@ -104,23 +104,47 @@ class ModelManager {
 
     // extractInstanceData removed as it's no longer needed for individual model placement.
 
-    // Creates a simple visual representation for an ammo box pickup
+    // Creates a visual representation for an ammo box pickup with text
     async createAmmoBox() {
-        // Simple box geometry
         const boxSize = 0.8;
         const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
 
-        // Material (e.g., metallic green)
+        // Create canvas for texture
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        const canvasSize = 128; // Texture resolution
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
+
+        // Background color (darker green)
+        const backgroundColor = '#006400'; // Dark Green
+        context.fillStyle = backgroundColor;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Text properties
+        const textColor = '#FFFFFF'; // White text
+        const fontSize = 30;
+        context.font = `Bold ${fontSize}px Arial`;
+        context.fillStyle = textColor;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+
+        // Draw text
+        context.fillText('AMMO', canvas.width / 2, canvas.height / 2);
+
+        // Create texture from canvas
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true; // Ensure texture updates
+
+        // Material using the texture
         const material = new THREE.MeshStandardMaterial({
-            color: 0x00ff00, // Green color
-            metalness: 0.6,
-            roughness: 0.4,
+            map: texture, // Apply the canvas texture
+            metalness: 0.5, // Slightly less metallic
+            roughness: 0.5, // Slightly rougher
         });
 
         const ammoBoxMesh = new THREE.Mesh(geometry, material);
         ammoBoxMesh.name = "AmmoBoxPickup"; // For debugging
-
-        // TODO: Add "AMMO" text using TextGeometry or a texture for better visuals
 
         return ammoBoxMesh;
     }

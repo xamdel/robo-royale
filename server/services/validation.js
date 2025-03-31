@@ -54,20 +54,20 @@ class ValidationService {
   }
 
   static getInitialAmmo(weaponType) {
-    const mappedType = weaponType === 'rocketLauncher' ? 'rocket' : weaponType;
-    return gameConfig.WEAPON_AMMO[mappedType]?.initial || 
+    // Removed mapping: const mappedType = weaponType === 'rocketLauncher' ? 'rocket' : weaponType;
+    return gameConfig.WEAPON_AMMO[weaponType]?.initial || // Use weaponType directly
            gameConfig.WEAPON_AMMO.default.initial;
   }
 
   static getMaxAmmo(weaponType) {
-    const mappedType = weaponType === 'rocketLauncher' ? 'rocket' : weaponType;
-    return gameConfig.WEAPON_AMMO[mappedType]?.max || 
+    // Removed mapping: const mappedType = weaponType === 'rocketLauncher' ? 'rocket' : weaponType;
+    return gameConfig.WEAPON_AMMO[weaponType]?.max || // Use weaponType directly
            gameConfig.WEAPON_AMMO.default.max;
   }
 
   static getPickupAmount(weaponType) {
-    const mappedType = weaponType === 'rocketLauncher' ? 'rocket' : weaponType;
-    return gameConfig.WEAPON_AMMO[mappedType]?.pickupAmount || 
+    // Removed mapping: const mappedType = weaponType === 'rocketLauncher' ? 'rocket' : weaponType;
+    return gameConfig.WEAPON_AMMO[weaponType]?.pickupAmount || // Use weaponType directly
            gameConfig.WEAPON_AMMO.default.pickupAmount;
   }
 
