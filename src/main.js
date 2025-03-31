@@ -12,6 +12,7 @@ import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGener
 import { modelManager } from './ModelManager.js'; // Import ModelManager
 import { audioManager } from './audio/AudioManager.js'; // Import the audio manager instance
 import * as THREE from 'three';
+import { WelcomeScreen } from './welcome/WelcomeScreen.js'; // Import WelcomeScreen
 
 // Debug variables
 let debugElements = {
@@ -211,8 +212,29 @@ function updateInterpolationSpeedDisplay() {
 async function initializeGame() {
   console.log("[Main] Initializing game components...");
 
+  // --- Welcome Screen Logic ---
+  // Show welcome screen only if it hasn't been shown before (based on localStorage)
+  let playerColors = { primary: '#00ffff', secondary: '#ff00ff' }; // Default colors
+  if (!WelcomeScreen.hasBeenShown()) {
+    console.log("[Main] Showing Welcome Screen...");
+    playerColors = await WelcomeScreen.show(); // Wait for user interaction
+    console.log("[Main] Welcome Screen finished. Selected colors:", playerColors);
+  } else {
+    console.log("[Main] Welcome Screen already shown, skipping.");
+    // Optionally load saved colors even if screen isn't shown again
+    // playerColors = WelcomeScreen.getSavedColors(); // Need to expose getSavedColors or similar
+  }
+  // --- End Welcome Screen Logic ---
+
+
+  // Now proceed with game initialization, potentially using playerColors
+
   // 1. Initialize Network first
   Network.init();
+
+  // Send player customization data after network is initialized
+  Network.sendPlayerCustomization(playerColors);
+
 
   // 2. Load building models asynchronously
   console.log("[Main] Starting building model loading...");
@@ -322,8 +344,8 @@ async function initializeGame() {
     console.log('[Network Stats]', stats);
   });
 
-  // 5. Initialize Game AFTER network and scene are ready
-  await Game.init(Network.socket);
+  // 5. Initialize Game AFTER network and scene are ready, passing the chosen colors
+  await Game.init(Network.socket, playerColors);
 
   // Initialize HUD after game is initialized
   HUD.init();

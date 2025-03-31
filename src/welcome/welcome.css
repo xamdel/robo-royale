@@ -1,0 +1,161 @@
+#welcome-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.9); /* Dark overlay */
+    color: #eee;
+    display: flex; /* Use flexbox for centering */
+    justify-content: center;
+    align-items: center;
+    z-index: 2000; /* Ensure it's above everything else */
+    font-family: 'Orbitron', sans-serif; /* Use game font */
+    opacity: 1;
+    transition: opacity 0.5s ease-out;
+}
+
+#welcome-screen.hidden {
+    opacity: 0;
+    pointer-events: none; /* Prevent interaction when hidden */
+}
+
+.welcome-container {
+    background-color: rgba(30, 30, 30, 0.85);
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.3); /* Cyan glow */
+    border: 1px solid rgba(0, 255, 255, 0.5);
+    max-width: 90%;
+    max-height: 90%;
+    overflow-y: auto; /* Allow scrolling if content overflows */
+    display: flex;
+    gap: 30px; /* Space between columns */
+}
+
+.welcome-info {
+    flex: 1; /* Take up available space */
+    min-width: 300px;
+}
+
+.welcome-preview {
+    flex: 1; /* Take up available space */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 300px;
+}
+
+.welcome-container h1 {
+    text-align: center;
+    color: #00ffff; /* Cyan */
+    margin-bottom: 20px;
+    font-size: 2.5em;
+    text-shadow: 0 0 10px #00ffff;
+}
+
+.welcome-container h2 {
+    color: #00ffff;
+    margin-top: 30px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.5);
+    padding-bottom: 5px;
+}
+
+.controls-list {
+    list-style: none;
+    padding: 0;
+    font-family: 'Roboto Mono', monospace; /* Monospaced for controls */
+    font-size: 0.9em;
+}
+
+.controls-list li {
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.controls-list .key {
+    font-weight: bold;
+    color: #ffff00; /* Yellow for keys */
+    min-width: 100px; /* Align actions */
+    display: inline-block;
+}
+
+.color-pickers {
+    margin-top: 20px;
+    display: flex;
+    justify-content: space-around; /* Space out pickers */
+    align-items: center;
+}
+
+.color-picker-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.color-picker-group label {
+    font-size: 0.9em;
+    color: #aaa;
+}
+
+.color-picker-group input[type="color"] {
+    width: 50px;
+    height: 50px;
+    border: 2px solid #555;
+    border-radius: 5px;
+    cursor: pointer;
+    padding: 0; /* Remove default padding */
+    background-color: transparent; /* Ensure picker color shows */
+}
+/* Style the color picker thumb/preview */
+.color-picker-group input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+.color-picker-group input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+.color-picker-group input[type="color"]::-moz-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+
+
+#mech-preview-canvas {
+    width: 300px; /* Adjust as needed */
+    height: 300px; /* Adjust as needed */
+    border: 1px solid rgba(0, 255, 255, 0.3);
+    border-radius: 5px;
+    margin-bottom: 15px;
+    background-color: rgba(0, 0, 0, 0.2); /* Slight background */
+}
+
+.preview-instructions {
+    font-size: 0.8em;
+    color: #aaa;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+#start-game-button {
+    display: block; /* Center button */
+    margin: 30px auto 0; /* Center horizontally, add top margin */
+    padding: 12px 30px;
+    font-size: 1.2em;
+    font-family: 'Orbitron', sans-serif;
+    background-color: #00aaaa; /* Teal */
+    color: #000;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+}
+
+#start-game-button:hover {
+    background-color: #00ffff; /* Brighter cyan on hover */
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+}

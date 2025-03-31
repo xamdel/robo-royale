@@ -42,6 +42,7 @@ class PlayerController {
     // Setup socket event handlers
     this.setupMoveHandler(socket, player);
     this.setupDeathHandler(socket, player); // Add death handler setup
+    this.setupCustomizationHandler(socket, player); // Add customization handler
     this.setupDisconnectHandler(socket);
 
     return player;
@@ -100,6 +101,27 @@ class PlayerController {
       // when the fatal hit is detected. This handler is now primarily for logging or potential future client-specific death logic.
       
       console.log(`[PlayerController] Received playerDeath event for ${socket.id}. Weapon dropping handled by ProjectileController.`);
+    });
+  }
+
+  setupCustomizationHandler(socket, player) {
+    socket.on('playerCustomization', (data) => {
+      if (!player) return; // Player might have disconnected
+
+      // Basic validation for color data
+      if (data && typeof data.primary === 'string' && typeof data.secondary === 'string' &&
+          /^#[0-9A-F]{6}$/i.test(data.primary) && /^#[0-9A-F]{6}$/i.test(data.secondary)) {
+
+        console.log(`[PlayerController] Received customization for ${socket.id}: Primary=${data.primary}, Secondary=${data.secondary}`);
+        player.primaryColor = data.primary;
+        player.secondaryColor = data.secondary;
+
+        // The updated colors will be sent out in the next gameState broadcast.
+        // No need to broadcast immediately unless required for instant updates.
+
+      } else {
+        console.warn(`[PlayerController] Invalid customization data received from ${socket.id}:`, data);
+      }
     });
   }
 

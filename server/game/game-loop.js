@@ -47,10 +47,12 @@ class GameLoop {
     const playersToRespawn = this.playerManager.getAllPlayers().filter(p => p.isDead && p.checkRespawn());
     playersToRespawn.forEach(player => {
       console.log(`Player ${player.id} is respawning.`);
-      // Broadcast respawn event with flag to clear weapons
+      // Broadcast respawn event including colors and flag to clear weapons
       this.io.emit('playerRespawned', {
         playerId: player.id,
         position: player.position, // Send initial respawn position
+        primaryColor: player.primaryColor, // Include primary color
+        secondaryColor: player.secondaryColor, // Include secondary color
         clearWeapons: true // Add flag to signal weapon clearing
       });
     });

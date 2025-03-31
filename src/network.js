@@ -329,22 +329,37 @@ export const Network = {
     });
 
     this.socket.on('playerRespawned', (data) => {
+      // Find the player object (local or remote)
+      let targetPlayer;
+      let targetMesh;
+
       if (data.playerId === this.socket.id) {
         console.log('Local player respawning!');
-        Game.handleRespawn();
+        Game.handleRespawn(); // Handles local state reset
+        targetPlayer = Game; // Local player data is directly on Game object
+        targetMesh = Game.player; // Local player mesh
         
-        // Make player visible again
-        Game.player.visible = true;
-        
+        if (targetMesh) {
+          targetMesh.visible = true; // Make local player visible
+        }
+
         if (window.HUD) {
           window.HUD.showAlert("SYSTEMS REBOOT COMPLETE", "success");
+        }
+
+        // Apply colors to local player after respawn
+        if (targetMesh && data.primaryColor && data.secondaryColor) {
+           console.log(`[Network] Applying colors to local player after respawn: P=${data.primaryColor}, S=${data.secondaryColor}`);
+           Game.applyPlayerColors(targetMesh, data.primaryColor, data.secondaryColor);
+        } else {
+           console.warn(`[Network] Missing color data in local player respawn event.`);
         }
         
         // When local player respawns, clear all other players and request updates
         // This ensures we can see all other players after respawning with proper mounts
         console.log('Refreshing all other players after local respawn');
-        
-        // Clean up existing other players
+
+        // Clean up existing other players (This part seems correct, keep as is)
         Object.keys(Game.otherPlayers).forEach(playerId => {
           const player = Game.otherPlayers[playerId];
           if (player && player.mesh) {
@@ -373,19 +388,33 @@ export const Network = {
         // This will trigger creation of new players with proper mount managers
         console.log('Requesting fresh game state after respawn');
         this.socket.emit('requestGameState');
+
       } else {
-        // Make remote player visible again
+        // Handle remote player respawn
         const remotePlayer = Game.otherPlayers[data.playerId];
         if (remotePlayer && remotePlayer.mesh) {
-          remotePlayer.mesh.visible = true;
+          targetPlayer = remotePlayer; // Remote player data object
+          targetMesh = remotePlayer.mesh; // Remote player mesh
+          targetMesh.visible = true; // Make remote player visible
           
           // Update position if provided
           if (data.position) {
-            remotePlayer.mesh.position.set(
-              data.position.x, 
-              data.position.y, 
+            targetMesh.position.set(
+              data.position.x,
+              data.position.y,
               data.position.z
             );
+          }
+
+          // Apply colors to remote player after respawn
+          if (data.primaryColor && data.secondaryColor) {
+             console.log(`[Network] Applying colors to remote player ${data.playerId} after respawn: P=${data.primaryColor}, S=${data.secondaryColor}`);
+             Game.applyPlayerColors(targetMesh, data.primaryColor, data.secondaryColor);
+             // Update stored applied colors
+             targetPlayer.appliedPrimaryColor = data.primaryColor;
+             targetPlayer.appliedSecondaryColor = data.secondaryColor;
+          } else {
+             console.warn(`[Network] Missing color data in remote player respawn event for ${data.playerId}.`);
           }
           
           // If the server indicates weapons should be cleared (e.g., on respawn)
@@ -577,6 +606,15 @@ export const Network = {
     if (this.socket?.connected) {
       this.socket.emit('move', moveData);
     }
+  },
+
+  sendPlayerCustomization(colors) {
+    if (!this.socket) {
+      console.error("Network: Cannot send customization, socket not initialized.");
+      return;
+    }
+    console.log("[Network] Sending player customization:", colors);
+    this.socket.emit('playerCustomization', colors);
   },
 
   sendWeaponPickup(data) {
