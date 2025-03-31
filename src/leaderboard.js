@@ -2,11 +2,14 @@ export const Leaderboard = {
   elements: {
     container: null,
     list: null,
+    // controlsContainer: null, // Removed controls container reference
+    headerRow: null, // Add header row element
   },
   isVisible: false,
+  clickOutsideHandler: null, // Add handler reference
 
   init() {
-    console.log("[Leaderboard] Initializing..."); // Add log
+    console.log("[Leaderboard] Initializing...");
     // Create container
     this.elements.container = document.createElement('div');
     this.elements.container.id = 'leaderboard-container';
@@ -18,10 +21,19 @@ export const Leaderboard = {
     title.textContent = 'Match Kills';
     this.elements.container.appendChild(title);
 
+    // Create and populate header row for the list
+    this.elements.headerRow = document.createElement('div');
+    this.elements.headerRow.className = 'leaderboard-header';
+    this.elements.headerRow.innerHTML = `
+      <span class="header-name">Name</span>
+      <span class="header-kills">Kills</span>
+    `;
+    this.elements.container.appendChild(this.elements.headerRow);
+
     // Create list area
     this.elements.list = document.createElement('ul');
     this.elements.container.appendChild(this.elements.list);
-    console.log("[Leaderboard] List element created:", this.elements.list); // Add log
+    console.log("[Leaderboard] List element created:", this.elements.list);
 
     // Add to body
     document.body.appendChild(this.elements.container);
@@ -62,10 +74,13 @@ export const Leaderboard = {
       return;
     }
 
-    // Populate with sorted scores
+    // Populate with sorted scores using spans for columns
     playerScores.forEach(player => {
       const listItem = document.createElement('li');
-      listItem.textContent = `${player.name}: ${player.kills}`;
+      listItem.innerHTML = `
+        <span class="player-name">${player.name}</span>
+        <span class="player-kills">${player.kills}</span>
+      `;
       this.elements.list.appendChild(listItem);
     });
   },
@@ -81,7 +96,17 @@ export const Leaderboard = {
     this.update(killLog); // Update content when showing
     this.elements.container.style.display = 'block';
     this.isVisible = true;
-    // Optional: Pause game or capture input focus here if needed
+
+    // Add click outside listener
+    // Use setTimeout to avoid capturing the click that opened the leaderboard
+    setTimeout(() => {
+      this.clickOutsideHandler = (event) => {
+        if (this.elements.container && !this.elements.container.contains(event.target)) {
+          this.hide();
+        }
+      };
+      document.addEventListener('click', this.clickOutsideHandler, true); // Use capture phase
+    }, 0);
   },
 
   hide() {
@@ -94,7 +119,12 @@ export const Leaderboard = {
     }
     this.elements.container.style.display = 'none';
     this.isVisible = false;
-    // Optional: Resume game or release input focus here
+
+    // Remove click outside listener
+    if (this.clickOutsideHandler) {
+      document.removeEventListener('click', this.clickOutsideHandler, true);
+      this.clickOutsideHandler = null;
+    }
   },
 
   toggle(killLog) {
@@ -157,13 +187,41 @@ export const Leaderboard = {
         padding-bottom: 10px;
       }
 
+      /* Header Row Styling */
+      .leaderboard-header {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 12px;
+        margin-bottom: 5px; /* Space before list */
+        border-bottom: 1px solid rgba(0, 170, 255, 0.4);
+        font-weight: bold;
+        color: #00d0ff; /* Slightly brighter blue */
+        font-size: 15px;
+      }
+
+      .header-name {
+        flex-basis: 75%; /* Allocate more space to name */
+        text-align: left;
+      }
+
+      .header-kills {
+        flex-basis: 20%; /* Allocate less space to kills */
+        text-align: right;
+      }
+
+      /* List Area Styling */
       #leaderboard-container ul {
         list-style: none;
         padding: 0;
-        margin: 0;
+        margin: 10px 0 0 0; /* Add margin top */
+        max-height: 35vh; /* Limit list height */
+        overflow-y: auto; /* Add scroll specifically to list if needed */
       }
 
+      /* List Item Column Styling */
       #leaderboard-container li {
+        display: flex; /* Use flexbox for columns */
+        justify-content: space-between; /* Space out columns */
         background-color: rgba(0, 20, 40, 0.6);
         padding: 8px 12px;
         margin-bottom: 8px;
@@ -171,7 +229,22 @@ export const Leaderboard = {
         border-left: 3px solid #00aaff;
         font-size: 14px;
       }
-      
+
+      #leaderboard-container li .player-name {
+        flex-basis: 75%; /* Match header */
+        text-align: left;
+        overflow: hidden; /* Prevent long names from breaking layout */
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #leaderboard-container li .player-kills {
+        flex-basis: 20%; /* Match header */
+        text-align: right;
+        font-weight: bold;
+        color: #ffffff; /* White kills */
+      }
+
       #leaderboard-container li:last-child {
         margin-bottom: 0;
       }

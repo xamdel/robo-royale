@@ -3,7 +3,8 @@ import { Game } from './game.js';
 import { Network } from './network.js';
 import { DebugTools } from './debug-tools.js';
 import { HUD } from './hud/index.js';
-import { Leaderboard } from './leaderboard.js'; // Import Leaderboard
+import { Leaderboard } from './leaderboard.js';
+import { ControlsScreen } from './controlsScreen.js'; // Import ControlsScreen
 import { weaponSystem } from './weapons/index.js';
 import { particleEffectSystem, initParticleEffectSystem } from './systems/ParticleEffectSystem.js';
 import { DamageNumberSystem } from './systems/DamageNumberSystem.js'; // Import DamageNumberSystem
@@ -371,7 +372,11 @@ async function initializeGame() {
 
   // Initialize Leaderboard after HUD
   Leaderboard.init();
-  console.log("[Main] Leaderboard initialized."); // Add log
+  console.log("[Main] Leaderboard initialized.");
+
+  // Initialize ControlsScreen after Leaderboard
+  ControlsScreen.init();
+  console.log("[Main] ControlsScreen initialized.");
 
   // Initialize particle effect system (passing the scene) - Corrected Call
   if (SceneManager.scene) {
@@ -398,12 +403,13 @@ async function initializeGame() {
 window.onload = async () => {
   try {
     await initializeGame(); // Wait for all async setup to complete
-    console.log("[Main] Initialization finished. Adding key listener.");
+    console.log("[Main] Initialization finished. Adding key listeners.");
 
-// Add 'L' key listener for leaderboard *after* successful initialization
-document.addEventListener('keydown', (event) => {
-  if (event.code === 'KeyL') {
-    // Log the state of Leaderboard elements when 'L' is pressed for debugging
+    // Add key listeners *after* successful initialization
+    document.addEventListener('keydown', (event) => {
+      // Toggle Leaderboard with 'L'
+      if (event.code === 'KeyL') {
+        // Log the state of Leaderboard elements when 'L' is pressed for debugging
     console.log("[Main] 'L' key pressed. Checking Leaderboard state:",
       window.Leaderboard,
       window.Leaderboard?.elements?.container,
@@ -418,10 +424,23 @@ document.addEventListener('keydown', (event) => {
       Leaderboard.toggle(Game.killLog);
     } else {
       // Log if the key is pressed but elements aren't ready
-      console.warn("[Main] Leaderboard elements not ready when 'L' key was pressed.");
+        console.warn("[Main] Leaderboard elements not ready when 'L' key was pressed.");
+      }
     }
-  }
-});
+
+      // Toggle ControlsScreen with 'Escape'
+      if (event.code === 'Escape') {
+         console.log("[Main] 'Escape' key pressed. Checking ControlsScreen state:",
+          window.ControlsScreen,
+          window.ControlsScreen?.elements?.container
+        );
+        if (window.ControlsScreen && window.ControlsScreen.elements.container) {
+          ControlsScreen.toggle();
+        } else {
+          console.warn("[Main] ControlsScreen elements not ready when 'Escape' key was pressed.");
+        }
+      }
+    });
   } catch (error) {
     console.error("[Main] Critical error during game initialization:", error);
     // Optionally display an error message to the user
@@ -436,5 +455,6 @@ export const Debug = {
 // Make these available globally for cross-module access
 window.Game = Game;
 window.HUD = HUD;
-window.Leaderboard = Leaderboard; // Make Leaderboard global
+window.Leaderboard = Leaderboard;
+window.ControlsScreen = ControlsScreen; // Make ControlsScreen global
 // window.AudioManager is assigned above after init
