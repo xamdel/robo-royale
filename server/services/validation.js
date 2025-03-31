@@ -14,11 +14,11 @@ class ValidationService {
            typeof data.input.moveForward === 'boolean' &&
            typeof data.input.moveBackward === 'boolean' &&
            typeof data.input.moveLeft === 'boolean' &&
-           typeof data.input.moveRight === 'boolean' &&
-           typeof data.input.isRunning === 'boolean';
+           typeof data.input.moveRight === 'boolean';
+           // typeof data.input.isRunning === 'boolean'; // Removed sprint check
   }
 
-  static isValidMovement(oldPos, newPos, maxDistance = 1.0) {
+  static isValidMovement(oldPos, newPos, maxDistance = 1.6) { // Increased maxDistance to match new speed (1.0 * 1.6)
     // Basic distance check to prevent teleporting
     const dx = newPos.x - oldPos.x;
     const dy = newPos.y - oldPos.y;

@@ -61,9 +61,9 @@ export const PlayerAnimations = {
       else if (playerData.moveLeft) primaryDirection = 'left';
       else if (playerData.moveRight) primaryDirection = 'right';
       
-      // Select animation based on direction and running state
-      const animPrefix = playerData.isRunning ? 'Run' : 'Run'; // Use same animations for now
-      
+      // Select animation based on direction
+      const animPrefix = 'Run'; // Always use 'Run' prefix now
+
       switch (primaryDirection) {
         case 'forward':
           targetAction = playerData.actions[`${animPrefix}Forward-loop`];
@@ -82,9 +82,9 @@ export const PlayerAnimations = {
           targetAction = playerData.actions[`${animPrefix}Forward-loop`];
       }
       
-      // Set animation speed based on running state
+      // Set animation speed
       if (targetAction) {
-        targetAction.timeScale = playerData.isRunning ? 1.5 : 0.7;
+        targetAction.timeScale = 1.0; // Use a consistent speed
         // console.debug('Selected animation:', {
         //   name: targetAction._clip.name,
         //   timeScale: targetAction.timeScale
@@ -146,7 +146,7 @@ export const PlayerAnimations = {
         moveBackward: playerObject.moveBackward,
         moveLeft: playerObject.moveLeft,
         moveRight: playerObject.moveRight,
-        isRunning: playerObject.isRunning,
+        // isRunning: playerObject.isRunning, // Removed sprint
         isLocalPlayer: true
       };
     } else {
@@ -158,7 +158,7 @@ export const PlayerAnimations = {
         moveBackward: playerObject.moveBackward,
         moveLeft: playerObject.moveLeft,
         moveRight: playerObject.moveRight,
-        isRunning: playerObject.isRunning,
+        // isRunning: playerObject.isRunning, // Removed sprint
         isLocalPlayer: false
       };
     }
@@ -227,7 +227,7 @@ export const PlayerAnimations = {
       mixer: mixer,
       actions: playerActions,
       currentAction: null,
-      isRunning: false,
+      // isRunning: false, // Removed sprint
       moveLeft: false,
       moveRight: false,
       moveForward: false,

@@ -15,10 +15,10 @@ class Player {
       moveForward: false,
       moveBackward: false,
       moveLeft: false,
-      moveRight: false,
-      isRunning: false
+      moveRight: false
+      // isRunning: false // Removed sprint
     };
-    
+
     // Health system
     this.health = gameConfig.PLAYER_CONFIG.maxHealth;
     this.isDead = false;
@@ -38,8 +38,8 @@ class Player {
       moveForward: positionData.input.moveForward,
       moveBackward: positionData.input.moveBackward,
       moveLeft: positionData.input.moveLeft,
-      moveRight: positionData.input.moveRight,
-      isRunning: positionData.input.isRunning
+      moveRight: positionData.input.moveRight
+      // isRunning: positionData.input.isRunning // Removed sprint
     };
   }
 

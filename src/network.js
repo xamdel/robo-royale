@@ -566,8 +566,23 @@ export const Network = {
       }
     });
 
-    // Handle creation of dropped weapon pickups (now handled by initialPickupState or gameState)
-    // this.socket.on('droppedWeaponCreated', (data) => { ... }); // REMOVED
+    // Handle creation of dropped weapon pickups
+    this.socket.on('droppedWeaponCreated', (data) => {
+        console.log(`[Network] Received droppedWeaponCreated: ID=${data.pickupId}, Type=${data.weaponType}`);
+        if (Game.weaponSpawnManager && data.pickupId && data.weaponType && data.position) {
+            // Convert position data if necessary (assuming it's {x, y, z})
+            const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+            // Call the existing spawnWeaponPickup function with the server data
+            // It expects an object matching the structure { id, weaponType, position }
+            Game.weaponSpawnManager.spawnWeaponPickup({
+                id: data.pickupId,
+                weaponType: data.weaponType,
+                position: position // Pass the Vector3 object
+            });
+        } else {
+            console.warn('[Network] Invalid data or WeaponSpawnManager not ready for droppedWeaponCreated event.');
+        }
+    });
 
     // Handle removal of ANY pickup item (initial spawn or dropped)
     this.socket.on('pickupRemoved', (data) => {

@@ -19,7 +19,7 @@ export const Game = {
   moveBackward: false,
   moveLeft: false,
   moveRight: false,
-  isRunning: false,
+  // isRunning: false, // Removed sprint
   mechModel: null,
   mixer: null,
   actions: {},
@@ -184,7 +184,7 @@ export const Game = {
       if (window.HUD) {
         window.HUD.showAlert("MECH SYSTEMS ONLINE", "info");
         setTimeout(() => {
-          window.HUD.addMessage("Welcome to Robo Royale. Controls: WASD to move, SHIFT to run.");
+          window.HUD.addMessage("Welcome to Robo Royale. Controls: WASD to move."); // Removed SHIFT mention
           setTimeout(() => {
             window.HUD.addMessage("Left-click to fire when weapon is equipped.");
             setTimeout(() => {
@@ -202,8 +202,8 @@ export const Game = {
         case 'KeyS': this.moveBackward = true; break;
         case 'KeyA': this.moveLeft = true; break;
         case 'KeyD': this.moveRight = true; break;
-        case 'ShiftLeft':
-        case 'ShiftRight': this.isRunning = true; break;
+        // case 'ShiftLeft': // Removed sprint
+        // case 'ShiftRight': this.isRunning = true; break; // Removed sprint
         case 'KeyE':
           if (!this.isEKeyDown) { // Prevent multiple triggers if key is held down
             this.isEKeyDown = true;
@@ -228,8 +228,8 @@ export const Game = {
         case 'KeyS': this.moveBackward = false; break;
         case 'KeyA': this.moveLeft = false; break;
         case 'KeyD': this.moveRight = false; break;
-        case 'ShiftLeft':
-        case 'ShiftRight': this.isRunning = false; break;
+        // case 'ShiftLeft': // Removed sprint
+        // case 'ShiftRight': this.isRunning = false; break; // Removed sprint
         case 'KeyE':
           this.isEKeyDown = false; // Mark key as up
           clearTimeout(this.eKeyHoldTimeout); // Clear the hold timer
@@ -293,7 +293,7 @@ export const Game = {
     this.moveBackward = false;
     this.moveLeft = false;
     this.moveRight = false;
-    this.isRunning = false;
+    // this.isRunning = false; // Removed sprint
 
     // Notify the server about the death. The server should handle weapon dropping & removal.
     console.log("[GAME] Player died. Notifying server...");
@@ -420,8 +420,8 @@ export const Game = {
       if (player.mixer) {
         player.mixer.update(deltaTime);
 
-        // Check if the player position has changed, with different thresholds for walking/running
-        const movementThreshold = player.isRunning ? 0.03 : 0.01; // Lower threshold for walking
+        // Check if the player position has changed
+        const movementThreshold = 0.02; // Use a single threshold now
         const positionChanged = player.previousPosition &&
           player.mesh.position.distanceTo(player.previousPosition) > movementThreshold;
 
@@ -670,7 +670,7 @@ export const Game = {
       player.moveBackward = playerData.moveState.moveBackward;
       player.moveLeft = playerData.moveState.moveLeft;
       player.moveRight = playerData.moveState.moveRight;
-      player.isRunning = playerData.moveState.isRunning;
+      // player.isRunning = playerData.moveState.isRunning; // Removed sprint
 
       // Track previous movement state
       const wasMoving = player.isMoving;
@@ -696,10 +696,8 @@ export const Game = {
   // Apply input without side effects
   applyInput(input, cameraDirections) {
     const { forward, right } = cameraDirections;
-    let speed = 5.0 * input.deltaTime;
-    if (input.isRunning) {
-      speed *= 2;
-    }
+    const baseSpeed = 8.0; // Increased base speed, removed sprint multiplier
+    let speed = baseSpeed * input.deltaTime;
 
     // Calculate movement vector based on input
     const moveVector = new THREE.Vector3();
@@ -726,14 +724,15 @@ export const Game = {
     let finalMoveBackward = this.moveBackward;
     let finalMoveLeft = this.moveLeft;
     let finalMoveRight = this.moveRight;
-    let finalIsRunning = this.isRunning; // TODO: Add run button/logic for mobile
+    // let finalIsRunning = this.isRunning; // Removed sprint
 
     let moveVector = new THREE.Vector3();
     let moved = false;
 
     if (mobileInput.moveVector.lengthSq() > 0.01) { // Use joystick if active
         const { forward, right } = cameraDirections;
-        const speed = 5.0 * deltaTime; // Base speed, running handled separately if needed
+        const baseSpeed = 8.0; // Use new base speed for mobile too
+        const speed = baseSpeed * deltaTime;
         // Use joystick vector directly (already normalized)
         moveVector.add(forward.clone().multiplyScalar(mobileInput.moveVector.y * speed));
         moveVector.add(right.clone().multiplyScalar(mobileInput.moveVector.x * speed));
@@ -751,7 +750,7 @@ export const Game = {
             moveBackward: this.moveBackward,
             moveLeft: this.moveLeft,
             moveRight: this.moveRight,
-            isRunning: this.isRunning,
+            // isRunning: this.isRunning, // Removed sprint
         };
         moveVector = this.applyInput(keyboardInput, cameraDirections);
         if (moveVector.lengthSq() > 0) {
@@ -767,7 +766,7 @@ export const Game = {
         moveBackward: finalMoveBackward,
         moveLeft: finalMoveLeft,
         moveRight: finalMoveRight,
-        isRunning: finalIsRunning, // Use final state
+        // isRunning: finalIsRunning, // Removed sprint
         timestamp: Date.now()
     };
     this.inputBuffer.push(input);
@@ -816,7 +815,7 @@ export const Game = {
         moveBackward: finalMoveBackward,
         moveLeft: finalMoveLeft,
         moveRight: finalMoveRight,
-        isRunning: finalIsRunning,
+        // isRunning: finalIsRunning, // Removed sprint
         deltaTime: input.deltaTime
       }
     } : null;

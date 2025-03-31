@@ -328,11 +328,31 @@ export class WeaponSystem {
     console.log(`[WEAPON SYSTEM] Attempting to attach ${weaponType} to specific mount: ${mountId}`);
     const mount = this.mountManager.getMountPoint(mountId);
 
-    // Check if mount exists and is available
-    if (mount && !mount.hasWeapon()) {
-      console.log(`[WEAPON SYSTEM] Mount ${mountId} is available.`);
+    // Check if mount exists first
+    if (!mount) {
+        console.warn(`[WEAPON SYSTEM] Specific mount ${mountId} not found.`);
+        return false; // Mount doesn't exist
+    }
 
-      // Create a new weapon instance
+    // Check if the mount is occupied
+    if (mount.hasWeapon()) {
+        console.log(`[WEAPON SYSTEM] Mount ${mountId} is occupied. Detaching existing weapon first.`);
+        // Detach and drop the currently equipped weapon
+        // We need detachAndDropWeapon to be async if we want to ensure it finishes before attaching
+        // For now, assume it's synchronous or fire-and-forget for simplicity,
+        // but ideally, this might need async/await if dropping involves async operations.
+        const droppedWeapon = await this.detachAndDropWeapon(mountId); // Use await if detachAndDropWeapon becomes async
+        if (!droppedWeapon) {
+             console.error(`[WEAPON SYSTEM] Failed to detach existing weapon from mount ${mountId}. Aborting attachment.`);
+             return false; // Failed to detach, cannot proceed
+        }
+        console.log(`[WEAPON SYSTEM] Existing weapon detached from ${mountId}. Proceeding with attachment.`);
+    } else {
+         console.log(`[WEAPON SYSTEM] Mount ${mountId} is available.`);
+    }
+
+    // Now that the mount is guaranteed to be empty (or detachment failed), proceed with attachment
+    // Create a new weapon instance
       const weapon = await this.weaponFactory.createWeapon(weaponType);
       if (!weapon) {
         console.error(`[WEAPON SYSTEM] Failed to create weapon instance for type: ${weaponType}`);
@@ -377,13 +397,10 @@ export class WeaponSystem {
 
         return true; // Attachment successful
       } else {
-        console.warn(`[WEAPON SYSTEM] Failed to attach ${weaponType} to specific mount ${mountId}.`);
+        console.warn(`[WEAPON SYSTEM] Failed to attach ${weaponType} to specific mount ${mountId} after ensuring it was empty.`);
         return false; // Attachment failed
       }
-    } else {
-      console.warn(`[WEAPON SYSTEM] Specific mount ${mountId} not found or already occupied.`);
-      return false; // Mount not available
-    }
+    // Removed the 'else' block that checked for occupied mount, as it's handled above now.
   }
 
   fireWeaponByControl(controlKey) {
