@@ -9,10 +9,10 @@ import { createWeaponSystem, updateWeaponStatus, updateWeaponDisplay } from './w
 import { createScannerSystem, updateScanner } from './scannerSystem.js';
 import { createReticle } from './reticle.js';
 import { createAlertSystem, showAlert } from './alertSystem.js'; // Import showAlert
-import { createMessageLogs, addMessage } from './messageLog.js'; // Import addMessage
-// import { addStyles } from './hud.css.js'; // Import CSS injection
+import { createMessageLogs, addMessage } from './messageLog.js';
 import { showDamageIndicator, showDeathScreen, showKillFeed, showDamageNumber, showAmmoWarning } from './eventHandlers.js';
-import { setupMouseListener, showWeaponContextMenu, hideWeaponContextMenu, getSelectedMountFromContextMenu } from './contextMenu.js'; // Import context menu functions
+import { setupMouseListener, showWeaponContextMenu, hideWeaponContextMenu, getSelectedMountFromContextMenu } from './contextMenu.js';
+import { showItemBadge, hideItemBadge } from './itemBadge.js'; // Import item badge functions
 
 export const HUD = {
   elements,
@@ -58,8 +58,10 @@ export const HUD = {
     window.HUD.showWeaponContextMenu = showWeaponContextMenu;
     window.HUD.hideWeaponContextMenu = hideWeaponContextMenu;
     window.HUD.getSelectedMountFromContextMenu = getSelectedMountFromContextMenu;
-    window.HUD.showAlert = showAlert; // Ensure showAlert is exposed
-    window.HUD.addMessage = addMessage; // Ensure addMessage is exposed
+    window.HUD.showAlert = showAlert;
+    window.HUD.addMessage = addMessage;
+    window.HUD.showItemBadge = showItemBadge; // Expose item badge function
+    window.HUD.hideItemBadge = hideItemBadge; // Expose item badge function
 
 
     // Update health display initially
@@ -96,7 +98,11 @@ export const HUD = {
   showDeathScreen: showDeathScreen,
   showKillFeed: showKillFeed,
   showDamageNumber: showDamageNumber,
+  showAmmoWarning: showAmmoWarning, // Added missing export from eventHandlers
   // Expose core alert/message functions directly for compatibility
   showAlert: showAlert,
   addMessage: addMessage,
+  // Expose item badge functions
+  showItemBadge: showItemBadge,
+  hideItemBadge: hideItemBadge,
 };

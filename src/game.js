@@ -8,8 +8,9 @@ import { DebugTools } from './debug-tools.js';
 import { WeaponOrientationDebugger } from './debug-tools/weapon-orientation-debugger.js';
 import { Network } from './network.js';
 import { WeaponSpawnManager } from './weaponSpawnManager.js'; // Import WeaponSpawnManager
-import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGenerator
+import { TerrainGenerator } from './terrainGenerator.js';
 import { HUD } from './hud/index.js';
+import { MobileControlsManager } from './mobileControls/MobileControlsManager.js'; // Import MobileControlsManager
 
 export const Game = {
   player: null,
@@ -252,8 +253,25 @@ export const Game = {
     const nearestPickup = this.weaponSpawnManager.findNearestPickup(playerWorldPos, pickupRange);
 
     if (nearestPickup) {
-      this.pickupTarget = nearestPickup; // Store the target pickup
-      // console.log(`[GAME] Targeting pickup: Type=${this.pickupTarget.type}, ID=${this.pickupTarget.id}`); // Removed log
+      this.pickupTarget = nearestPickup;
+      console.log(`[GAME] Targeting pickup: Type=${this.pickupTarget.type}, ID=${this.pickupTarget.id}`);
+
+      // --- Show Item Badge ---
+      if (this.pickupTarget.model && SceneManager.camera && window.HUD?.showItemBadge) {
+        const screenPos = this.worldToScreen(this.pickupTarget.model.position, SceneManager.camera);
+        if (screenPos) {
+          // Pass relevant info (adjust based on actual pickupTarget structure)
+          const badgeInfo = {
+            type: this.pickupTarget.weaponType || this.pickupTarget.type, // Use weaponType if available
+            config: this.pickupTarget.config || {}, // Pass config if available
+            // Add other relevant stats if needed
+          };
+          window.HUD.showItemBadge(badgeInfo, screenPos);
+        } else {
+          window.HUD.hideItemBadge(); // Hide if off-screen
+        }
+      }
+      // ---------------------
 
       // Set timeout to show context menu *only for weapons* if key is still held
       if (this.pickupTarget.type === 'weapon') {
@@ -270,6 +288,9 @@ export const Game = {
              if (window.HUD && window.HUD.showWeaponContextMenu) {
                // Pass mouse position (or center screen?), ALL mounts, and pickup info
               // For now, let's assume HUD centers it or uses mouse pos internally
+              // Hide item badge before showing context menu
+              if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
+
               const allMounts = weaponSystem.mountManager.getAllMounts(); // Get all mounts
               window.HUD.showWeaponContextMenu(null, allMounts, this.pickupTarget); // Pass all mounts
             } else {
@@ -381,6 +402,9 @@ export const Game = {
        // Key released, but no pickup was targeted (e.g., pressed 'E' with nothing nearby)
        console.log("[GAME] 'E' released, but no pickup was targeted.");
     }
+
+    // Hide item badge on key up
+    if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
 
     // Reset state
     this.isHoldingE = false;
@@ -708,23 +732,63 @@ export const Game = {
       return null;
     }
 
-    const input = {
-      id: this.inputSequence++,
-      deltaTime: deltaTime,
-      moveForward: this.moveForward,
-      moveBackward: this.moveBackward,
-      moveLeft: this.moveLeft,
-      moveRight: this.moveRight,
-      isRunning: this.isRunning,
-      timestamp: Date.now()
-    };
+    // Get mobile input state
+    const mobileInput = MobileControlsManager.getInputState();
 
-    this.inputBuffer.push(input);
+    // Determine movement based on mobile or keyboard input
+    let finalMoveForward = this.moveForward;
+    let finalMoveBackward = this.moveBackward;
+    let finalMoveLeft = this.moveLeft;
+    let finalMoveRight = this.moveRight;
+    let finalIsRunning = this.isRunning; // TODO: Add run button/logic for mobile
 
-    const moveVector = this.applyInput(input, cameraDirections);
+    let moveVector = new THREE.Vector3();
     let moved = false;
 
-    if (moveVector.lengthSq() > 0 && !this.isDead) {
+    if (mobileInput.moveVector.lengthSq() > 0.01) { // Use joystick if active
+        const { forward, right } = cameraDirections;
+        const speed = 5.0 * deltaTime; // Base speed, running handled separately if needed
+        // Use joystick vector directly (already normalized)
+        moveVector.add(forward.clone().multiplyScalar(mobileInput.moveVector.y * speed));
+        moveVector.add(right.clone().multiplyScalar(mobileInput.moveVector.x * speed));
+        moved = true;
+        // Override keyboard states if joystick is used (optional, prevents conflicts)
+        finalMoveForward = mobileInput.moveVector.y > 0.1;
+        finalMoveBackward = mobileInput.moveVector.y < -0.1;
+        finalMoveLeft = mobileInput.moveVector.x < -0.1;
+        finalMoveRight = mobileInput.moveVector.x > 0.1;
+
+    } else { // Fallback to keyboard if joystick is centered
+        const keyboardInput = {
+            deltaTime: deltaTime,
+            moveForward: this.moveForward,
+            moveBackward: this.moveBackward,
+            moveLeft: this.moveLeft,
+            moveRight: this.moveRight,
+            isRunning: this.isRunning,
+        };
+        moveVector = this.applyInput(keyboardInput, cameraDirections);
+        if (moveVector.lengthSq() > 0) {
+            moved = true;
+        }
+    }
+
+     // Create the input object AFTER determining final movement states
+     const input = {
+        id: this.inputSequence++,
+        deltaTime: deltaTime,
+        moveForward: finalMoveForward,
+        moveBackward: finalMoveBackward,
+        moveLeft: finalMoveLeft,
+        moveRight: finalMoveRight,
+        isRunning: finalIsRunning, // Use final state
+        timestamp: Date.now()
+    };
+    this.inputBuffer.push(input);
+
+
+    // Apply the calculated moveVector
+    if (moved && !this.isDead) {
       moved = true;
       this.player.position.add(moveVector);
       // Adjust player height based on terrain
@@ -774,7 +838,51 @@ export const Game = {
     // Update previous position
     if (moved) this.previousPosition.copy(this.player.position);
 
+    // --- Hide Item Badge if player moves away ---
+    // (This is a simple check, might need refinement)
+    if (!this.isHoldingE && this.pickupTarget && window.HUD?.hideItemBadge) {
+        const playerWorldPos = new THREE.Vector3();
+        this.player.getWorldPosition(playerWorldPos);
+        const pickupRange = 4.0;
+        if (playerWorldPos.distanceTo(this.pickupTarget.model.position) > pickupRange + 0.5) { // Add buffer
+            // console.log("[GAME] Player moved away from pickup target, hiding badge."); // Debug
+            window.HUD.hideItemBadge();
+            this.pickupTarget = null; // Clear target if moved away without interacting
+        }
+    }
+    // ------------------------------------------
+
+
+    // Update previous position
+    if (moved) this.previousPosition.copy(this.player.position);
+
     return moveData;
+  },
+
+  // Helper function to convert world coordinates to screen coordinates
+  worldToScreen(worldPosition, camera) {
+      const vector = worldPosition.clone();
+      vector.project(camera);
+
+      // Check if the point is behind the camera
+      if (vector.z > 1) {
+          return null; // Don't display if behind camera
+      }
+
+      const widthHalf = window.innerWidth / 2;
+      const heightHalf = window.innerHeight / 2;
+
+      const x = (vector.x * widthHalf) + widthHalf;
+      const y = -(vector.y * heightHalf) + heightHalf;
+
+      // Optional: Check if it's within screen bounds (e.g., add padding)
+      const padding = 20;
+      if (x < padding || x > window.innerWidth - padding || y < padding || y > window.innerHeight - padding) {
+         // return null; // Optionally hide if too close to edge or off-screen
+      }
+
+
+      return { x, y };
   },
 
   isRemotePlayer(player) {

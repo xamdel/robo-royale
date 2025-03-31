@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WeaponFactory } from './WeaponFactory.js';
 import { MountManager } from './MountManager.js';
 import { Network } from '../network.js';
+import { MobileControlsManager } from '../mobileControls/MobileControlsManager.js'; // Import MobileControlsManager
 
 export class WeaponSystem {
   constructor() {
@@ -13,6 +14,10 @@ export class WeaponSystem {
     // Firing state
     this.isFiringPrimary = false;
     this.isFiringSecondary = false;
+
+    // Swap button state tracking for mobile
+    this.wasSwapPrimaryPressed = false;
+    this.wasSwapSecondaryPressed = false;
 
     this.setupInputListeners();
   }
@@ -657,5 +662,53 @@ export class WeaponSystem {
     for (const weapon of this.weaponTemplates.values()) {
       weapon.update(deltaTime);
     }
+
+    // --- Handle Mobile Controls Input ---
+    if (MobileControlsManager.isTouchDevice && MobileControlsManager.isVisible) {
+        const mobileInput = MobileControlsManager.getInputState(); // Get fresh state
+
+        // --- Firing ---
+        // Set firing state based on mobile buttons (overrides mouse/key if active)
+        // Note: This assumes continuous firing while button is held.
+        // If tap-to-fire is desired, logic needs adjustment here and in TouchButton.
+        this.isFiringPrimary = mobileInput.buttonStates.firePrimary || this.isFiringPrimary; // Allow mouse/key to also trigger
+        this.isFiringSecondary = mobileInput.buttonStates.fireSecondary || this.isFiringSecondary;
+
+        // Handle gatling spin-up/down based on mobile button state changes
+        const primaryWeapon = this.getSelectedWeapon('primary');
+        if (primaryWeapon?.type === 'gatling') {
+            if (mobileInput.buttonStates.firePrimary && !primaryWeapon.isFiringSequenceActive) {
+                primaryWeapon.startFiringSequence();
+            } else if (!mobileInput.buttonStates.firePrimary && primaryWeapon.isFiringSequenceActive && !this.isFiringPrimary /* Check if mouse isn't firing */) {
+                 primaryWeapon.stopFiringSequence();
+            }
+        }
+        const secondaryWeapon = this.getSelectedWeapon('secondary');
+         if (secondaryWeapon?.type === 'gatling') {
+            if (mobileInput.buttonStates.fireSecondary && !secondaryWeapon.isFiringSequenceActive) {
+                secondaryWeapon.startFiringSequence();
+            } else if (!mobileInput.buttonStates.fireSecondary && secondaryWeapon.isFiringSequenceActive && !this.isFiringSecondary /* Check if key isn't firing */) {
+                 secondaryWeapon.stopFiringSequence();
+            }
+        }
+
+
+        // --- Swapping ---
+        // Trigger swap only on the frame the button becomes pressed
+        if (mobileInput.buttonStates.swapPrimary && !this.wasSwapPrimaryPressed) {
+            this.cyclePrimaryWeapon('next'); // Or determine direction if needed
+        }
+        if (mobileInput.buttonStates.swapSecondary && !this.wasSwapSecondaryPressed) {
+            this.cycleSecondaryWeapon();
+        }
+
+        // Update previous swap button states for next frame
+        this.wasSwapPrimaryPressed = mobileInput.buttonStates.swapPrimary;
+        this.wasSwapSecondaryPressed = mobileInput.buttonStates.swapSecondary;
+
+        // TODO: Handle other mobile buttons like interact, jump if added
+    }
+     // --- End Handle Mobile Controls Input ---
+
   }
 }

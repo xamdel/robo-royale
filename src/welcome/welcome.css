@@ -217,3 +217,76 @@
     background-color: #00ffff; /* Brighter cyan on hover */
     box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
 }
+
+/* --- Mobile Responsiveness --- */
+@media (max-width: 768px) {
+    .welcome-container {
+        flex-direction: column; /* Stack columns */
+        padding: 20px; /* Reduce padding */
+        gap: 20px; /* Reduce gap */
+        max-height: 95%; /* Allow slightly more height */
+        max-width: 95%;
+    }
+
+    .welcome-info, .welcome-preview {
+        min-width: unset; /* Remove min-width */
+        flex-basis: auto; /* Allow natural sizing */
+    }
+
+    .welcome-container h1 {
+        font-size: 1.8em; /* Smaller heading */
+        margin-bottom: 15px;
+    }
+
+    .welcome-container h2 {
+        font-size: 1.2em; /* Smaller subheading */
+        margin-top: 20px;
+        margin-bottom: 10px;
+    }
+
+    .controls-list {
+        font-size: 0.8em; /* Smaller control text */
+    }
+
+    .controls-list .key {
+        min-width: 80px; /* Adjust key alignment */
+    }
+
+    #mech-preview-canvas {
+        width: 60vw; /* Responsive width */
+        height: 60vw; /* Responsive height */
+        max-width: 250px; /* Limit max size */
+        max-height: 250px;
+        margin-bottom: 10px;
+    }
+
+    .preview-instructions {
+        font-size: 0.7em;
+        margin-bottom: 15px;
+    }
+
+    .customization-controls {
+        gap: 15px;
+        margin-top: 15px;
+    }
+
+    .name-input-group label {
+        font-size: 1.2em; /* Smaller name label */
+        width: 90%;
+    }
+
+    .name-input-group input[type="text"] {
+        width: 180px; /* Slightly smaller input */
+    }
+
+    .color-picker-group input[type="color"] {
+        width: 40px; /* Smaller color picker */
+        height: 40px;
+    }
+
+    #start-game-button {
+        padding: 10px 25px;
+        font-size: 1.1em;
+        margin-top: 20px;
+    }
+}

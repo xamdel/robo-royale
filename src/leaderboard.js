@@ -39,8 +39,6 @@ export const Leaderboard = {
     document.body.appendChild(this.elements.container);
     console.log("[Leaderboard] Container added to body."); // Add log
 
-    // Add styles
-    this.addStyles();
     console.log("[Leaderboard] Initialization complete."); // Add log
   },
 
@@ -155,100 +153,4 @@ export const Leaderboard = {
     }
   },
 
-  addStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-      #leaderboard-container {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 80%;
-        max-width: 500px;
-        max-height: 70vh;
-        background-color: rgba(10, 30, 50, 0.85);
-        border: 2px solid #00aaff;
-        border-radius: 10px;
-        color: #e0e0e0;
-        padding: 20px;
-        box-shadow: 0 0 15px rgba(0, 170, 255, 0.5);
-        z-index: 2000; /* Ensure it's above the HUD */
-        font-family: 'Orbitron', 'Roboto Mono', monospace;
-        overflow-y: auto; /* Add scrollbar if content overflows */
-      }
-
-      #leaderboard-container h2 {
-        text-align: center;
-        color: #00aaff;
-        margin-top: 0;
-        margin-bottom: 15px;
-        text-shadow: 0 0 5px rgba(0, 170, 255, 0.7);
-        border-bottom: 1px solid rgba(0, 170, 255, 0.5);
-        padding-bottom: 10px;
-      }
-
-      /* Header Row Styling */
-      .leaderboard-header {
-        display: flex;
-        justify-content: space-between;
-        padding: 8px 12px;
-        margin-bottom: 5px; /* Space before list */
-        border-bottom: 1px solid rgba(0, 170, 255, 0.4);
-        font-weight: bold;
-        color: #00d0ff; /* Slightly brighter blue */
-        font-size: 15px;
-      }
-
-      .header-name {
-        flex-basis: 75%; /* Allocate more space to name */
-        text-align: left;
-      }
-
-      .header-kills {
-        flex-basis: 20%; /* Allocate less space to kills */
-        text-align: right;
-      }
-
-      /* List Area Styling */
-      #leaderboard-container ul {
-        list-style: none;
-        padding: 0;
-        margin: 10px 0 0 0; /* Add margin top */
-        max-height: 35vh; /* Limit list height */
-        overflow-y: auto; /* Add scroll specifically to list if needed */
-      }
-
-      /* List Item Column Styling */
-      #leaderboard-container li {
-        display: flex; /* Use flexbox for columns */
-        justify-content: space-between; /* Space out columns */
-        background-color: rgba(0, 20, 40, 0.6);
-        padding: 8px 12px;
-        margin-bottom: 8px;
-        border-radius: 4px;
-        border-left: 3px solid #00aaff;
-        font-size: 14px;
-      }
-
-      #leaderboard-container li .player-name {
-        flex-basis: 75%; /* Match header */
-        text-align: left;
-        overflow: hidden; /* Prevent long names from breaking layout */
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      #leaderboard-container li .player-kills {
-        flex-basis: 20%; /* Match header */
-        text-align: right;
-        font-weight: bold;
-        color: #ffffff; /* White kills */
-      }
-
-      #leaderboard-container li:last-child {
-        margin-bottom: 0;
-      }
-    `;
-    document.head.appendChild(style);
-  }
 };

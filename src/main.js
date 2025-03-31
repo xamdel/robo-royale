@@ -13,7 +13,8 @@ import { TerrainGenerator } from './terrainGenerator.js'; // Import TerrainGener
 import { modelManager } from './ModelManager.js'; // Import ModelManager
 import { audioManager } from './audio/AudioManager.js'; // Import the audio manager instance
 import * as THREE from 'three';
-import { WelcomeScreen } from './welcome/WelcomeScreen.js'; // Import WelcomeScreen
+import { WelcomeScreen } from './welcome/WelcomeScreen.js';
+import { MobileControlsManager } from './mobileControls/MobileControlsManager.js'; // Import MobileControlsManager
 
 // Debug variables
 let debugElements = {
@@ -377,6 +378,10 @@ async function initializeGame() {
   // Initialize ControlsScreen after Leaderboard
   ControlsScreen.init();
   console.log("[Main] ControlsScreen initialized.");
+
+  // Initialize Mobile Controls (will only run on touch devices)
+  MobileControlsManager.init();
+  console.log("[Main] MobileControlsManager initialized (if applicable).");
 
   // Initialize particle effect system (passing the scene) - Corrected Call
   if (SceneManager.scene) {

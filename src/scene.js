@@ -24,6 +24,7 @@ export const SceneManager = {
   pitch: -0.3, // Vertical camera rotation (slightly looking down)
   minPitch: -0.8, // Limit looking down
   maxPitch: 0.8, // Limit looking up
+  lookDelta: { x: 0, y: 0 }, // Store look input delta for the frame
   debugHelpers: {}, // Store debug helpers
   terrainMesh: null, // Add reference to store the terrain mesh
   isZooming: false, // Zoom state
@@ -41,8 +42,8 @@ export const SceneManager = {
     this.renderer.toneMappingExposure = 1.5;
     document.body.appendChild(this.renderer.domElement);
     
-    // Setup mouse controls
-    this.setupMouseControls();
+    // Setup input controls (mouse and touch)
+    this.setupInputControls();
 
     // Set scene background color to sky blue
     this.scene.background = new THREE.Color('#87CEEB');
@@ -205,22 +206,28 @@ export const SceneManager = {
     this.renderer.render(this.scene, this.camera);
   },
 
-  setupMouseControls() {
-    // Mouse movement handler
+  // Touch state variables
+  touchStartTime: 0,
+  touchStartPosition: { x: 0, y: 0 },
+  touchCurrentPosition: { x: 0, y: 0 },
+  touchHoldTimeout: null,
+  isHoldingTouch: false,
+  touchHoldDuration: 500, // ms for hold gesture
+
+  setupInputControls() {
+    const canvas = this.renderer.domElement;
+
+    // --- Mouse Controls ---
     document.addEventListener('mousemove', (event) => {
       // Ensure Game object exists before checking its state
       if (!window.Game) return; 
 
       // Check if context menu is active in Game object
       const isContextMenuActive = window.Game.isContextMenuActive || false; 
-      
+      // Store mouse delta instead of applying directly
       if (document.pointerLockElement === document.body && !isContextMenuActive) {
-        // Apply mouse movement to camera rotation ONLY if pointer is locked AND context menu is NOT active
-        this.yaw -= event.movementX * this.mouseSensitivity;
-        this.pitch -= event.movementY * this.mouseSensitivity;
-        
-        // Clamp pitch to prevent camera flipping
-        this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.pitch));
+        this.lookDelta.x -= event.movementX; // Accumulate delta
+        this.lookDelta.y -= event.movementY;
       }
     });
     
@@ -266,11 +273,184 @@ export const SceneManager = {
         this.freeLookActive = false;
       }
     });
+
+    // --- Touch Controls ---
+    canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
+    canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
+    canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
+    canvas.addEventListener('touchcancel', this.handleTouchEnd.bind(this), { passive: false }); // Treat cancel like end
+  },
+
+  handleTouchStart(event) {
+    // Prevent default browser actions like scrolling/zooming on the canvas
+    event.preventDefault();
+
+    if (event.touches.length === 1) { // Handle single touch for now
+      const touch = event.touches[0];
+      this.isHoldingTouch = true;
+      this.touchStartTime = Date.now();
+      this.touchStartPosition.x = touch.clientX;
+      this.touchStartPosition.y = touch.clientY;
+      this.touchCurrentPosition.x = touch.clientX;
+      this.touchCurrentPosition.y = touch.clientY;
+
+      // Clear any previous hold timeout
+      clearTimeout(this.touchHoldTimeout);
+
+      // Set timeout for hold gesture
+      this.touchHoldTimeout = setTimeout(() => {
+        if (this.isHoldingTouch) {
+          // Check if touch hasn't moved much (threshold for hold)
+          const dx = this.touchCurrentPosition.x - this.touchStartPosition.x;
+          const dy = this.touchCurrentPosition.y - this.touchStartPosition.y;
+          const moveThreshold = 10; // Pixels
+          if (Math.sqrt(dx * dx + dy * dy) < moveThreshold) {
+            console.log("[SceneManager] Touch Hold Detected at:", this.touchStartPosition);
+            this.triggerContextMenuAtTouch(this.touchStartPosition);
+            // Prevent tap/drag after hold triggers menu
+            this.isHoldingTouch = false; // End the hold state so touchend doesn't trigger tap
+          }
+        }
+      }, this.touchHoldDuration);
+
+      // TODO: Add logic for touch-based camera movement start if needed
+    }
+  },
+
+  handleTouchMove(event) {
+    event.preventDefault();
+
+    if (event.touches.length === 1 && this.isHoldingTouch) {
+      const touch = event.touches[0];
+      const prevX = this.touchCurrentPosition.x;
+      const prevY = this.touchCurrentPosition.y;
+      this.touchCurrentPosition.x = touch.clientX;
+      this.touchCurrentPosition.y = touch.clientY;
+
+      const deltaX = this.touchCurrentPosition.x - prevX;
+      const deltaY = this.touchCurrentPosition.y - prevY;
+
+      // If touch moves significantly, cancel the hold timeout
+      const dx = this.touchCurrentPosition.x - this.touchStartPosition.x;
+      const dy = this.touchCurrentPosition.y - this.touchStartPosition.y;
+      const moveThreshold = 10;
+       if (Math.sqrt(dx*dx + dy*dy) >= moveThreshold) {
+           clearTimeout(this.touchHoldTimeout);
+           // console.log("[SceneManager] Touch moved, hold cancelled."); // Debug
+       }
+
+
+      // Accumulate touch delta for look
+       if (!window.Game?.isContextMenuActive) { // Only rotate if context menu isn't up
+           this.lookDelta.x -= deltaX * 1.5; // Apply sensitivity adjustment for touch
+           this.lookDelta.y -= deltaY * 1.5;
+       }
+    }
+  },
+
+  handleTouchEnd(event) {
+     event.preventDefault();
+     clearTimeout(this.touchHoldTimeout); // Always clear timeout on touch end
+
+     if (this.isHoldingTouch) {
+         const touchEndTime = Date.now();
+         const duration = touchEndTime - this.touchStartTime;
+         const dx = this.touchCurrentPosition.x - this.touchStartPosition.x;
+         const dy = this.touchCurrentPosition.y - this.touchStartPosition.y;
+         const moveThreshold = 10; // Pixels
+
+         // Check for a tap (short duration, minimal movement)
+         if (duration < this.touchHoldDuration && Math.sqrt(dx * dx + dy * dy) < moveThreshold) {
+             console.log("[SceneManager] Tap Detected at:", this.touchStartPosition);
+             // TODO: Handle tap action (e.g., fire weapon if tapping on right side?)
+             // this.handleTap(this.touchStartPosition);
+         }
+     }
+
+     this.isHoldingTouch = false; // Reset hold state
+     // TODO: Add logic for touch-based camera movement end if needed
+  },
+
+  triggerContextMenuAtTouch(touchPosition) {
+      // This function needs access to Game state to find the pickup target
+      if (!window.Game || !window.Game.player || !window.Game.weaponSpawnManager || !weaponSystem) {
+          console.warn("[SceneManager] Cannot trigger context menu, Game state not available.");
+          return;
+      }
+
+      // Use raycasting from touch position to find potential pickup target
+      const raycaster = new THREE.Raycaster();
+      const mouseNDC = new THREE.Vector2(
+          (touchPosition.x / window.innerWidth) * 2 - 1,
+          -(touchPosition.y / window.innerHeight) * 2 + 1
+      );
+      raycaster.setFromCamera(mouseNDC, this.camera);
+
+      // Check intersection with pickup items (assuming they are in a specific group or have userData)
+      const pickupMeshes = window.Game.weaponSpawnManager.getAllPickupModels(); // Need a way to get all pickup meshes
+      const intersects = raycaster.intersectObjects(pickupMeshes, true); // Recursive check
+
+      let targetPickupInfo = null;
+      if (intersects.length > 0) {
+          // Find the closest intersected pickup mesh that has associated pickup data
+          for (const intersect of intersects) {
+              let currentObj = intersect.object;
+              while (currentObj && !currentObj.userData?.pickupId) {
+                  currentObj = currentObj.parent; // Traverse up to find the object with pickupId
+              }
+              if (currentObj && currentObj.userData.pickupId) {
+                  const pickupId = currentObj.userData.pickupId;
+                  const pickupData = window.Game.weaponSpawnManager.getPickupById(pickupId); // Need this function in WeaponSpawnManager
+                  if (pickupData) {
+                      // Check distance (optional, but good practice)
+                      const playerPos = new THREE.Vector3();
+                      window.Game.player.getWorldPosition(playerPos);
+                      const pickupPos = new THREE.Vector3();
+                      currentObj.getWorldPosition(pickupPos);
+                      const pickupRange = 4.0; // Match game logic range
+                      if (playerPos.distanceTo(pickupPos) <= pickupRange) {
+                          targetPickupInfo = pickupData; // Found a valid target
+                          console.log(`[SceneManager] Raycast hit pickup: ${targetPickupInfo.type} (ID: ${targetPickupInfo.id})`);
+                          break; // Use the first valid hit
+                      }
+                  }
+              }
+          }
+      }
+
+      if (targetPickupInfo && targetPickupInfo.type === 'weapon') {
+          console.log("[SceneManager] Triggering weapon context menu via touch hold.");
+          window.Game.isContextMenuActive = true; // Disable camera controls in Game
+
+          // Hide item badge if it was shown
+          if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
+
+          const allMounts = weaponSystem.mountManager.getAllMounts();
+          // Show context menu centered at touch position
+          window.HUD.showWeaponContextMenu(touchPosition, allMounts, targetPickupInfo);
+      } else {
+          console.log("[SceneManager] Touch hold did not target a weapon pickup.");
+          // Optionally hide context menu if it was somehow still visible
+          if (window.HUD?.hideWeaponContextMenu) window.HUD.hideWeaponContextMenu();
+          window.Game.isContextMenuActive = false;
+      }
   },
 
   // Removed addWeaponPickups method as it's now handled by WeaponSpawnManager
 
   updateCamera(playerPosition, playerModel) {
+    // Apply accumulated look delta from mouse or touch
+    if (this.lookDelta.x !== 0 || this.lookDelta.y !== 0) {
+        this.yaw += this.lookDelta.x * this.mouseSensitivity;
+        this.pitch += this.lookDelta.y * this.mouseSensitivity;
+        this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.pitch)); // Clamp pitch
+
+        // Reset delta for the next frame
+        this.lookDelta.x = 0;
+        this.lookDelta.y = 0;
+    }
+
+    // Calculate camera rotation based on updated yaw and pitch
     const cameraRotation = new THREE.Quaternion()
       .setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
 

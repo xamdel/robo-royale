@@ -200,6 +200,28 @@ export class WeaponSpawnManager {
     return nearestPickup;
   }
 
+  // Helper to get all pickup models for raycasting
+  getAllPickupModels() {
+    return Array.from(this.activePickups.values()).map(pickup => pickup.model);
+  }
+
+  // Helper to get pickup data by ID
+  getPickupById(pickupId) {
+    const pickup = this.activePickups.get(pickupId);
+    if (pickup) {
+      // Return a copy or relevant data to avoid direct modification
+      return {
+        id: pickup.id,
+        type: pickup.type,
+        weaponType: pickup.weaponType,
+        model: pickup.model, // Pass the model reference for position checks
+        // Attempt to get config from weaponSystem templates
+        config: pickup.weaponType ? (weaponSystem.weaponTemplates.get(pickup.weaponType)?.config || {}) : {}
+      };
+    }
+    return null;
+  }
+
   // Note: Spawning dropped weapons is now handled by receiving 'droppedWeaponCreated' from server
   // and calling spawnWeaponPickup with the server-provided data (which includes only X, Z initially).
   // spawnWeaponPickup will calculate the correct Y.
