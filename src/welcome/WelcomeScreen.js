@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'; // Import GLTFLoader directly
 
-const WELCOME_STORAGE_KEY = 'roboRoyaleWelcomeData';
+const USER_DATA_STORAGE_KEY = 'roboRoyaleUserData'; // Renamed key
 
 let scene, camera, renderer, controls, mechModel;
 let resolvePromise; // To resolve the promise when the user clicks start
@@ -12,29 +12,46 @@ const defaultColor = {
     primary: '#00ffff' // Cyan
 };
 
-// Function to get saved color or default
-function getSavedColor() {
+// Default name
+const defaultName = 'MechPilot';
+
+// Function to get saved data (color and name) or defaults
+function getSavedData() {
+    const defaults = { ...defaultColor, name: defaultName };
     try {
-        const saved = localStorage.getItem(WELCOME_STORAGE_KEY);
+        const saved = localStorage.getItem(USER_DATA_STORAGE_KEY);
         if (saved) {
             const data = JSON.parse(saved);
             // Basic validation
+            const validatedData = {};
             if (data.primary && /^#[0-9A-F]{6}$/i.test(data.primary)) {
-                return data; // Contains only { primary: '...' }
+                validatedData.primary = data.primary;
+            } else {
+                 validatedData.primary = defaults.primary;
             }
+            if (data.name && typeof data.name === 'string' && data.name.trim().length > 0) {
+                 validatedData.name = data.name.trim();
+            } else {
+                 validatedData.name = defaults.name;
+            }
+            return validatedData;
         }
     } catch (e) {
-        console.error("Error reading welcome screen data from localStorage:", e);
+        console.error("Error reading user data from localStorage:", e);
     }
-    return { ...defaultColor }; // Return a copy of default
+    return defaults; // Return defaults if nothing saved or error
 }
 
-// Function to save color
-function saveColor(primary) {
+// Function to save data (color and name)
+function saveData(primary, name) {
     try {
-        localStorage.setItem(WELCOME_STORAGE_KEY, JSON.stringify({ primary }));
+        const dataToSave = {
+            primary: primary && /^#[0-9A-F]{6}$/i.test(primary) ? primary : defaultColor.primary,
+            name: name && typeof name === 'string' && name.trim().length > 0 ? name.trim() : defaultName
+        };
+        localStorage.setItem(USER_DATA_STORAGE_KEY, JSON.stringify(dataToSave));
     } catch (e) {
-        console.error("Error saving welcome screen data to localStorage:", e);
+        console.error("Error saving user data to localStorage:", e);
     }
 }
 
@@ -70,7 +87,7 @@ function initPreview(canvas) {
     // Camera
     const aspect = canvas.clientWidth / canvas.clientHeight;
     camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 100);
-    camera.position.set(0, 1.5, 4); // Positioned to view the mech
+    camera.position.set(0, 1.5, 4.5); // Moved camera back slightly on Z-axis
 
     // Renderer
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
@@ -89,7 +106,7 @@ function initPreview(canvas) {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.1;
-    controls.target.set(0, 1, 0); // Target the center of the mech
+    controls.target.set(0, 1.3, 0); // Raised target slightly to lower mech in frame
     controls.minDistance = 2;
     controls.maxDistance = 10;
     controls.update();
@@ -118,8 +135,8 @@ function loadMechModel() { // No longer async as GLTFLoader uses callbacks
             scene.add(mechModel);
 
             // Apply initial color
-            const colorData = getSavedColor();
-            applyColorToModel(colorData.primary);
+            const savedData = getSavedData();
+            applyColorToModel(savedData.primary);
         },
         undefined, // onProgress callback (optional)
         (error) => {
@@ -176,7 +193,7 @@ export const WelcomeScreen = {
         return new Promise((resolve) => {
             resolvePromise = resolve; // Store the resolver
 
-            const savedColorData = getSavedColor();
+            const savedData = getSavedData();
 
             // Create welcome screen elements
             const welcomeScreen = document.createElement('div');
@@ -200,15 +217,19 @@ export const WelcomeScreen = {
                         </ul>
                     </div>
                     <div class="welcome-preview">
+                         <div class="control-group name-input-group">
+                            <label for="display-name">Display Name</label>
+                            <input type="text" id="display-name" value="${savedData.name}" maxlength="16" placeholder="Enter Name">
+                         </div>
                         <h2>Customize Your Mech</h2>
                         <canvas id="mech-preview-canvas"></canvas>
                         <div class="preview-instructions">Click and drag to rotate</div>
-                        <div class="color-pickers">
-                            <div class="color-picker-group">
+                        <div class="customization-controls">
+                             <div class="control-group color-picker-group">
                                 <label for="primary-color">Mech Color</label>
-                                <input type="color" id="primary-color" value="${savedColorData.primary}">
-                            </div>
-                            </div>
+                                <input type="color" id="primary-color" value="${savedData.primary}">
+                             </div>
+                        </div>
                          <button id="start-game-button">Enter Battle</button>
                     </div>
                 </div>
@@ -219,7 +240,7 @@ export const WelcomeScreen = {
             // Get elements
             const canvas = document.getElementById('mech-preview-canvas');
             const primaryColorPicker = document.getElementById('primary-color');
-            // const secondaryColorPicker = document.getElementById('secondary-color'); // Removed
+            const nameInput = document.getElementById('display-name');
             const startButton = document.getElementById('start-game-button');
 
             // Initialize 3D preview
@@ -237,9 +258,10 @@ export const WelcomeScreen = {
             // Add event listener for start button
             startButton.addEventListener('click', () => {
                 const selectedPrimary = primaryColorPicker.value;
+                const selectedName = nameInput.value.trim() || defaultName; // Use default if empty
 
-                // Save the chosen color
-                saveColor(selectedPrimary);
+                // Save the chosen color and name
+                saveData(selectedPrimary, selectedName);
 
                 // Hide the welcome screen with transition
                 welcomeScreen.classList.add('hidden');
@@ -247,8 +269,8 @@ export const WelcomeScreen = {
                 // Wait for transition to finish before resolving and cleaning up
                 setTimeout(() => {
                     if (resolvePromise) {
-                        // Resolve with only the primary color
-                        resolvePromise({ primary: selectedPrimary });
+                        // Resolve with primary color and name
+                        resolvePromise({ primary: selectedPrimary, name: selectedName });
                     }
                     cleanup(); // Clean up Three.js resources
                     welcomeScreen.remove(); // Remove from DOM
@@ -256,10 +278,10 @@ export const WelcomeScreen = {
             });
         });
     },
-    // Expose a function to check if the welcome screen was shown (optional)
-    hasBeenShown: () => {
+    // Expose a function to check if user data exists (optional)
+    hasBeenShown: () => { // Renaming might be good, but keeping for compatibility for now
          try {
-            return !!localStorage.getItem(WELCOME_STORAGE_KEY);
+            return !!localStorage.getItem(USER_DATA_STORAGE_KEY);
         } catch (e) {
             return false; // Assume not shown if localStorage fails
         }

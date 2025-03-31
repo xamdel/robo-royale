@@ -47,9 +47,22 @@ export const NameTagSystem = {
   },
 
   addTag(playerId, playerName) {
-    const sprite = this.createNameTagSprite(playerName, '#00aaff');
-    this.tags.set(playerId, sprite);
-    SceneManager.add(sprite);
+    // Check if a tag already exists for this player
+    if (this.tags.has(playerId)) {
+      const oldSprite = this.tags.get(playerId);
+      // Remove the old sprite from the scene and dispose its resources
+      SceneManager.remove(oldSprite);
+      if (oldSprite.material.map) oldSprite.material.map.dispose();
+      oldSprite.material.dispose();
+      // No need to dispose geometry for Sprites
+      console.log(`[NameTagSystem] Removed old tag for player ${playerId}`);
+    }
+
+    // Create and add the new sprite
+    const newSprite = this.createNameTagSprite(playerName, '#00aaff');
+    this.tags.set(playerId, newSprite); // Store the new sprite
+    SceneManager.add(newSprite); // Add the new sprite to the scene
+    console.log(`[NameTagSystem] Added/Updated tag for player ${playerId} with name "${playerName}"`);
   },
 
   updateTagPosition(playerId, playerMesh) {

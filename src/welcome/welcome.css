@@ -82,23 +82,81 @@
     display: inline-block;
 }
 
-.color-pickers {
-    margin-top: 20px;
+/* Container for name and color controls */
+.customization-controls {
     display: flex;
-    justify-content: center; /* Center the single picker */
-    align-items: center;
+    flex-direction: column; /* Stack controls vertically */
+    align-items: center; /* Center items horizontally */
+    gap: 20px; /* Space between name input and color picker */
+    margin-top: 20px;
+    width: 100%; /* Take full width of the preview column */
 }
 
-.color-picker-group {
+/* General styling for each control group (label + input) */
+.control-group {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
+    gap: 8px; /* Space between label and input */
 }
 
-.color-picker-group label {
+/* General label styling (overridden for name label below) */
+.control-group label {
     font-size: 0.9em;
     color: #aaa;
+}
+
+/* Specific styling for the name input group */
+.name-input-group {
+    /* Remove gap since label acts as heading */
+    gap: 0;
+    margin-bottom: 20px; /* Add space below name input */
+}
+
+/* Style the name label like an h2 */
+.name-input-group label {
+    /* Inherit font-family: 'Orbitron', sans-serif; */
+    color: #00ffff; /* Cyan */
+    font-size: 1.5em; /* Adjust size as needed, similar to h2 */
+    text-shadow: 0 0 8px rgba(0, 255, 255, 0.7); /* Add glow */
+    margin-bottom: 10px; /* Space between label and input */
+    padding-bottom: 5px; /* Match h2 */
+    border-bottom: 1px solid rgba(0, 255, 255, 0.5); /* Match h2 */
+    width: 80%; /* Make border width reasonable */
+    text-align: center; /* Center the label text */
+}
+
+
+.name-input-group input[type="text"] {
+    padding: 8px 12px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 1em;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(0, 255, 255, 0.4);
+    border-radius: 4px;
+    color: #eee;
+    text-align: center;
+    width: 200px; /* Adjust width as needed */
+    box-shadow: inset 0 0 5px rgba(0, 255, 255, 0.2);
+}
+
+.name-input-group input[type="text"]::placeholder {
+    color: #888;
+}
+
+.name-input-group input[type="text"]:focus {
+    outline: none;
+    border-color: #00ffff;
+    box-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+}
+
+
+/* Styling for the color picker group */
+.color-picker-group {
+    /* Inherits general .control-group styles */
+}
+
+.color-picker-group label { /* Already styled by .control-group label */
 }
 
 .color-picker-group input[type="color"] {

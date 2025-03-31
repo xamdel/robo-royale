@@ -201,9 +201,9 @@ export class WeaponSystem {
           this.activeWeapons.set(weapon.id, weapon);
 
           // Apply player color
-          const localPlayerColor = window.Game?.playerColor?.primary || '#00ffff'; // Get stored color
+          const localPlayerColor = window.Game?.localPlayerPrimaryColor || '#00ffff'; // Use stored local color
           if (typeof weapon.applyColor === 'function') {
-            console.log(`[WEAPON SYSTEM] Applying color ${localPlayerColor} to attached weapon ${weapon.type}`);
+            // console.log(`[WEAPON SYSTEM] Applying color ${localPlayerColor} to attached weapon ${weapon.type}`); // Less verbose log
             weapon.applyColor(localPlayerColor);
           }
 
@@ -341,9 +341,9 @@ export class WeaponSystem {
         this.activeWeapons.set(weapon.id, weapon);
 
         // Apply player color
-        const localPlayerColor = window.Game?.playerColor?.primary || '#00ffff'; // Get stored color
+        const localPlayerColor = window.Game?.localPlayerPrimaryColor || '#00ffff'; // Use stored local color
         if (typeof weapon.applyColor === 'function') {
-          console.log(`[WEAPON SYSTEM] Applying color ${localPlayerColor} to attached weapon ${weapon.type}`);
+          // console.log(`[WEAPON SYSTEM] Applying color ${localPlayerColor} to attached weapon ${weapon.type}`); // Less verbose log
           weapon.applyColor(localPlayerColor);
         }
 

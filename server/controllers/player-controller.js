@@ -108,18 +108,32 @@ class PlayerController {
     socket.on('playerCustomization', (data) => {
       if (!player) return; // Player might have disconnected
 
-      // Basic validation for primary color data
+      // Validate received data
+      let updated = false;
       if (data && typeof data.primary === 'string' && /^#[0-9A-F]{6}$/i.test(data.primary)) {
-
-        console.log(`[PlayerController] Received customization for ${socket.id}: Primary=${data.primary}`);
-        player.primaryColor = data.primary;
-        // player.secondaryColor = data.secondary; // Removed secondary
-
-        // The updated color will be sent out in the next gameState broadcast.
-        // No need to broadcast immediately unless required for instant updates.
-
+        if (player.primaryColor !== data.primary) {
+          console.log(`[PlayerController] Updating primary color for ${socket.id}: ${data.primary}`);
+          player.primaryColor = data.primary;
+          updated = true;
+        }
       } else {
-        console.warn(`[PlayerController] Invalid customization data received from ${socket.id}:`, data);
+         console.warn(`[PlayerController] Invalid primary color received from ${socket.id}:`, data?.primary);
+      }
+
+      if (data && typeof data.name === 'string' && data.name.trim().length > 0 && data.name.trim().length <= 16) {
+         const newName = data.name.trim();
+         if (player.name !== newName) {
+            console.log(`[PlayerController] Updating name for ${socket.id}: "${newName}"`);
+            player.name = newName; // Update the player's name
+            updated = true;
+         }
+      } else {
+         console.warn(`[PlayerController] Invalid name received from ${socket.id}:`, data?.name);
+      }
+
+      // The updated name and color will be sent out in the next gameState broadcast.
+      if (updated) {
+         console.log(`[PlayerController] Player ${socket.id} updated. New state: Name="${player.name}", Color=${player.primaryColor}`);
       }
     });
   }

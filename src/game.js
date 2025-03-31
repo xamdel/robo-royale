@@ -81,7 +81,7 @@ export const Game = {
     });
   },
 
-  async init(socket, playerColor) { // Accept playerColor (singular)
+  async init(socket, userData) { // Accept userData object { primary, name }
     await this.loadMechModel();
 
     // Create player using the same system as remote players, but specify it's the local player
@@ -90,15 +90,13 @@ export const Game = {
     // In Game.init() after creating player:
     this.player.userData = { id: socket.id };
 
-    // Apply chosen color to the local player model
-    if (playerColor && playerColor.primary) {
-      console.log(`[GAME] Applying local player color: P=${playerColor.primary}`);
-      this.applyPlayerColor(this.player, playerColor.primary);
-    } else {
-      console.warn("[GAME] No playerColor provided to Game.init. Using default for local player.");
-      // Apply default color if none provided
-      this.applyPlayerColor(this.player, '#00ffff');
-    }
+    // Apply chosen color and name from userData
+    const playerName = userData?.name || 'MechPilot'; // Default name if missing
+    const playerPrimaryColor = userData?.primary || '#00ffff'; // Default color if missing
+
+    console.log(`[GAME] Initializing local player. Name: "${playerName}", Color: ${playerPrimaryColor}`);
+    this.applyPlayerColor(this.player, playerPrimaryColor);
+    this.localPlayerPrimaryColor = playerPrimaryColor; // Store local player's color
 
     // Initialize weapon system first
     console.log('[GAME] Initializing weapon system...');
@@ -142,10 +140,17 @@ export const Game = {
     
     // Add identifying properties to help with weapon parent checks
     this.player.isPlayerModel = true;
-    this.player.name = "PlayerMech";
-    
+    this.player.name = "PlayerMech"; // Internal name, not display name
+
     // Add player to scene after weapon system is initialized
     SceneManager.add(this.player);
+
+    // Add name tag for the local player using the chosen name
+    console.log(`[GAME] Adding name tag for local player (${socket.id}) with name "${playerName}"`);
+    NameTagSystem.addTag(socket.id, playerName);
+    // Update the local player's name tag position immediately
+    NameTagSystem.updateTagPosition(socket.id, this.player);
+
 
     // Initialize and use WeaponSpawnManager
     console.log('[GAME] Initializing WeaponSpawnManager...');
@@ -550,67 +555,80 @@ export const Game = {
   updateOtherPlayer(playerData) {
     // console.log(`[GAME] updateOtherPlayer called for ID: ${playerData.id}`, playerData); // Removed log
     let player = this.otherPlayers[playerData.id];
-    
+    let isNewPlayer = false; // Flag to track if player was just created
+
     if (!player) {
+      isNewPlayer = true;
       // Create new player
       player = this.createPlayerMesh(playerData.id);
       if (!player) return;
-      
+
       this.otherPlayers[playerData.id] = player;
+      // Initialize properties for new player
       player.previousPosition = new THREE.Vector3();
       player.isMoving = false;
-      player.lastMovementTime = 0; // Initialize movement timestamp
+      player.lastMovementTime = 0;
+      player.appliedPrimaryColor = null; // Initialize applied color
+      player.currentName = null; // Initialize current name
 
-      // Add name tag for the new player
-      // console.log(`[GAME] Received update for player ${playerData.id}. Data:`, playerData); // Removed log
-      if (playerData.name) { // Check if name exists
-        // console.log(`[GAME] Creating name tag for ${playerData.id} with name "${playerData.name}"`); // Removed log
-        NameTagSystem.addTag(playerData.id, playerData.name);
-      } else {
-        console.warn(`[GAME] Player data for ${playerData.id} missing name, cannot create tag.`);
-      }
-      
       // Create a dedicated mount manager for this remote player
       console.log(`Creating dedicated mount manager for remote player ${playerData.id}`);
-      const MountManager = weaponSystem.mountManager.constructor; // Get the MountManager class
+      const MountManager = weaponSystem.mountManager.constructor;
       player.mountManager = new MountManager();
-      const mountsInitialized = player.mountManager.initMounts(player.mesh);
-      console.log(`Mount initialization for remote player result: ${mountsInitialized}`);
+      player.mountManager.initMounts(player.mesh);
+      // console.log(`Mount initialization for remote player result: ${mountsInitialized}`); // Less verbose log
 
-      // Apply custom color received from server
-      if (playerData.primaryColor) {
-        console.log(`Applying color to remote player ${playerData.id}: P=${playerData.primaryColor}`);
-        this.applyPlayerColor(player.mesh, playerData.primaryColor);
-      } else {
-        console.warn(`[GAME] Missing color data for player ${playerData.id}. Using default.`);
-        // Apply default color if needed
-        this.applyPlayerColor(player.mesh, '#00ffff');
-      }
-
-      // Request weapon data for this player
+      // Request weapon data for new player
       if (Network.socket && Network.socket.connected) {
-        console.log(`Requesting weapon data for player ${playerData.id}`);
-        Network.socket.emit('requestPlayerWeapons', {
-          playerId: playerData.id
-        });
+        // console.log(`Requesting weapon data for player ${playerData.id}`); // Less verbose log
+        Network.socket.emit('requestPlayerWeapons', { playerId: playerData.id });
       }
-      // Store applied color to avoid re-applying unnecessarily
-      player.appliedPrimaryColor = playerData.primaryColor || '#00ffff';
-      // player.appliedSecondaryColor = playerData.secondaryColor || '#ff00ff'; // Removed secondary
-
     } // End of if (!player) block
 
-    // --- Apply color updates for EXISTING players ---
-    // Check if new color data exists and differs from currently applied color
-    if (playerData.primaryColor && player.appliedPrimaryColor !== playerData.primaryColor)
-    {
-        console.log(`[GAME] Updating color for existing player ${playerData.id}: P=${playerData.primaryColor}`);
-        this.applyPlayerColor(player.mesh, playerData.primaryColor);
-        // Update the stored applied color
-        player.appliedPrimaryColor = playerData.primaryColor;
-        // player.appliedSecondaryColor = playerData.secondaryColor; // Removed secondary
+
+    // --- Apply NAME updates (for new and existing players) ---
+    const receivedName = playerData.name || `Player_${playerData.id.slice(-4)}`; // Use default if missing
+    // Update tag if name is new, different, or wasn't set initially
+    if (receivedName && player.currentName !== receivedName) {
+        console.log(`[GAME] ${isNewPlayer ? 'Adding' : 'Updating'} name tag for player ${playerData.id} to "${receivedName}"`);
+        NameTagSystem.addTag(playerData.id, receivedName); // Add or update tag
+        player.currentName = receivedName; // Store/update the current name
+    } else if (isNewPlayer && !playerData.name) {
+        // Handle case where new player joins but name is missing in first update
+        const defaultName = `Player_${playerData.id.slice(-4)}`;
+        console.warn(`[GAME] Player data for new player ${playerData.id} missing name. Using default: "${defaultName}"`);
+        // Ensure tag is added if it wasn't already (e.g., if receivedName was initially null/empty)
+        if (!NameTagSystem.tags.has(playerData.id)) {
+             NameTagSystem.addTag(playerData.id, defaultName);
+        }
+        player.currentName = defaultName; // Store the default name
     }
-    // --- End color update logic ---
+
+
+    // --- Apply color updates (for new and existing players) ---
+    const receivedColor = playerData.primaryColor || '#00ffff'; // Use default if missing
+    // Update color if it's new, different, or wasn't set initially
+    if (receivedColor && player.appliedPrimaryColor !== receivedColor) {
+        console.log(`[GAME] ${isNewPlayer ? 'Applying' : 'Updating'} color for player ${playerData.id}: ${receivedColor}`);
+        this.applyPlayerColor(player.mesh, receivedColor);
+        player.appliedPrimaryColor = receivedColor; // Store/update applied color
+
+        // Also update color of existing weapons if color changed
+        if (!isNewPlayer && player.mountManager) {
+            console.log(`[GAME] Re-applying updated color ${receivedColor} to weapons of player ${playerData.id}`);
+            player.mountManager.getAllMounts().forEach(mount => {
+                const weapon = mount.getWeapon();
+                if (weapon && typeof weapon.applyColor === 'function') {
+                    weapon.applyColor(receivedColor);
+                }
+            });
+        }
+    } else if (isNewPlayer && !player.appliedPrimaryColor) {
+        // Ensure default color is applied if none received initially
+        console.log(`[GAME] Applying default color for new player ${playerData.id}: ${receivedColor}`);
+        this.applyPlayerColor(player.mesh, receivedColor);
+        player.appliedPrimaryColor = receivedColor;
+    }
 
 
     // Store previous position for movement detection

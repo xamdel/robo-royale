@@ -213,16 +213,35 @@ async function initializeGame() {
   console.log("[Main] Initializing game components...");
 
   // --- Welcome Screen Logic ---
-  // Show welcome screen only if it hasn't been shown before (based on localStorage)
-  let playerColor = { primary: '#00ffff' }; // Default color
+  // Show welcome screen or get saved data
+  let userData;
   if (!WelcomeScreen.hasBeenShown()) {
     console.log("[Main] Showing Welcome Screen...");
-    playerColor = await WelcomeScreen.show(); // Wait for user interaction (returns { primary: '...' })
-    console.log("[Main] Welcome Screen finished. Selected color:", playerColor);
+    userData = await WelcomeScreen.show(); // Wait for user interaction (returns { primary: '...', name: '...' })
+    console.log("[Main] Welcome Screen finished. User data:", userData);
   } else {
-    console.log("[Main] Welcome Screen already shown, skipping.");
-    // Optionally load saved color even if screen isn't shown again
-    // playerColor = WelcomeScreen.getSavedColor(); // Need to expose getSavedColor or similar
+    console.log("[Main] Welcome Screen already shown, loading saved data.");
+    // Load saved data if screen isn't shown (getSavedData is internal, need to call it)
+    // We can assume WelcomeScreen saved it, so we can retrieve it directly here if needed,
+    // but Game.init will likely handle loading it if not passed. Let's get it from storage.
+    // Re-reading from storage ensures consistency if WelcomeScreen logic changes.
+    const saved = localStorage.getItem('roboRoyaleUserData');
+    if (saved) {
+        try {
+            const parsedData = JSON.parse(saved);
+            // Basic validation again, similar to WelcomeScreen's getSavedData
+             userData = {
+                primary: parsedData.primary && /^#[0-9A-F]{6}$/i.test(parsedData.primary) ? parsedData.primary : '#00ffff',
+                name: parsedData.name && typeof parsedData.name === 'string' && parsedData.name.trim().length > 0 ? parsedData.name.trim() : 'MechPilot'
+            };
+             console.log("[Main] Loaded saved user data:", userData);
+        } catch (e) {
+             console.error("Error reading saved user data in main.js:", e);
+             userData = { primary: '#00ffff', name: 'MechPilot' }; // Fallback defaults
+        }
+    } else {
+         userData = { primary: '#00ffff', name: 'MechPilot' }; // Fallback defaults
+    }
   }
   // --- End Welcome Screen Logic ---
 
@@ -233,7 +252,7 @@ async function initializeGame() {
   Network.init();
 
   // Send player customization data after network is initialized
-  Network.sendPlayerCustomization(playerColor); // Send only primary
+  Network.sendPlayerCustomization(userData); // Send full user data object
 
 
   // 2. Load building models asynchronously
@@ -344,8 +363,8 @@ async function initializeGame() {
     console.log('[Network Stats]', stats);
   });
 
-  // 5. Initialize Game AFTER network and scene are ready, passing the chosen color
-  await Game.init(Network.socket, playerColor);
+  // 5. Initialize Game AFTER network and scene are ready, passing the user data
+  await Game.init(Network.socket, userData);
 
   // Initialize HUD after game is initialized
   HUD.init();

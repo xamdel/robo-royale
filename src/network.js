@@ -540,7 +540,7 @@ export const Network = {
         // Apply the remote player's color to the weapon
         const remotePlayerColor = remotePlayer.appliedPrimaryColor || '#00ffff'; // Get remote player's stored color
         if (typeof weapon.applyColor === 'function') {
-           console.log(`[Network] Applying color ${remotePlayerColor} to remote player ${data.playerId}'s weapon ${weapon.type}`);
+           // console.log(`[Network] Applying color ${remotePlayerColor} to remote player ${data.playerId}'s weapon ${weapon.type}`); // Less verbose log
            weapon.applyColor(remotePlayerColor);
         }
 
@@ -627,13 +627,22 @@ export const Network = {
     }
   },
 
-  sendPlayerCustomization(colors) {
+  sendPlayerCustomization(userData) { // Changed parameter name
     if (!this.socket) {
       console.error("Network: Cannot send customization, socket not initialized.");
       return;
     }
-    console.log("[Network] Sending player customization:", colors);
-    this.socket.emit('playerCustomization', colors);
+    // Validate userData structure (optional but good practice)
+    if (!userData || typeof userData.primary !== 'string' || typeof userData.name !== 'string') {
+        console.error("[Network] Invalid userData format for sendPlayerCustomization:", userData);
+        // Send default data or handle error appropriately
+        const defaultData = { primary: '#00ffff', name: 'MechPilot' };
+        console.warn("[Network] Sending default customization data due to invalid input.");
+        this.socket.emit('playerCustomization', defaultData);
+        return;
+    }
+    console.log("[Network] Sending player customization:", userData);
+    this.socket.emit('playerCustomization', userData); // Send the full object
   },
 
   sendWeaponPickup(data) {
