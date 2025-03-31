@@ -45,7 +45,7 @@ export const Game = {
   // State for 'E' key hold interaction
   isHoldingE: false,
   eKeyDownTime: 0,
-  pickupTarget: null, // Stores info about the pickup item being targeted
+  pickupTarget: null, // Stores info about the pickup item being targeted { id, type, weaponType?, model, distance }
   contextMenuActive: false,
   eKeyHoldTimeout: null,
   holdThreshold: 250, // ms to hold 'E' before context menu appears
@@ -155,9 +155,16 @@ export const Game = {
         // Handle error appropriately, maybe wait or throw
     } else {
         this.weaponSpawnManager = new WeaponSpawnManager(SceneManager, TerrainGenerator);
-        console.log('[GAME] Spawning weapon pickups via manager...');
-        await this.weaponSpawnManager.spawnWeapons(); // Use the manager to spawn
-        console.log('[GAME] Weapon pickups spawned via manager');
+        console.log('[GAME] WeaponSpawnManager initialized.');
+
+        // Check if initial pickup state arrived before manager was ready
+        if (Network.pendingInitialPickups) {
+            console.log('[GAME] Processing pending initial pickup state...');
+            this.weaponSpawnManager.spawnAllPickups(Network.pendingInitialPickups);
+            Network.pendingInitialPickups = null; // Clear pending data
+        } else {
+            console.log('[GAME] Waiting for initial pickup state from server...');
+        }
     }
 
     // Initialize player stats for HUD
@@ -243,27 +250,32 @@ export const Game = {
       this.pickupTarget = nearestPickup; // Store the target pickup
       // console.log(`[GAME] Targeting pickup: Type=${this.pickupTarget.type}, ID=${this.pickupTarget.id}`); // Removed log
 
-      // Set timeout to show context menu if key is still held
-      this.eKeyHoldTimeout = setTimeout(() => {
-        if (this.isHoldingE && this.pickupTarget) { // Check if still holding and target is valid
-           console.log("[GAME] Hold threshold met, showing context menu.");
-           this.contextMenuActive = true;
-           this.isContextMenuActive = true; // Disable camera controls
+      // Set timeout to show context menu *only for weapons* if key is still held
+      if (this.pickupTarget.type === 'weapon') {
+        this.eKeyHoldTimeout = setTimeout(() => {
+          if (this.isHoldingE && this.pickupTarget && this.pickupTarget.type === 'weapon') { // Double check target is still valid weapon
+             console.log("[GAME] Hold threshold met for weapon, showing context menu.");
+             this.contextMenuActive = true; // This flag indicates the menu *should* be shown
+             this.isContextMenuActive = true; // This flag disables camera controls while menu is up
            // Use standard document method to exit pointer lock
            if (document.pointerLockElement === document.body) {
              document.exitPointerLock(); 
              console.log("[GAME] Exited PointerLock for context menu.");
            }
-           if (window.HUD && window.HUD.showWeaponContextMenu) {
-             // Pass mouse position (or center screen?), ALL mounts, and pickup info
-            // For now, let's assume HUD centers it or uses mouse pos internally
-            const allMounts = weaponSystem.mountManager.getAllMounts(); // Get all mounts
-            window.HUD.showWeaponContextMenu(null, allMounts, this.pickupTarget); // Pass all mounts
-          } else {
-             console.error("[GAME] HUD or showWeaponContextMenu not available!");
+             if (window.HUD && window.HUD.showWeaponContextMenu) {
+               // Pass mouse position (or center screen?), ALL mounts, and pickup info
+              // For now, let's assume HUD centers it or uses mouse pos internally
+              const allMounts = weaponSystem.mountManager.getAllMounts(); // Get all mounts
+              window.HUD.showWeaponContextMenu(null, allMounts, this.pickupTarget); // Pass all mounts
+            } else {
+               console.error("[GAME] HUD or showWeaponContextMenu not available!");
+            }
           }
-        }
-      }, this.holdThreshold);
+        }, this.holdThreshold);
+      } else if (this.pickupTarget.type === 'ammo') {
+        console.log(`[GAME] Targeting pickup: Type=ammo, ID=${this.pickupTarget.id}`);
+        // No context menu for ammo boxes
+      }
     } else {
        console.log("[GAME] 'E' pressed, but no pickups nearby.");
        // No target, so key hold won't do anything further
@@ -276,13 +288,14 @@ export const Game = {
 
     clearTimeout(this.eKeyHoldTimeout); // Clear the timeout regardless
 
-    if (this.contextMenuActive) {
-      // --- Context Menu Selection Logic ---
-      console.log("[GAME] 'E' released while context menu active.");
+    // Check if context menu was active (only possible for weapons)
+    if (this.contextMenuActive && this.pickupTarget?.type === 'weapon') {
+      // --- Weapon Context Menu Selection Logic ---
+      console.log("[GAME] 'E' released while weapon context menu active.");
       if (window.HUD && window.HUD.getSelectedMountFromContextMenu) {
         const selectedMountId = window.HUD.getSelectedMountFromContextMenu();
-        if (selectedMountId && this.pickupTarget) {
-          // console.log(`[GAME] Context menu selected mount: ${selectedMountId} for pickup ID: ${this.pickupTarget.id}`); // Removed log
+        if (selectedMountId && this.pickupTarget) { // Ensure pickupTarget still exists
+          console.log(`[GAME] Context menu selected mount: ${selectedMountId} for weapon pickup ID: ${this.pickupTarget.id}`);
 
           // Check if the selected mount is currently occupied
           const targetMount = weaponSystem.mountManager.getMountPoint(selectedMountId);
@@ -294,29 +307,27 @@ export const Game = {
             // await new Promise(resolve => setTimeout(resolve, 10)); 
           }
 
-          // Attempt to attach the new weapon (pickupTarget.type) to the selected mount
-          const attachSuccess = await weaponSystem.attachToSpecificMount(this.pickupTarget.type, selectedMountId);
-          
+          // Attempt to attach the new weapon (pickupTarget.weaponType) to the selected mount
+          const attachSuccess = await weaponSystem.attachToSpecificMount(this.pickupTarget.weaponType, selectedMountId); // Use weaponType
+
           if (attachSuccess) {
-            console.log(`[GAME] Successfully attached ${this.pickupTarget.type} to mount ${selectedMountId}.`);
+            console.log(`[GAME] Successfully attached ${this.pickupTarget.weaponType} to mount ${selectedMountId}.`);
             // Remove the *original pickup item* from the world
             const pickupIdToRemove = this.pickupTarget.id; // Get the ID from the target
             // console.log(`[GAME] Removing pickup item with ID: ${pickupIdToRemove}`); // Removed log
             this.weaponSpawnManager.removePickup(pickupIdToRemove); // Remove locally
 
-            // Only notify server if it was a dropped item (starts with 'pickup_')
-            if (pickupIdToRemove && pickupIdToRemove.startsWith('pickup_')) {
-                // console.log(`[GAME] Sending pickup collected for dropped item ID: ${pickupIdToRemove}`); // Removed log
-                Network.sendPickupCollected({ pickupId: pickupIdToRemove });
-            } else {
-                 // console.log(`[GAME] Initial spawn item ${pickupIdToRemove} collected via context menu, no server notification needed.`); // Removed log
-            }
+            // Notify server about collecting this specific pickup ID
+            // Server will handle removing the item state and notifying others
+            console.log(`[GAME] Sending pickup collected network message for ID: ${pickupIdToRemove}`);
+            Network.sendPickupCollected({ pickupId: pickupIdToRemove });
+
           } else {
-            console.warn(`[GAME] Failed to attach ${this.pickupTarget.type} to specific mount ${selectedMountId}.`);
+            console.warn(`[GAME] Failed to attach ${this.pickupTarget.weaponType} to specific mount ${selectedMountId}.`);
             if (window.HUD) window.HUD.showAlert("SELECTED MOUNT UNAVAILABLE", "warning");
           }
         } else {
-          console.log("[GAME] No mount selected from context menu or no pickup target.");
+          console.log("[GAME] No mount selected from context menu or pickup target invalid.");
         }
       } else {
          console.error("[GAME] HUD or getSelectedMountFromContextMenu not available!");
@@ -329,21 +340,38 @@ export const Game = {
        this.isContextMenuActive = false; // Re-enable camera controls
        // No need to explicitly re-lock; user click will handle it.
 
-     } else if (this.pickupTarget) {
-      // --- Quick Press (Auto-Attach) Logic ---
-      // console.log(`[GAME] 'E' released quickly (before context menu), attempting auto-attach for pickup ID: ${this.pickupTarget.id}`); // Removed log
-      // Attempt to pick up and attach using the automatic priority logic
-      try {
-          // Pass the full pickupTarget object which includes the ID
-          const success = await weaponSystem.tryPickupAndAttach(this.pickupTarget);
-          if (success) {
-            // console.log(`[GAME] Quick pickup successful via tryPickupAndAttach for ${this.pickupTarget.type} (ID: ${this.pickupTarget.id})`); // Removed log
-          } else {
-            // console.log(`[GAME] Quick pickup failed via tryPickupAndAttach for ${this.pickupTarget.type} (ID: ${this.pickupTarget.id}) (e.g., no suitable mounts)`); // Removed log
-          }
-      } catch (error) {
-          console.error(`[GAME] Error during quick pickup tryPickupAndAttach:`, error);
-      }
+     } else if (this.pickupTarget) { // No context menu was shown, handle quick press
+        const pickupId = this.pickupTarget.id;
+        const pickupType = this.pickupTarget.type;
+
+        console.log(`[GAME] 'E' released quickly (before context menu), attempting pickup for Type=${pickupType}, ID=${pickupId}`);
+
+        if (pickupType === 'weapon') {
+            // --- Quick Press (Weapon Auto-Attach) Logic ---
+            try {
+                // Pass the full pickupTarget object which includes the ID and weaponType
+                const success = await weaponSystem.tryPickupAndAttach(this.pickupTarget);
+                if (success) {
+                    console.log(`[GAME] Quick weapon pickup successful via tryPickupAndAttach for ${this.pickupTarget.weaponType} (ID: ${pickupId})`);
+                    // Note: tryPickupAndAttach handles removing the pickup locally and notifying server
+                } else {
+                    console.log(`[GAME] Quick weapon pickup failed via tryPickupAndAttach for ${this.pickupTarget.weaponType} (ID: ${pickupId}) (e.g., no suitable mounts)`);
+                }
+            } catch (error) {
+                console.error(`[GAME] Error during quick weapon pickup tryPickupAndAttach:`, error);
+            }
+        } else if (pickupType === 'ammo') {
+            // --- Quick Press (Ammo Box Pickup) Logic ---
+            console.log(`[GAME] Attempting to collect ammo box (ID: ${pickupId})`);
+            // Send network request to server to collect the ammo box
+            Network.sendPickupCollected({ pickupId: pickupId });
+            // DO NOT remove the pickup locally here.
+            // The removal will be triggered by the 'pickupRemoved' event from the server
+            // if the pickup is successful (i.e., player is alive).
+            console.log(`[GAME] Sent pickup request for ammo box ${pickupId}. Waiting for server confirmation.`);
+        } else {
+            console.warn(`[GAME] Unknown pickup type encountered during quick press: ${pickupType}`);
+        }
     } else {
        // Key released, but no pickup was targeted (e.g., pressed 'E' with nothing nearby)
        console.log("[GAME] 'E' released, but no pickup was targeted.");

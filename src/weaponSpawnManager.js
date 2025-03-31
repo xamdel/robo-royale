@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { weaponSystem } from './weapons'; // Assuming weaponSystem is accessible
+import { modelManager } from './ModelManager'; // Import modelManager for ammo box
+
+// Constants
+const PICKUP_RADIUS = 2.5;
+const ROTATION_SPEED = 0.5;
+const VERTICAL_OFFSET = 1.0; // How high above terrain to spawn
 
 export class WeaponSpawnManager {
   constructor(sceneManager, terrainGenerator) {
@@ -8,171 +14,40 @@ export class WeaponSpawnManager {
 
     this.sceneManager = sceneManager;
     this.terrainGenerator = terrainGenerator;
-    // Combined list of all potential spawn locations
-    this.spawnPoints = [
-      // Cannon original points
-      { x: 0, z: -10 }, { x: 50, z: 50 }, { x: -50, z: 50 }, { x: 50, z: -50 },
-      { x: -50, z: -50 }, { x: 100, z: 0 }, { x: -100, z: 0 }, { x: 0, z: 100 },
-      { x: 0, z: -100 },
-      // RocketLauncher original points
-      { x: 10, z: -10 }, { x: -30, z: 30 }, { x: 60, z: -20 }, { x: -60, z: -60 },
-      { x: 30, z: -70 }, { x: -70, z: 80 }, { x: 80, z: 80 }, { x: -80, z: -20 },
-      // Add more potential spawn points if needed
-    ];
-    this.weaponTypes = ['cannon', 'rocketLauncher', 'gatling']; // Available weapon types
-    this.activePickups = new Map(); // Map<string, { model: THREE.Object3D, collider: THREE.Sphere, type: string }>
-    this.pickupRadius = 2.5; // Standard pickup radius
-    this.rotationSpeed = 0.5; // Rotation speed for pickups
+    this.activePickups = new Map(); // Map<string, { model: THREE.Object3D, collider: THREE.Sphere, type: string, weaponType?: string, id: string }>
   }
 
-  async spawnWeapons() {
-    console.log('[WeaponSpawnManager] Spawning weapon pickups...');
+  // Spawns all pickups based on data received from the server
+  async spawnAllPickups(pickupDataList) {
+    console.log(`[SpawnManager] Spawning ${pickupDataList.length} pickups from server data...`);
     this.clearExistingPickups(); // Clear any previous pickups first
 
-    if (this.weaponTypes.length === 0) {
-      console.warn('[WeaponSpawnManager] No weapon types defined. Cannot spawn pickups.');
-      return;
-    }
-
-    console.log(`[WeaponSpawnManager] Spawning weapons at ${this.spawnPoints.length} locations from types:`, this.weaponTypes);
-
-    for (const point of this.spawnPoints) {
-      // Randomly select a weapon type for this spawn point
-      const weaponTypeIndex = Math.floor(Math.random() * this.weaponTypes.length);
-      const weaponType = this.weaponTypes[weaponTypeIndex];
-
-      // Use the correct method: getQuantizedHeight
-      const terrainY = this.terrainGenerator.getQuantizedHeight(point.x, point.z);
-      const spawnPosition = new THREE.Vector3(point.x, terrainY + 1, point.z); // Place slightly above terrain
-
-      try {
-        // Use the weapon factory to get the model template
-        const weaponTemplate = weaponSystem.weaponTemplates.get(weaponType);
-        if (!weaponTemplate || !weaponTemplate.model) {
-          // console.error(`[WeaponSpawnManager] Failed to get model template for ${weaponType}`);
-          continue; // Skip this spawn point if template is missing
-        }
-
-        // Clone the model for the pickup
-        const pickupModel = weaponTemplate.model.clone();
-        pickupModel.position.copy(spawnPosition);
-        pickupModel.castShadow = true;
-        pickupModel.visible = true;
-        pickupModel.traverse(child => {
-          if (child.isMesh) {
-            child.visible = true;
-            child.castShadow = true;
-          }
-        });
-
-        this.sceneManager.add(pickupModel);
-
-        // Create collider
-        const collider = new THREE.Sphere(spawnPosition.clone(), this.pickupRadius);
-
-        // Store the pickup information using a unique ID (e.g., type + position)
-        // Ensure uniqueness even if multiple weapons spawn at the same x,z (unlikely but possible)
-        const pickupId = `${weaponType}_${point.x}_${point.z}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-        this.activePickups.set(pickupId, {
-          model: pickupModel,
-          collider: collider,
-          type: weaponType,
-          id: pickupId // Store the ID for easy removal
-        });
-
-        console.log(`[WeaponSpawnManager] Spawned ${weaponType} pickup at`, spawnPosition.toArray());
-
-      } catch (error) {
-        console.error(`[WeaponSpawnManager] Error spawning ${weaponType} at (${point.x}, ${point.z}):`, error);
+    for (const pickupData of pickupDataList) {
+      if (pickupData.type === 'weapon') {
+        await this.spawnWeaponPickup(pickupData);
+      } else if (pickupData.type === 'ammo') {
+        await this.spawnAmmoBox(pickupData);
+      } else {
+        console.warn(`[SpawnManager] Unknown pickup type received: ${pickupData.type}`);
       }
     }
-    console.log(`[WeaponSpawnManager] Finished spawning. Total pickups: ${this.activePickups.size}`);
+    console.log(`[SpawnManager] Finished spawning. Total active pickups: ${this.activePickups.size}`);
   }
 
-  // Method to remove a specific pickup when collected
-  removePickup(pickupId) {
-    const pickup = this.activePickups.get(pickupId);
-    if (pickup) {
-      this.sceneManager.remove(pickup.model);
-      this.activePickups.delete(pickupId);
-      console.log(`[WeaponSpawnManager] Removed pickup: ${pickupId}`);
-      // TODO: Implement respawn logic if needed
-    }
-  }
-
-  // Clear all existing pickups (e.g., on game restart or level change)
-  clearExistingPickups() {
-    console.log('[WeaponSpawnManager] Clearing existing pickups...');
-    this.activePickups.forEach(pickup => {
-      this.sceneManager.remove(pickup.model);
-    });
-    this.activePickups.clear();
-    console.log('[WeaponSpawnManager] All pickups cleared.');
-  }
-
-  // Update loop for animations (like rotation)
-  update(deltaTime) {
-    this.activePickups.forEach(pickup => {
-      pickup.model.rotation.y += this.rotationSpeed * deltaTime;
-      // Update collider position if needed (though static spawns might not require this)
-      // pickup.collider.center.copy(pickup.model.position);
-    });
-  }
-
-  // Check for collisions between player and pickups
-  checkCollisions(playerPosition) {
-    const playerSphere = new THREE.Sphere(playerPosition, 1.5); // Approximate player radius
-
-    for (const [pickupId, pickup] of this.activePickups.entries()) {
-      if (pickup.collider.intersectsSphere(playerSphere)) {
-        console.log(`[WeaponSpawnManager] Collision detected with ${pickup.type} pickup: ${pickupId}`);
-        return pickup; // Return the collided pickup info
-      }
-    }
-    return null; // No collision
-  }
-
-  // Find the nearest weapon pickup within a certain distance
-  findNearestPickup(position, maxDistance) {
-    let nearestPickup = null;
-    let minDistanceSq = maxDistance * maxDistance;
-    // console.log(`[WSM.findNearestPickup] Checking from position:`, position.toArray(), `Max dist sq: ${minDistanceSq}`); // Debug
-
-    for (const [pickupId, pickup] of this.activePickups.entries()) {
-      const distanceSq = position.distanceToSquared(pickup.collider.center);
-      // console.log(`[WSM.findNearestPickup] Checking pickup ID: ${pickupId}, Type: ${pickup.type}, Center:`, pickup.collider.center.toArray(), `DistSq: ${distanceSq}`); // Re-commented Debug
-      if (distanceSq < minDistanceSq) {
-        // console.log(`[WSM.findNearestPickup] Found new nearest: ${pickupId} (DistSq: ${distanceSq})`); // Re-commented Debug
-        minDistanceSq = distanceSq;
-        nearestPickup = {
-          id: pickupId,
-          type: pickup.type,
-          model: pickup.model,
-          distance: Math.sqrt(distanceSq) // Return actual distance
-        };
-      }
-    }
-    return nearestPickup;
-  }
-
-  // Spawn a single weapon pickup at a specific world position (e.g., when dropped by a player)
-  // Accepts an optional serverId to use for tracking
-  async spawnDroppedWeapon(weaponType, position, serverId = null) {
-    console.log(`[WeaponSpawnManager] Spawning dropped weapon: ${weaponType} at`, position.toArray(), `Server ID: ${serverId}`);
-
-    // Adjust Y position slightly to be above the ground/death location
-    const spawnPosition = position.clone();
-    spawnPosition.y += 1.0; // Adjust height offset as needed
+  // Spawns a single weapon pickup based on server data
+  async spawnWeaponPickup(pickupData) {
+    const { id, weaponType, position } = pickupData;
+    // Calculate Y using client-side TerrainGenerator
+    const terrainY = this.terrainGenerator.getQuantizedHeight(position.x, position.z);
+    const spawnPosition = new THREE.Vector3(position.x, terrainY + VERTICAL_OFFSET, position.z);
 
     try {
-      // Use the weapon factory to get the model template
       const weaponTemplate = weaponSystem.weaponTemplates.get(weaponType);
       if (!weaponTemplate || !weaponTemplate.model) {
-        console.error(`[WeaponSpawnManager] Failed to get model template for dropped ${weaponType}`);
-        return null;
+        console.error(`[SpawnManager] Failed to get model template for weapon type: ${weaponType}`);
+        return;
       }
 
-      // Clone the model for the pickup
       const pickupModel = weaponTemplate.model.clone();
       pickupModel.position.copy(spawnPosition);
       pickupModel.castShadow = true;
@@ -184,37 +59,148 @@ export class WeaponSpawnManager {
         }
       });
 
+      // Add userData for interaction identification
+      pickupModel.userData = {
+        isPickup: true,
+        type: 'weapon',
+        weaponType: weaponType,
+        id: id
+      };
+
       this.sceneManager.add(pickupModel);
 
-      // Create collider
-      const collider = new THREE.Sphere(spawnPosition.clone(), this.pickupRadius);
+      const collider = new THREE.Sphere(spawnPosition.clone(), PICKUP_RADIUS);
 
-      // Use the server-provided ID if available, otherwise generate a client-side one
-      const pickupId = serverId || `${weaponType}_dropped_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      // console.log(`[WeaponSpawnManager] Using pickup ID: ${pickupId} (Server ID was: ${serverId})`); // Removed log
-
-      // Check if a pickup with this ID already exists (e.g., duplicate network message)
-      if (this.activePickups.has(pickupId)) {
-          console.warn(`[WeaponSpawnManager] Pickup with ID ${pickupId} already exists. Ignoring spawn request.`);
-          // Potentially remove the old one and replace? Or just ignore.
-          this.sceneManager.remove(pickupModel); // Clean up the unused cloned model
-          return null; 
-      }
-
-      const pickupData = {
+      this.activePickups.set(id, {
         model: pickupModel,
         collider: collider,
-        type: weaponType,
-        id: pickupId
-      };
-      this.activePickups.set(pickupId, pickupData);
+        type: 'weapon',
+        weaponType: weaponType,
+        id: id
+      });
 
-      console.log(`[WeaponSpawnManager] Spawned dropped ${weaponType} pickup with ID: ${pickupId}`);
-      return pickupData; // Return the created pickup data
+      // console.log(`[SpawnManager] Spawned WEAPON pickup: ${weaponType} (ID: ${id}) at`, spawnPosition.toArray());
 
     } catch (error) {
-      console.error(`[WeaponSpawnManager] Error spawning dropped ${weaponType} at`, position.toArray(), error);
-      return null;
+      console.error(`[SpawnManager] Error spawning WEAPON pickup ${weaponType} (ID: ${id}):`, error);
     }
   }
+
+  // Spawns a single ammo box pickup based on server data
+  async spawnAmmoBox(pickupData) {
+    const { id, position } = pickupData;
+    // Calculate Y using client-side TerrainGenerator
+    const terrainY = this.terrainGenerator.getQuantizedHeight(position.x, position.z);
+    const spawnPosition = new THREE.Vector3(position.x, terrainY + VERTICAL_OFFSET, position.z);
+
+    try {
+      // Use ModelManager to create the ammo box visual
+      const ammoBoxModel = await modelManager.createAmmoBox(); // Assuming this method exists
+      if (!ammoBoxModel) {
+        console.error(`[SpawnManager] Failed to create ammo box model.`);
+        return;
+      }
+
+      ammoBoxModel.position.copy(spawnPosition);
+      ammoBoxModel.castShadow = true;
+      ammoBoxModel.visible = true;
+
+      // Add userData for interaction identification
+      ammoBoxModel.userData = {
+        isPickup: true,
+        type: 'ammo',
+        id: id
+      };
+
+      this.sceneManager.add(ammoBoxModel);
+
+      const collider = new THREE.Sphere(spawnPosition.clone(), PICKUP_RADIUS);
+
+      this.activePickups.set(id, {
+        model: ammoBoxModel,
+        collider: collider,
+        type: 'ammo',
+        id: id
+      });
+
+      // console.log(`[SpawnManager] Spawned AMMO pickup (ID: ${id}) at`, spawnPosition.toArray());
+
+    } catch (error) {
+      console.error(`[SpawnManager] Error spawning AMMO pickup (ID: ${id}):`, error);
+    }
+  }
+
+
+  // Method to remove a specific pickup when collected (called locally or via network message)
+  removePickup(pickupId) {
+    const pickup = this.activePickups.get(pickupId);
+    if (pickup) {
+      this.sceneManager.remove(pickup.model);
+      // Dispose geometry/material if necessary
+      if (pickup.model.geometry) pickup.model.geometry.dispose();
+      if (pickup.model.material) {
+          if (Array.isArray(pickup.model.material)) {
+              pickup.model.material.forEach(m => m.dispose());
+          } else {
+              pickup.model.material.dispose();
+          }
+      }
+      this.activePickups.delete(pickupId);
+      console.log(`[SpawnManager] Removed pickup: ${pickupId}`);
+    } else {
+      // console.warn(`[SpawnManager] Attempted to remove non-existent pickup: ${pickupId}`);
+    }
+  }
+
+  // Clear all existing pickups (e.g., on game restart or receiving new server list)
+  clearExistingPickups() {
+    console.log('[SpawnManager] Clearing existing pickups...');
+    this.activePickups.forEach(pickup => {
+      this.sceneManager.remove(pickup.model);
+      // Dispose geometry/material
+      if (pickup.model.geometry) pickup.model.geometry.dispose();
+      if (pickup.model.material) {
+          if (Array.isArray(pickup.model.material)) {
+              pickup.model.material.forEach(m => m.dispose());
+          } else {
+              pickup.model.material.dispose();
+          }
+      }
+    });
+    this.activePickups.clear();
+    console.log('[SpawnManager] All pickups cleared.');
+  }
+
+  // Update loop for animations (like rotation)
+  update(deltaTime) {
+    this.activePickups.forEach(pickup => {
+      pickup.model.rotation.y += ROTATION_SPEED * deltaTime;
+      // Collider position is static based on spawn data, no need to update
+    });
+  }
+
+  // Find the nearest pickup (weapon or ammo) within a certain distance
+  findNearestPickup(position, maxDistance) {
+    let nearestPickup = null;
+    let minDistanceSq = maxDistance * maxDistance;
+
+    for (const [pickupId, pickup] of this.activePickups.entries()) {
+      const distanceSq = position.distanceToSquared(pickup.collider.center);
+      if (distanceSq < minDistanceSq) {
+        minDistanceSq = distanceSq;
+        nearestPickup = {
+          id: pickupId,
+          type: pickup.type, // 'weapon' or 'ammo'
+          weaponType: pickup.weaponType, // Only present for weapons
+          model: pickup.model,
+          distance: Math.sqrt(distanceSq)
+        };
+      }
+    }
+    return nearestPickup;
+  }
+
+  // Note: Spawning dropped weapons is now handled by receiving 'droppedWeaponCreated' from server
+  // and calling spawnWeaponPickup with the server-provided data (which includes only X, Z initially).
+  // spawnWeaponPickup will calculate the correct Y.
 }

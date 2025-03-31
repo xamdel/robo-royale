@@ -103,6 +103,27 @@ class ModelManager {
     }
 
     // extractInstanceData removed as it's no longer needed for individual model placement.
+
+    // Creates a simple visual representation for an ammo box pickup
+    async createAmmoBox() {
+        // Simple box geometry
+        const boxSize = 0.8;
+        const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+
+        // Material (e.g., metallic green)
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x00ff00, // Green color
+            metalness: 0.6,
+            roughness: 0.4,
+        });
+
+        const ammoBoxMesh = new THREE.Mesh(geometry, material);
+        ammoBoxMesh.name = "AmmoBoxPickup"; // For debugging
+
+        // TODO: Add "AMMO" text using TextGeometry or a texture for better visuals
+
+        return ammoBoxMesh;
+    }
 }
 
 export const modelManager = new ModelManager();

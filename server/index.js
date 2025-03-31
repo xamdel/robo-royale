@@ -85,6 +85,11 @@ class GameServer {
         this.projectileController.setupSocketHandlers(socket);
         this.weaponController.setupSocketHandlers(socket);
 
+        // Send the initial state of all pickup items to the new client
+        const initialPickups = this.gameLoop.getInitialPickupState();
+        console.log(`[Server] Sending initial pickup state (${initialPickups.length} items) to player ${socket.id}`);
+        socket.emit('initialPickupState', initialPickups);
+
         // Handle weapon cleanup on disconnect
         socket.on('disconnect', () => {
           this.weaponController.removePlayer(socket.id);

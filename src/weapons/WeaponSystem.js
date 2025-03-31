@@ -172,8 +172,9 @@ export class WeaponSystem {
 
   // New method for handling 'E' key press pickup
   async tryPickupAndAttach(pickupInfo) {
-    console.log(`[WEAPON SYSTEM] Attempting pickup & attach for: ${pickupInfo.type} (ID: ${pickupInfo.id})`);
-    const weaponType = pickupInfo.type;
+    // Use pickupInfo.weaponType for the specific weapon, pickupInfo.type is just 'weapon'
+    console.log(`[WEAPON SYSTEM] Attempting pickup & attach for: ${pickupInfo.weaponType} (ID: ${pickupInfo.id})`);
+    const weaponType = pickupInfo.weaponType; // Correctly use weaponType
     const pickupId = pickupInfo.id;
 
     // Define mount priority
@@ -536,6 +537,32 @@ export class WeaponSystem {
     if (window.HUD && window.HUD.updateWeaponDisplay) {
         window.HUD.updateWeaponDisplay('primary');
         window.HUD.updateWeaponDisplay('secondary');
+    }
+  }
+
+  // Refills ammo for all currently equipped weapons to their maximum capacity
+  refillAllAmmo() {
+    console.log("[WeaponSystem] Refilling ammo for all equipped weapons...");
+    const mounts = this.mountManager.getAllMounts();
+    let ammoRefilled = false;
+
+    for (const mount of mounts) {
+      const weapon = mount.getWeapon();
+      if (weapon && weapon.ammo < weapon.maxAmmo) {
+        console.log(`[WeaponSystem] Refilling ${weapon.type} (ID: ${weapon.id}) from ${weapon.ammo} to ${weapon.maxAmmo}`);
+        weapon.ammo = weapon.maxAmmo;
+        ammoRefilled = true;
+        // Update HUD for this weapon's mount type
+        if (window.HUD && window.HUD.updateWeaponDisplay) {
+          window.HUD.updateWeaponDisplay(mount.config.mountType);
+        }
+      }
+    }
+
+    if (ammoRefilled) {
+      if (window.HUD) window.HUD.showAlert("AMMO REFILLED", "success");
+    } else {
+      if (window.HUD) window.HUD.showAlert("ALL WEAPONS FULL AMMO", "info");
     }
   }
 

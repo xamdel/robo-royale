@@ -21,6 +21,7 @@ export const Network = {
   smoothedRTT: 0, // Running average of round-trip time
   adaptiveBufferSize: 3, // Dynamic buffer size based on network conditions
   adaptiveInterpolationSpeed: 5, // Dynamic interpolation speed
+  pendingInitialPickups: null, // Store initial pickups if manager isn't ready
 
   init() {
     this.socket = io('http://localhost:3000', {
@@ -43,9 +44,27 @@ export const Network = {
       // Clear other players on disconnect
       Game.otherPlayers = {};
       this.interpolationBuffer.clear();
+      // Clear pickups on disconnect? Or wait for new initial state?
+      if (Game.weaponSpawnManager) {
+        Game.weaponSpawnManager.clearExistingPickups();
+      }
     });
 
-    // Handle game state updates for player positions
+    // Handle initial state of all pickup items (weapons and ammo boxes)
+    this.socket.on('initialPickupState', (pickupDataList) => {
+        console.log(`[Network] Received initial pickup state with ${pickupDataList.length} items.`);
+        if (window.Game && window.Game.weaponSpawnManager) {
+            // Spawn manager is ready, process immediately
+            console.log("[Network] WeaponSpawnManager ready, spawning initial pickups.");
+            window.Game.weaponSpawnManager.spawnAllPickups(pickupDataList);
+        } else {
+            // Spawn manager not ready, store data for later processing in Game.init
+            console.warn("[Network] WeaponSpawnManager not ready yet. Storing initial pickup state.");
+            this.pendingInitialPickups = pickupDataList;
+        }
+    });
+
+    // Handle game state updates (includes player positions, maybe pickups later?)
     this.socket.on('gameState', (state) => {
       // Process player updates
       state.players.forEach(playerData => {
@@ -88,6 +107,12 @@ export const Network = {
           this.playerVelocities.delete(playerId);
         }
       });
+
+      // Process pickup item updates (if included in gameState later)
+      // if (state.pickupItems && Game.weaponSpawnManager) {
+      //   // Compare state.pickupItems with Game.weaponSpawnManager.activePickups
+      //   // Add new ones, remove missing ones
+      // }
     });
 
     // Handle projectile position updates from server
@@ -430,26 +455,40 @@ export const Network = {
 
     // Handle ammo updates
     this.socket.on('ammoUpdate', (data) => {
-      Game.ammo = data.ammo;
-
-      if (window.HUD) {
-        // No need for separate method since updateWeaponStatus already reads Game.ammo
+      // Find the weapon and update its ammo count
+      const weapon = weaponSystem.activeWeapons.get(data.weaponId);
+      if (weapon) {
+        weapon.ammo = data.ammo;
+        // Update HUD if the weapon is currently selected or relevant
+        if (window.HUD && window.HUD.updateWeaponDisplay) {
+          // Determine mount type based on weapon's mount point
+          const mount = weaponSystem.mountManager.getAllMounts().find(m => m.getWeapon()?.id === data.weaponId);
+          if (mount) {
+            window.HUD.updateWeaponDisplay(mount.config.mountType);
+          }
+        }
+      } else {
+        console.warn(`[Network] Received ammoUpdate for unknown weapon ID: ${data.weaponId}`);
       }
     });
 
-    // Handle weapon pickups
+    // Handle weapon pickups (both initial and dropped)
     this.socket.on('weaponPickedUp', async (data) => {
-      // Always remove the original weapon from the scene
-      if (SceneManager.cannon) {
-        SceneManager.scene.remove(SceneManager.cannon);
-        SceneManager.cannon = null;
-        SceneManager.cannonCollider = null;
-      }
-
       // If we're the one who picked up the weapon, we've already attached it locally
-      if (data.playerId === this.socket.id) {
+      // UNLESS the socketName is null, which means it was a dropped item collected by us
+      // and the server is confirming, telling us the new weapon instance ID.
+      if (data.playerId === this.socket.id && data.socketName !== null) {
+        console.log(`[Network] Ignoring self-pickup confirmation for weapon ${data.weaponId} on mount ${data.socketName}`);
         return;
       }
+      if (data.playerId === this.socket.id && data.socketName === null) {
+        console.log(`[Network] Received confirmation for collecting dropped weapon ${data.weaponType}, new instance ID: ${data.weaponId}`);
+        // We need to find the weapon we *just* attached locally (which won't have an ID yet)
+        // and assign this ID. This is tricky. Maybe WeaponSystem.tryPickupAndAttach needs to return the weapon?
+        // For now, we'll assume the HUD updates correctly via ammoUpdate.
+        return;
+      }
+
 
       // Validate required weapon data
       if (!data.weaponType || !data.socketName) {
@@ -474,65 +513,43 @@ export const Network = {
         return;
       }
 
-      const weaponClone = await SceneManager.cloneWeapon(data.weaponType);
-      if (!weaponClone) {
-        console.error('Failed to clone weapon of type:', data.weaponType);
+      // Create a weapon instance (don't need to clone, factory handles it)
+      const weapon = await weaponSystem.weaponFactory.createWeapon(data.weaponType);
+      if (!weapon) {
+        console.error('Failed to create weapon instance of type:', data.weaponType);
         return;
       }
 
-      // Create a separate mount manager for each remote player
+      // Assign the weapon ID from server
+      weapon.id = data.weaponId;
+
+      // Ensure remote player has a mount manager
       if (!remotePlayer.mountManager) {
-        console.log('Creating dedicated mount manager for remote player');
+        console.log(`Creating dedicated mount manager for remote player ${data.playerId}`);
         remotePlayer.mountManager = new MountManager();
-        const mountsInitialized = remotePlayer.mountManager.initMounts(remotePlayer.mesh);
-        console.log(`Remote player mount initialization result: ${mountsInitialized}`);
+        remotePlayer.mountManager.initMounts(remotePlayer.mesh);
       }
 
-      // Create a weapon and attach it to the remote player
-      weaponSystem.weaponFactory.createWeapon(data.weaponType, weaponClone).then(weapon => {
-        if (weapon) {
-          // Assign the weapon ID from server
-          weapon.id = data.weaponId;
+      // Find the right mount point on the remote player using player's dedicated mount manager
+      const mountPoint = remotePlayer.mountManager.getAllMounts().find(m => m.socketName === data.socketName);
+      if (mountPoint) {
+        console.log(`Attaching ${data.weaponType} (ID: ${weapon.id}) to remote player ${data.playerId} socket ${data.socketName}`);
+        const success = mountPoint.attachWeapon(weapon); // Attach the created weapon instance
+        console.log(`Remote weapon attachment result: ${success}`);
 
-          // Find the right mount point on the remote player using player's dedicated mount manager
-          const mountPoint = remotePlayer.mountManager.getAllMounts().find(m => m.socketName === data.socketName);
-          if (mountPoint) {
-            console.log(`Attaching ${data.weaponType} to socket ${data.socketName}`);
-            const success = mountPoint.attachWeapon(weapon);
-            console.log(`Weapon attachment result: ${success}`);
-
-            // Apply the remote player's color to the weapon
-            const remotePlayerColor = remotePlayer.appliedPrimaryColor || '#00ffff'; // Get remote player's stored color
-            if (typeof weapon.applyColor === 'function') {
-               console.log(`[Network] Applying color ${remotePlayerColor} to remote player ${data.playerId}'s weapon ${weapon.type}`);
-               weapon.applyColor(remotePlayerColor);
-            }
-
-          } else {
-            console.error(`Mount point with socket ${data.socketName} not found on remote player ${data.playerId}`);
-
-                  // Debug: log all available mount points for this remote player
-            const allMounts = remotePlayer.mountManager.getAllMounts();
-            console.log(`Available mounts for remote player ${data.playerId}:`, allMounts.map(m => ({
-              id: m.id,
-              socketName: m.socketName
-            })));
-
-            // Try reinitializing this player's mount points as a fallback
-            console.log('Attempting to reinitialize mount points for remote player');
-
-            // Create a new mount manager if needed
-            if (!remotePlayer.mountManager) {
-              console.log('Creating new mount manager for remote player');
-              remotePlayer.mountManager = new MountManager();
-            }
-
-            // Reinitialize the mount points
-            const success = remotePlayer.mountManager.initMounts(remotePlayer.mesh);
-            console.log(`Mount reinitialization result: ${success}`);
-          }
+        // Apply the remote player's color to the weapon
+        const remotePlayerColor = remotePlayer.appliedPrimaryColor || '#00ffff'; // Get remote player's stored color
+        if (typeof weapon.applyColor === 'function') {
+           console.log(`[Network] Applying color ${remotePlayerColor} to remote player ${data.playerId}'s weapon ${weapon.type}`);
+           weapon.applyColor(remotePlayerColor);
         }
-      });
+
+      } else {
+        console.error(`Mount point with socket ${data.socketName} not found on remote player ${data.playerId}`);
+        // Debug: log available mount points
+        const allMounts = remotePlayer.mountManager?.getAllMounts() || [];
+        console.log(`Available mounts for remote player ${data.playerId}:`, allMounts.map(m => ({ id: m.id, socketName: m.socketName })));
+      }
     });
 
     // Handle position corrections
@@ -549,41 +566,35 @@ export const Network = {
       }
     });
 
-    // Handle creation of dropped weapon pickups
-    this.socket.on('droppedWeaponCreated', (data) => {
-      // console.log(`[Network] Received droppedWeaponCreated: ID=${data.id}, Type=${data.type}, Pos=`, data.position); // Removed log
-      if (Game.weaponSpawnManager && data.type && data.position && data.id) {
-        // Convert position back to THREE.Vector3
-        const position = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
-        // Use the spawn manager to create the visual pickup, passing the server ID
-        Game.weaponSpawnManager.spawnDroppedWeapon(data.type, position, data.id)
-          .then(clientPickupData => {
-             if (clientPickupData) {
-               // The pickup is now tracked client-side using the server's ID (data.id)
-               // console.log(`[Network] Client successfully called spawnDroppedWeapon for: ${data.type} (ID: ${data.id}) at`, position.toArray()); // Removed log
-             } else {
-               // Log failure more explicitly
-               // console.error(`[Network] weaponSpawnManager.spawnDroppedWeapon returned null/undefined for type: ${data.type}, ID: ${data.id}. Check WeaponSpawnManager logs for details.`); // Removed log
-             }
-          });
-      } else {
-        console.warn('[Network] Invalid data or WeaponSpawnManager not ready for droppedWeaponCreated event.');
-      }
-    });
+    // Handle creation of dropped weapon pickups (now handled by initialPickupState or gameState)
+    // this.socket.on('droppedWeaponCreated', (data) => { ... }); // REMOVED
 
-    // Handle removal of dropped weapon pickups (when another player picks them up)
-    this.socket.on('droppedWeaponRemoved', (data) => {
-        console.log('[Network] Received droppedWeaponRemoved:', data);
+    // Handle removal of ANY pickup item (initial spawn or dropped)
+    this.socket.on('pickupRemoved', (data) => {
+        console.log(`[Network] Received pickupRemoved: ID=${data.pickupId}, Type=${data.type}`);
         if (Game.weaponSpawnManager && data.pickupId) {
-            // We need a way to find the client-side pickup using the server ID.
-            // This might require storing the server ID when creating the pickup,
-            // or modifying WeaponSpawnManager to track pickups by server ID.
-            // For now, let's assume removePickup can handle the ID format from the server.
             Game.weaponSpawnManager.removePickup(data.pickupId);
         } else {
-            console.warn('[Network] Invalid data or WeaponSpawnManager not ready for droppedWeaponRemoved event.');
+            console.warn('[Network] Invalid data or WeaponSpawnManager not ready for pickupRemoved event.');
         }
     });
+
+    // Handle ammo refill confirmation from server
+    this.socket.on('ammoRefillResult', (data) => {
+        console.log(`[Network] Received ammoRefillResult: Success=${data.success}, Message=${data.message}`);
+        if (data.success) {
+            // Trigger the local ammo refill logic in WeaponSystem
+            if (weaponSystem) {
+                weaponSystem.refillAllAmmo(); // This handles HUD updates internally
+            } else {
+                console.error("[Network] WeaponSystem not available to handle ammoRefillResult.");
+            }
+        } else {
+            // Show error message?
+            if (window.HUD) window.HUD.showAlert("AMMO REFILL FAILED", "error");
+        }
+    });
+
 
     // Handle kill feed notifications
     this.socket.on('killNotification', (data) => {
@@ -669,7 +680,7 @@ export const Network = {
     }
   },
 
-  // Send notification that the local player collected a pickup
+  // Send notification that the local player collected a pickup (weapon or ammo)
   sendPickupCollected(data) {
     if (this.socket?.connected) {
       console.log('Sending pickup collected notification to server:', data);

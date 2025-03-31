@@ -26,6 +26,8 @@ class WeaponController {
     socket.on('weaponDrop', (data) => this.handleWeaponDrop(socket, data)); // Manual drop? (Not currently used for death)
     socket.on('weaponSwitch', (data) => this.handleWeaponSwitch(socket, data));
     socket.on('requestPlayerWeapons', (data) => this.handlePlayerWeaponsRequest(socket, data));
+    // Add listener for ammo refill confirmation
+    // socket.on('ammoRefilledAck', (data) => { /* Handle client ack if needed */ });
   }
 
   handlePlayerWeaponsRequest(socket, data) {
@@ -203,12 +205,19 @@ class WeaponController {
     this.playerAmmo.get(socketId).set(weaponId, ammo - 1);
 
     // Notify client of ammo update
-    this.io.to(socketId).emit('ammoUpdate', {
-      weaponId: weaponId,
-      ammo: ammo - 1
-    });
+    // Send ammo update only if ammo actually changed (prevents spam on full ammo)
+    if (ammo > 0) {
+        this.io.to(socketId).emit('ammoUpdate', {
+          weaponId: weaponId,
+          ammo: ammo - 1
+        });
+    } else {
+        // Optionally send a specific "out of ammo" message?
+        // console.log(`Player ${socketId} tried to fire weapon ${weaponId} with 0 ammo.`);
+    }
 
-    return true;
+
+    return true; // Allow the shot attempt (projectile controller might still block if 0 ammo was reached this tick)
   }
 
   getWeaponType(socketId, weaponId) {
@@ -421,13 +430,166 @@ class WeaponController {
 
 
     // Remove the item from the world state via GameLoop
-    // This broadcasts 'droppedWeaponRemoved' to all clients
-    const removed = this.gameLoop.removeDroppedWeaponPickup(data.pickupId);
-    
+    // This broadcasts 'droppedWeaponRemoved' or 'ammoBoxRemoved' to all clients
+    const removed = this.gameLoop.removePickupItem(data.pickupId); // Use generic removal function
+
     if (!removed) {
         console.error(`[WeaponController] Failed to remove pickup ${data.pickupId} from GameLoop state after collection by ${socket.id}.`);
+    } else {
+        console.log(`[WeaponController] Successfully removed pickup ${data.pickupId} from game state.`);
     }
   }
+
+  // New method to handle refilling ammo for a player
+  refillPlayerAmmo(socketId) {
+    console.log(`[WeaponController] Refilling ammo for player ${socketId}`);
+    const playerWeapons = this.playerWeapons.get(socketId);
+    const playerAmmoMap = this.playerAmmo.get(socketId);
+
+    if (!playerWeapons || !playerAmmoMap || playerWeapons.size === 0) {
+      console.log(`[WeaponController] Player ${socketId} has no weapons to refill.`);
+      // Optionally notify client?
+      this.io.to(socketId).emit('ammoRefillResult', { success: true, message: 'No weapons equipped.' });
+      return;
+    }
+
+    let ammoWasRefilled = false;
+    for (const weapon of playerWeapons) {
+      const currentAmmo = playerAmmoMap.get(weapon.id);
+      const maxAmmo = ValidationService.getMaxAmmo(weapon.type); // Use validation service
+
+      if (currentAmmo === undefined || maxAmmo === undefined) {
+        console.warn(`[WeaponController] Missing ammo data for weapon ${weapon.id} (${weapon.type}) for player ${socketId}. Skipping refill.`);
+        continue;
+      }
+
+      if (currentAmmo < maxAmmo) {
+        playerAmmoMap.set(weapon.id, maxAmmo);
+        console.log(`[WeaponController] Refilled ammo for weapon ${weapon.id} (${weapon.type}) to ${maxAmmo} for player ${socketId}`);
+        // Send individual ammo update to the client
+        this.io.to(socketId).emit('ammoUpdate', {
+          weaponId: weapon.id,
+          ammo: maxAmmo
+        });
+        ammoWasRefilled = true;
+      }
+    }
+
+    // Send a confirmation message back to the client
+    if (ammoWasRefilled) {
+        this.io.to(socketId).emit('ammoRefillResult', { success: true, message: 'Ammo refilled!' });
+        // Client side should call weaponSystem.refillAllAmmo() upon receiving this
+    } else {
+        this.io.to(socketId).emit('ammoRefillResult', { success: true, message: 'All weapons already full.' });
+    }
+  }
+
+
+  // Overwrite handlePickupCollected to handle both weapon and ammo types
+  handlePickupCollected(socket, data) {
+    if (!data || !data.pickupId) {
+      console.warn(`[WeaponController] Invalid pickupCollected data from ${socket.id}:`, data);
+      return;
+    }
+
+    // Use the injected gameLoop reference
+    if (!this.gameLoop) {
+        console.error("[WeaponController] GameLoop reference not available to handle pickupCollected.");
+        return;
+    }
+
+    // Get the item details from the game loop's state
+    const item = this.gameLoop.getPickupItem(data.pickupId); // Use generic getter
+
+    if (!item) {
+      console.warn(`[WeaponController] Player ${socket.id} tried to collect non-existent pickup ${data.pickupId}`);
+      return;
+    }
+
+    // Check if player is alive
+    const player = this.playerManager.getPlayer(socket.id);
+    if (!player || player.isDead) {
+        console.warn(`[WeaponController] Dead or non-existent player ${socket.id} tried to collect pickup ${data.pickupId}`);
+        return;
+    }
+
+    console.log(`[WeaponController] Player ${socket.id} collected pickup ${data.pickupId} (Type: ${item.type})`);
+
+    // --- Handle based on item type ---
+    if (item.type === 'weapon') {
+        // --- Weapon Pickup Logic ---
+        console.log(`[WeaponController] Processing WEAPON pickup: ${item.weaponType}`);
+
+        // Initialize player's weapons if needed
+        if (!this.playerWeapons.has(socket.id)) {
+          this.playerWeapons.set(socket.id, new Set());
+        }
+
+        // Generate a new unique ID for the weapon instance the player receives
+        const newWeaponInstanceId = `weapon_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+        // Add weapon to player's inventory
+        const playerWeapons = this.playerWeapons.get(socket.id);
+        // TODO: Need logic to determine which mount point this weapon should go to.
+        // This might involve checking available mounts or using preferred mounts from config.
+        // For now, we'll add it without a specific socket/mount. Client needs to handle placement.
+        const newWeaponData = {
+          id: newWeaponInstanceId,
+          type: item.weaponType, // Use item.weaponType here
+          socket: null // Placeholder - Client determines mount via tryPickupAndAttach or context menu
+        };
+        playerWeapons.add(newWeaponData);
+        console.log(`[WeaponController] Added weapon ${newWeaponInstanceId} (${item.weaponType}) to player ${socket.id} inventory state.`);
+
+        // Initialize weapon cooldown
+        if (!this.weaponCooldowns.has(socket.id)) {
+          this.weaponCooldowns.set(socket.id, new Map());
+        }
+        this.weaponCooldowns.get(socket.id).set(newWeaponInstanceId, 0);
+
+        // Initialize ammo
+        if (!this.playerAmmo.has(socket.id)) {
+          this.playerAmmo.set(socket.id, new Map());
+        }
+        const initialAmmo = ValidationService.getInitialAmmo(item.weaponType);
+        this.playerAmmo.get(socket.id).set(newWeaponInstanceId, initialAmmo);
+
+        // Send ammo update to the collecting player
+        socket.emit('ammoUpdate', {
+          weaponId: newWeaponInstanceId,
+          ammo: initialAmmo
+        });
+
+        // Tell the collecting player specifically which weapon they got
+        // The client-side 'weaponPickedUp' handler needs to be robust enough to handle this.
+         socket.emit('weaponPickedUp', {
+            weaponId: newWeaponInstanceId,
+            weaponType: item.weaponType,
+            socketName: newWeaponData.socket, // Pass the determined socket (currently null)
+            playerId: socket.id
+         });
+
+    } else if (item.type === 'ammo') {
+        // --- Ammo Box Pickup Logic ---
+        console.log(`[WeaponController] Processing AMMO pickup.`);
+        this.refillPlayerAmmo(socket.id); // Call the refill logic
+
+    } else {
+        console.error(`[WeaponController] Unknown item type "${item.type}" for pickup ID ${data.pickupId}`);
+    }
+    // --- End Handling based on item type ---
+
+
+    // Remove the item from the world state via GameLoop (common for both types)
+    // This broadcasts 'droppedWeaponRemoved' or 'ammoBoxRemoved' to all clients
+    const removed = this.gameLoop.removePickupItem(data.pickupId); // Use generic removal function
+
+    if (!removed) {
+        console.error(`[WeaponController] Failed to remove pickup ${data.pickupId} from GameLoop state after collection by ${socket.id}.`);
+    } else {
+        console.log(`[WeaponController] Successfully removed pickup ${data.pickupId} from game state.`);
+    }
+  } // End of overwritten handlePickupCollected
 }
 
 module.exports = WeaponController;

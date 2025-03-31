@@ -31,7 +31,7 @@ export const SceneManager = {
   zoomDistance: 2, // Distance when zoomed in
   targetCameraDistance: 5, // Target camera distance
   zoomSpeed: 0.1, // Zoom transition speed
-  weaponSpawnManager: null, // Add reference for the weapon spawn manager
+  // weaponSpawnManager reference removed, Game object will manage it
 
   init(mapSeed = 'default_seed_from_scene') { // Accept mapSeed, provide default for safety
     console.log(`[SceneManager] Initializing with map seed: ${mapSeed}`);
@@ -87,20 +87,18 @@ export const SceneManager = {
         console.error("[SceneManager] Failed to generate terrain mesh.");
     }
 
-    // Initialize WeaponSpawnManager after TerrainGenerator
-    this.weaponSpawnManager = new WeaponSpawnManager(this, TerrainGenerator);
+    // WeaponSpawnManager is now initialized in Game.init()
 
-    // Place buildings and spawn weapons after terrain is generated and models are loaded
+    // Place buildings after terrain is generated and models are loaded
     if (this.terrainMesh && TerrainGenerator.isInitialized && modelManager.isLoaded) {
         console.log("[SceneManager] Placing buildings...");
         BuildingPlacer.placeBuildings(this.scene, TerrainGenerator, modelManager); // Pass modelManager
 
-        // Spawn weapon pickups using the manager
-        console.log("[SceneManager] Spawning weapon pickups...");
-        this.weaponSpawnManager.spawnWeapons(); // Use await if spawnWeapons becomes async
+        // Weapon spawning is now handled via network event 'initialPickupState'
+        console.log("[SceneManager] Buildings placed.");
 
     } else {
-        console.warn("[SceneManager] Skipping building placement and weapon spawning because terrain and/or models are not ready.");
+        console.warn("[SceneManager] Skipping building placement because terrain and/or models are not ready.");
         if (!this.terrainMesh || !TerrainGenerator.isInitialized) console.warn(" - Terrain not ready.");
         if (!modelManager.isLoaded) console.warn(" - Models not loaded.");
     }
@@ -190,12 +188,12 @@ export const SceneManager = {
     const deltaTime = this.lastRenderTime ? (now - this.lastRenderTime) / 1000 : 0;
     this.lastRenderTime = now;
 
-    // Update weapon spawn manager (for pickup animations, etc.)
-    if (this.weaponSpawnManager) {
-      this.weaponSpawnManager.update(deltaTime);
+    // Update weapon spawn manager (now accessed via Game.weaponSpawnManager)
+    if (window.Game && window.Game.weaponSpawnManager) {
+        window.Game.weaponSpawnManager.update(deltaTime);
     }
 
-    // Collision check for weapon pickups (moved to game loop or player update)
+    // Collision check for weapon pickups (handled by 'E' key interaction in game.js)
     // const collidedPickup = this.weaponSpawnManager?.checkCollisions(playerPosition);
     // if (collidedPickup) {
     //   // Handle pickup logic here or in game.js
