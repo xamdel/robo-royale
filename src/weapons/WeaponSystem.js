@@ -435,6 +435,12 @@ export class WeaponSystem {
     const mountsWithWeapons = primaryMounts.filter(mount => mount.hasWeapon());
     
     if (mountsWithWeapons.length <= 1) return; // Nothing to cycle
+
+    // Stop firing sequence of the current weapon if it's a gatling
+    const currentWeapon = this.getSelectedWeapon('primary');
+    if (currentWeapon?.type === 'gatling') {
+      currentWeapon.stopFiringSequence();
+    }
     
     if (direction === 'next') {
       this.selectedPrimaryIndex = (this.selectedPrimaryIndex + 1) % mountsWithWeapons.length;
@@ -456,6 +462,12 @@ export class WeaponSystem {
     const mountsWithWeapons = secondaryMounts.filter(mount => mount.hasWeapon());
     
     if (mountsWithWeapons.length <= 1) return; // Nothing to cycle
+
+    // Stop firing sequence of the current weapon if it's a gatling
+    const currentWeapon = this.getSelectedWeapon('secondary');
+    if (currentWeapon?.type === 'gatling') {
+      currentWeapon.stopFiringSequence();
+    }
     
     this.selectedSecondaryIndex = (this.selectedSecondaryIndex + 1) % mountsWithWeapons.length;
     

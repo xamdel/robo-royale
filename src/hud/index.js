@@ -18,8 +18,16 @@ export const HUD = {
   elements,
   config,
   status,
+  initialized: false, // Add initialization flag
 
   init() {
+    // Prevent multiple initializations
+    if (this.initialized) {
+      console.warn("[HUD] Attempted to initialize HUD multiple times.");
+      return;
+    }
+    this.initialized = true;
+    console.log("[HUD] Initializing...");
     // Create HUD container
     elements.container = document.createElement('div');
     elements.container.id = 'mech-hud';
@@ -42,6 +50,10 @@ export const HUD = {
     setupMouseListener();
 
     // Make functions accessible globally via window.HUD
+    // Check if window.HUD exists, create if not
+    if (!window.HUD) {
+        window.HUD = {};
+    }
     window.HUD.updateWeaponDisplay = updateWeaponDisplay;
     window.HUD.showWeaponContextMenu = showWeaponContextMenu;
     window.HUD.hideWeaponContextMenu = hideWeaponContextMenu;
@@ -55,6 +67,9 @@ export const HUD = {
   },
 
   update(deltaTime) {
+    // Ensure HUD is initialized before updating
+    if (!this.initialized) return;
+
     const now = performance.now();
 
     // Only update HUD at specified rate to avoid performance issues
