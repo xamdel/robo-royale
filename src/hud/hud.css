@@ -420,6 +420,36 @@
   border: calc(1px * var(--hud-scale)) solid rgba(0, 170, 255, 0.7);
 }
 
+/* --- Turret Reticle Style --- */
+.reticle-style-turret .reticle-top {
+  top: 25%; /* Move inwards */
+  height: calc(6px * var(--hud-scale));
+  background-color: var(--hud-warning-color); /* Change color */
+}
+.reticle-style-turret .reticle-right {
+  right: 25%; /* Move inwards */
+  width: calc(6px * var(--hud-scale));
+  background-color: var(--hud-warning-color);
+}
+.reticle-style-turret .reticle-bottom {
+  bottom: 25%; /* Move inwards */
+  height: calc(6px * var(--hud-scale));
+  background-color: var(--hud-warning-color);
+}
+.reticle-style-turret .reticle-left {
+  left: 25%; /* Move inwards */
+  width: calc(6px * var(--hud-scale));
+  background-color: var(--hud-warning-color);
+}
+.reticle-style-turret .reticle-center {
+  /* Keep center dot or hide it */
+   background-color: var(--hud-warning-color);
+   border: none;
+   width: calc(3px * var(--hud-scale));
+   height: calc(3px * var(--hud-scale));
+}
+
+
 /* Alert System */
 .alert-container {
   position: absolute;

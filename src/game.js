@@ -12,6 +12,9 @@ import { TerrainGenerator } from './terrainGenerator.js';
 import { HUD } from './hud/index.js';
 import { MobileControlsManager } from './mobileControls/MobileControlsManager.js'; // Import MobileControlsManager
 
+const PLATFORM_Y_POSITION = 100; // Match scene.js and server/models/player.js (Increased height)
+const TURRET_INTERACTION_RANGE = 8.0; // Increased Max distance to interact with the turret
+
 export const Game = {
   player: null,
   otherPlayers: {},
@@ -33,7 +36,7 @@ export const Game = {
   health: 200, // Initialize to maxHealth
   maxHealth: 200, // Updated to match the intended max health
   isDead: false,
-  respawnPosition: new THREE.Vector3(0, 0, 0),
+  respawnPosition: new THREE.Vector3(0, PLATFORM_Y_POSITION + 2, -250), // Set respawn Z to match platform edge
 
   // Network and prediction properties
   inputBuffer: [],
@@ -51,6 +54,7 @@ export const Game = {
   eKeyHoldTriggered: false, // Flag if hold action was triggered
   eKeyHoldDuration: 500, // ms hold time (match mobile)
   contextMenuClickListener: null, // Store reference to the click listener
+  isNearTurret: false, // Flag if player is close enough to interact
 
   loadMechModel() {
     return new Promise((resolve) => {
@@ -136,7 +140,8 @@ export const Game = {
     // await weaponSystem.weaponFactory.preloadWeaponModels();
     // console.log('[GAME] Weapon models preloaded successfully');
 
-    this.player.position.set(0, this.player.position.y, 0);
+    // Set initial player position slightly above platform height at the new location
+    this.player.position.set(0, PLATFORM_Y_POSITION + 2, -250); // Updated Z, kept +2 offset
     this.previousPosition = this.player.position.clone();
 
     // Add identifying properties to help with weapon parent checks
@@ -210,14 +215,20 @@ export const Game = {
             this.eKeyHoldTriggered = false; // Reset hold trigger flag
             clearTimeout(this.eKeyHoldTimeout); // Clear any existing timer
 
-            // Start the hold timer
-            this.eKeyHoldTimeout = setTimeout(() => {
-              if (this.isEKeyDown) { // Check if key is still held
-                console.log("[GAME] E key hold detected.");
-                this.eKeyHoldTriggered = true; // Mark hold as triggered
-                this.triggerKeyboardContextMenu(); // Call the context menu function
-              }
-            }, this.eKeyHoldDuration);
+            // Start the hold timer ONLY if not near the turret and a weapon pickup is targeted
+            if (!this.isNearTurret && this.pickupTarget?.type === 'weapon') {
+                this.eKeyHoldTimeout = setTimeout(() => {
+                  if (this.isEKeyDown) { // Check if key is still held
+                    console.log("[GAME] E key hold detected for weapon context menu.");
+                    this.eKeyHoldTriggered = true; // Mark hold as triggered
+                    this.triggerKeyboardContextMenu(); // Call the context menu function
+                  }
+                }, this.eKeyHoldDuration);
+            } else if (this.isNearTurret) {
+                console.log("[GAME] E key down near turret, hold disabled.");
+            } else {
+                 console.log("[GAME] E key down, but no weapon target for hold menu.");
+            }
           }
           break;
       }
@@ -236,29 +247,40 @@ export const Game = {
 
           // If the hold action *wasn't* triggered (i.e., it was a tap)
           if (!this.eKeyHoldTriggered) {
-            // Perform the quick pickup action (moved from keydown)
-            if (this.pickupTarget && !this.isContextMenuActive) {
-              console.log(`[GAME] 'E' key tap detected for target: ${this.pickupTarget.type} (ID: ${this.pickupTarget.id})`);
-              const pickupType = this.pickupTarget.type;
+            // --- Turret Interaction Logic (takes precedence) ---
+            if (this.isNearTurret) {
+                console.log("[GAME] 'E' key tap detected near turret.");
+                if (SceneManager.isControllingTurret) {
+                    SceneManager.exitTurretControl(this.player);
+                    // Interaction prompt will be shown again by the proximity check next frame if still in range
+                } else {
+                    SceneManager.enterTurretControl(this.player);
+                    // Hide interaction prompt immediately when entering
+                    if (window.HUD?.hideInteractionPrompt) window.HUD.hideInteractionPrompt();
+                }
+            // --- Weapon Pickup Logic (fallback if not near turret) ---
+            } else if (this.pickupTarget && !this.isContextMenuActive && !SceneManager.isControllingTurret) { // Ensure not controlling turret
+                console.log(`[GAME] 'E' key tap detected for target: ${this.pickupTarget.type} (ID: ${this.pickupTarget.id})`);
+                const pickupType = this.pickupTarget.type;
 
-              if (pickupType === 'weapon') {
-                // Trigger Quick Attach
-                weaponSystem.tryPickupAndAttach(this.pickupTarget).then(success => {
-                  if (success) {
-                    console.log(`[GAME] Keyboard quick weapon pickup successful.`);
-                    this.pickupTarget = null; // Clear target after successful pickup
-                    if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge(); // Hide badge
-                  } else {
-                    console.log(`[GAME] Keyboard quick weapon pickup failed.`);
-                  }
-                }).catch(error => {
-                   console.error(`[GAME] Error during keyboard quick weapon pickup:`, error);
-                });
-              }
-              // Note: Ammo pickup is handled by collision, so 'E' tap only handles weapons.
+                if (pickupType === 'weapon') {
+                    // Trigger Quick Attach
+                    weaponSystem.tryPickupAndAttach(this.pickupTarget).then(success => {
+                        if (success) {
+                            console.log(`[GAME] Keyboard quick weapon pickup successful.`);
+                            this.pickupTarget = null; // Clear target after successful pickup
+                            if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge(); // Hide badge
+                        } else {
+                            console.log(`[GAME] Keyboard quick weapon pickup failed.`);
+                        }
+                    }).catch(error => {
+                       console.error(`[GAME] Error during keyboard quick weapon pickup:`, error);
+                    });
+                }
+                // Note: Ammo pickup is handled by collision, so 'E' tap only handles weapons.
             }
           }
-          // If the hold action *was* triggered, releasing E now dismisses without selection
+          // If the hold action *was* triggered (weapon context menu), releasing E now dismisses without selection
           else if (this.eKeyHoldTriggered) {
               console.log("[GAME] Context menu dismissed via E key release.");
               // Ensure listener is removed if key is released before click
@@ -320,8 +342,9 @@ export const Game = {
     this.isDead = false;
     this.health = this.maxHealth;
 
-    // Reset position to respawn point
-    this.player.position.copy(this.respawnPosition);
+    // Reset position slightly above the platform respawn point at the new location
+    this.player.position.set(0, PLATFORM_Y_POSITION + 2, -250); // Updated Z, kept +2 offset
+    this.respawnPosition.set(0, PLATFORM_Y_POSITION + 2, -250); // Ensure respawnPosition is also updated with offset and new Z
 
     // Make player visible again (actual showing is done in the network handler
     // to ensure proper synchronization)
@@ -353,11 +376,40 @@ export const Game = {
     // Update local player's animation mixer
     this.mixer.update(deltaTime);
 
-    // --- Pickup Target Detection & Badge ---
-    if (this.weaponSpawnManager && !this.isDead && !this.isContextMenuActive) {
+    // --- Turret Proximity Check & Interaction Prompt ---
+    this.isNearTurret = false; // Reset flag each frame
+    if (SceneManager.turretMesh && this.player && !this.isDead) {
+        const playerPos = this.player.position;
+        const turretPos = SceneManager.turretMesh.position;
+        const distanceToTurret = playerPos.distanceTo(turretPos);
+
+        if (distanceToTurret <= TURRET_INTERACTION_RANGE) {
+            this.isNearTurret = true;
+            // Show prompt only if *not* currently controlling the turret
+            if (!SceneManager.isControllingTurret && window.HUD?.showInteractionPrompt) {
+                // Check if it's already visible to avoid unnecessary calls
+                // Accessing elements via the exported HUD object
+                if (HUD.elements?.interactionPrompt?.style.display !== 'block') {
+                    window.HUD.showInteractionPrompt("Press E to use Turret");
+                }
+            }
+        } else {
+            // If we were near the turret last frame but aren't now, hide the prompt
+            // Also hide if we *are* controlling the turret (prompt shouldn't show then)
+            if (window.HUD?.hideInteractionPrompt && HUD.elements?.interactionPrompt?.style.display === 'block') {
+                 window.HUD.hideInteractionPrompt();
+            }
+        }
+    }
+    // --- End Turret Proximity Check ---
+
+
+    // --- Pickup Target Detection & Badge (Only if not near turret or controlling turret) ---
+    // We don't want weapon pickup prompts/badges if near the turret interaction zone
+    if (this.weaponSpawnManager && !this.isDead && !this.isContextMenuActive && !this.isNearTurret && !SceneManager.isControllingTurret) {
         const playerWorldPos = new THREE.Vector3();
         this.player.getWorldPosition(playerWorldPos);
-        const pickupRange = 4.0;
+        const pickupRange = 4.0; // Keep original weapon pickup range
         const nearestPickup = this.weaponSpawnManager.findNearestPickup(playerWorldPos, pickupRange);
 
         if (nearestPickup) {
@@ -527,8 +579,20 @@ export const Game = {
 
 
     // Update camera and process input
+    // Pass player position and model. If controlling turret, player position might not be relevant for camera logic itself,
+    // but SceneManager handles the switch internally.
     const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
-    return this.processInput(cameraDirections, deltaTime);
+
+    // Process movement input ONLY if not controlling the turret
+    if (!SceneManager.isControllingTurret) {
+        return this.processInput(cameraDirections, deltaTime);
+    } else {
+        // If controlling turret, don't process player movement input.
+        // Still need to update animations? Maybe force idle?
+        PlayerAnimations.updateAnimation(this, false); // Force idle animation
+        // Send minimal network update? Or none? Let's send none for now.
+        return null; // Indicate no movement data to send
+    }
   },
 
   createPlayerMesh(id) {
@@ -711,8 +775,12 @@ export const Game = {
   },
 
   processInput(cameraDirections, deltaTime) {
-    // Don't process input if player is dead
-    if (this.isDead) {
+    // Don't process input if player is dead OR controlling turret
+    if (this.isDead || SceneManager.isControllingTurret) {
+      // Ensure animation is idle if controlling turret
+      if (SceneManager.isControllingTurret) {
+          PlayerAnimations.updateAnimation(this, false);
+      }
       return null;
     }
 
@@ -776,14 +844,14 @@ export const Game = {
     if (moved && !this.isDead) {
       // moved = true; // This line is redundant
       this.player.position.add(moveVector);
-      // Adjust player height based on terrain
-      const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
-      this.player.position.setY(terrainHeight);
+      // Adjust player height based on platform or terrain using the renamed function
+      const groundHeight = SceneManager.getPlatformOrTerrainHeight(this.player.position.x, this.player.position.z);
+      this.player.position.setY(groundHeight);
     } else if (!this.isDead) {
-      // Ensure player stays on terrain even when not moving (e.g., after respawn)
-      const terrainHeight = SceneManager.getTerrainHeight(this.player.position.x, this.player.position.z);
-      if (Math.abs(this.player.position.y - terrainHeight) > 0.01) { // Add tolerance
-        this.player.position.setY(terrainHeight);
+      // Ensure player stays on platform/terrain even when not moving (e.g., after respawn) using the renamed function
+      const groundHeight = SceneManager.getPlatformOrTerrainHeight(this.player.position.x, this.player.position.z);
+      if (Math.abs(this.player.position.y - groundHeight) > 0.01) { // Add tolerance
+        this.player.position.setY(groundHeight);
       }
     }
 
@@ -1025,6 +1093,35 @@ export const Game = {
               document.body.requestPointerLock();
           }
       }
+  },
+
+  // Called by Network handler when server confirms turret teleport
+  handleTurretTeleportComplete(finalPosition) {
+    console.log(`[GAME] Handling turret teleport complete. Final position:`, finalPosition);
+    if (!this.player || !SceneManager) {
+      console.error("[GAME] Cannot handle turret teleport: Player or SceneManager missing.");
+      return;
+    }
+
+    // 1. Update local player position immediately
+    this.player.position.copy(finalPosition);
+    // Ensure player is visible (might have been hidden during turret control)
+    this.player.visible = true;
+
+    // 2. Exit turret control mode in SceneManager
+    // Pass the player model so SceneManager can make it visible again
+    SceneManager.exitTurretControl(this.player);
+
+    // 3. Reset any relevant local player state if needed
+    // (e.g., clear movement flags, reset camera pitch/yaw if not handled by exitTurretControl)
+    this.moveForward = false;
+    this.moveBackward = false;
+    this.moveLeft = false;
+    this.moveRight = false;
+
+    // The SceneManager.updateCamera logic should now take over and position
+    // the camera correctly relative to the player's new position in the next frame.
+    console.log("[GAME] Player position updated and turret control exited.");
   },
 };
 

@@ -202,7 +202,7 @@ export const WelcomeScreen = {
             welcomeScreen.innerHTML = `
                 <div class="welcome-container">
                     <div class="welcome-info">
-                        <h1>Welcome to Robo Royale</h1>
+                        <h1>Welcome to Mecha Mayhem</h1>
                         <h2>Controls</h2>
                         <ul class="controls-list">
                             <li><span class="key">WASD</span> Move</li>
@@ -224,6 +224,9 @@ export const WelcomeScreen = {
                         <h2>Customize Your Mech</h2>
                         <canvas id="mech-preview-canvas"></canvas>
                         <div class="preview-instructions">Click and drag to rotate</div>
+                        <p class="model-credit" style="font-size: 0.8em; text-align: center; margin-top: 5px;">
+                            Credit to <a href="https://sketchfab.com/3d-models/modular-low-poly-mech-8e90b780b3f94a8ab64b9163a19929fb" target="_blank" rel="noopener noreferrer" style="color: #ccc;">rcorre12</a> for the mech model
+                        </p>
                         <div class="customization-controls">
                              <div class="control-group color-picker-group">
                                 <label for="primary-color">Mech Color</label>

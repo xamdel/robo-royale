@@ -43,6 +43,7 @@ class PlayerController {
     this.setupMoveHandler(socket, player);
     this.setupDeathHandler(socket, player); // Add death handler setup
     this.setupCustomizationHandler(socket, player); // Add customization handler
+    this.setupTurretTeleportHandler(socket, player); // Add teleport handler
     this.setupDisconnectHandler(socket);
 
     return player;
@@ -59,10 +60,20 @@ class PlayerController {
         return;
       }
 
-      // Validate movement
-      if (ValidationService.isValidMovement(player.position, data.position)) {
+      // Validate movement, skipping check if player just teleported
+      let movementIsValid = false;
+      if (player.justTeleported) {
+        console.log(`[PlayerController] Player ${socket.id} just teleported, skipping movement validation for this update.`);
+        movementIsValid = true;
+        player.justTeleported = false; // Reset the flag after allowing one update
+      } else {
+        movementIsValid = ValidationService.isValidMovement(player.position, data.position);
+      }
+
+      if (movementIsValid) {
         player.updatePosition(data, data.inputId);
       } else {
+        console.warn(`[PlayerController] Invalid movement detected for ${socket.id}. Old: ${JSON.stringify(player.position)}, New: ${JSON.stringify(data.position)}`);
         // If invalid movement, force client position reset
         socket.emit('positionCorrection', {
           position: player.position,
@@ -143,6 +154,50 @@ class PlayerController {
       console.log(`Player disconnected: ${socket.id}`);
       this.playerManager.removePlayer(socket.id);
       this.io.emit('playerLeft', socket.id);
+    });
+  }
+
+  setupTurretTeleportHandler(socket, player) {
+    socket.on('turretTeleportRequest', (data) => {
+      if (!player || player.isDead) {
+        console.warn(`[PlayerController] Received turretTeleportRequest from dead or non-existent player: ${socket.id}`);
+        return;
+      }
+
+      // Validate target position data
+      if (!data || typeof data.position?.x !== 'number' || typeof data.position?.y !== 'number' || typeof data.position?.z !== 'number') {
+        console.warn(`[PlayerController] Invalid teleport position data from ${socket.id}:`, data);
+        return;
+      }
+
+      // TODO: Add server-side validation?
+      // - Was the player actually in the turret recently? (Requires tracking turret state server-side)
+      // - Is the target position valid (e.g., not inside a building)? (Requires collision checks)
+      // For now, we trust the client's hit detection.
+
+      const targetPos = data.position;
+      // Add a small vertical offset to prevent falling through terrain
+      const finalY = targetPos.y + 2.0; // Adjust offset as needed
+
+      console.log(`[PlayerController] Teleporting player ${socket.id} to ${targetPos.x}, ${finalY}, ${targetPos.z}`);
+
+      // Update player position directly
+      player.position.x = targetPos.x;
+      player.position.y = finalY;
+      player.position.z = targetPos.z;
+      player.justTeleported = true; // Set the flag
+
+      // Reset player velocity/movement state if applicable
+      player.velocity = { x: 0, y: 0, z: 0 };
+      player.moveState = { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false };
+
+      // Emit confirmation back to the client
+      socket.emit('turretTeleportComplete', {
+        position: { x: targetPos.x, y: finalY, z: targetPos.z }
+      });
+      console.log(`[PlayerController] Sent turretTeleportComplete to ${socket.id}`);
+
+      // The game loop will broadcast the new position in the next gameState update.
     });
   }
 

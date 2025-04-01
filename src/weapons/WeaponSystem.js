@@ -3,6 +3,7 @@ import { WeaponFactory } from './WeaponFactory.js';
 import { MountManager } from './MountManager.js';
 import { Network } from '../network.js';
 import { MobileControlsManager } from '../mobileControls/MobileControlsManager.js'; // Import MobileControlsManager
+import { SceneManager } from '../scene.js'; // Import SceneManager
 
 export class WeaponSystem {
   constructor() {
@@ -10,6 +11,7 @@ export class WeaponSystem {
     this.mountManager = new MountManager();
     this.activeWeapons = new Map(); // Track all active weapons by ID
     this.weaponTemplates = new Map(); // Track weapon templates by type
+    this.turretProjectiles = new Map(); // Track active turret projectiles by server ID
 
     // Firing state
     this.isFiringPrimary = false;
@@ -649,6 +651,61 @@ export class WeaponSystem {
     }
   }
 
+  // Creates the visual representation for a turret projectile
+  handleTurretShot(data) {
+    console.log(`[WeaponSystem] Handling turret shot visual creation: ID=${data.id}`);
+    const { id, position, direction, radius = 2, speed = 250 } = data; // Use defaults matching server config
+
+    // Create the capsule geometry
+    // CapsuleGeometry(radius, length, capSegments, radialSegments)
+    // Let's make the length proportional to the radius, e.g., 4 times the radius
+    const length = radius * 4;
+    const geometry = new THREE.CapsuleGeometry(radius, length, 4, 8); // Low poly capsule
+
+    // Create a simple material (e.g., bright yellow)
+    const material = new THREE.MeshBasicMaterial({ color: '#555555' })
+
+    // Create the mesh
+    const projectileMesh = new THREE.Mesh(geometry, material);
+
+    // Set initial position
+    projectileMesh.position.set(position.x, position.y, position.z);
+
+    // Orient the capsule to face the direction of travel
+    // Create a quaternion representing the rotation from default (Y-up) to the direction vector
+    const quaternion = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0); // Default capsule orientation axis
+    const dirVec = new THREE.Vector3(direction.x, direction.y, direction.z).normalize();
+    quaternion.setFromUnitVectors(up, dirVec);
+    projectileMesh.quaternion.copy(quaternion);
+
+    // Add to scene using imported SceneManager
+    if (SceneManager) {
+      SceneManager.add(projectileMesh);
+    } else {
+      // This case should ideally not happen if imports are correct
+      console.error("[WeaponSystem] SceneManager import failed, cannot add turret projectile mesh.");
+      return; // Don't track if we can't add it
+    }
+
+    // Store projectile data for update loop
+    const projectileData = {
+      mesh: projectileMesh,
+      direction: dirVec,
+      speed: speed,
+      startTime: Date.now(),
+      maxLifetime: 10000, // Match server config
+      serverId: id // Store the server ID for removal later
+    };
+    this.turretProjectiles.set(id, projectileData);
+    console.log(`[WeaponSystem] Added turret projectile ${id} to scene and tracking.`);
+
+    // Start following the projectile if the shooter is the local player
+    if (data.ownerId === Network.socket?.id && SceneManager?.startFollowingProjectile) {
+      SceneManager.startFollowingProjectile(projectileData);
+    }
+  }
+
   handleHit(data) {
     const weapon = this.activeWeapons.get(data.weaponId);
     if (weapon) {
@@ -679,6 +736,63 @@ export class WeaponSystem {
     for (const weapon of this.weaponTemplates.values()) {
       weapon.update(deltaTime);
     }
+
+    // Update turret projectiles
+    const now = Date.now();
+    for (const [id, projectileData] of this.turretProjectiles.entries()) {
+      const { mesh, direction, speed, startTime, maxLifetime } = projectileData;
+
+      // Check lifetime
+      if (now - startTime > maxLifetime) {
+        console.log(`[WeaponSystem] Turret projectile ${id} lifetime expired.`);
+        // Use imported SceneManager
+        if (SceneManager) SceneManager.remove(mesh);
+        this.turretProjectiles.delete(id);
+        continue; // Move to next projectile
+      }
+
+      // Update position
+      const moveDistance = speed * deltaTime;
+      mesh.position.addScaledVector(direction, moveDistance);
+
+      // --- Client-side Terrain Collision Check for Follow-Cam ---
+      // Only check if currently following this specific projectile
+      if (SceneManager?.isFollowingProjectile && SceneManager.followingProjectileData?.serverId === id) {
+        if (SceneManager.terrainMesh) {
+          const raycaster = new THREE.Raycaster(mesh.position, new THREE.Vector3(0, -1, 0)); // Raycast down
+          const intersects = raycaster.intersectObject(SceneManager.terrainMesh);
+
+          // Check if hit is close enough (e.g., within projectile radius + small buffer)
+            const hitThreshold = (mesh.geometry.parameters.radius || 0.5) + 0.2; // Use radius or default
+            if (intersects.length > 0 && intersects[0].distance < hitThreshold) {
+              const hitPoint = intersects[0].point;
+              console.log(`[WeaponSystem] Turret projectile ${id} hit terrain at ${hitPoint.toArray().join(',')} (client-side). Stopping follow cam.`);
+
+              // --- Trigger Dirt Impact Effect ---
+              if (window.particleEffectSystem?.createDirtImpact) {
+                window.particleEffectSystem.createDirtImpact(hitPoint);
+              }
+              // --- End Trigger Dirt Impact Effect ---
+
+              // Stop following immediately
+              SceneManager.stopFollowingProjectile();
+
+            // Send teleport request to server
+            if (Network?.sendTurretTeleportRequest) {
+               console.log(`[WeaponSystem] Sending turret teleport request to: ${hitPoint.toArray().join(',')}`);
+               Network.sendTurretTeleportRequest({ x: hitPoint.x, y: hitPoint.y, z: hitPoint.z });
+            } else {
+               console.warn("[WeaponSystem] Network.sendTurretTeleportRequest not available.");
+            }
+
+            // Note: We don't remove the projectile mesh here, let the server's 'projectileDestroyed' handle that
+            // to keep things synchronized. The camera just stops following.
+          }
+        }
+      }
+      // --- End Collision Check ---
+    }
+
 
     // --- Handle Mobile Controls Input ---
     if (MobileControlsManager.isTouchDevice && MobileControlsManager.isVisible) {

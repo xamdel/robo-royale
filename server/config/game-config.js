@@ -70,6 +70,13 @@ module.exports = {
         end: 80,
         minDamage: 15
       }
+    },
+    turretCannon: { // New config for the turret
+      speed: 250,       // Moderate speed
+      radius: 2,      // Large radius (capsule-like effect via size)
+      maxDistance: 1000, // Long range
+      maxLifetime: 10000, // Longer lifetime
+      damage: 500,       // High damage
     }
   },
 
@@ -84,6 +91,7 @@ module.exports = {
     rocketLauncher: 500,
     rocket: 500, // Match rocketLauncher cooldown for consistency
     gatling: 20, // 0.2 seconds between shots (20ms)
+    turretCannon: 1000, // 1 second cooldown for the turret
     default: 500   // 0.5 seconds between shots
   },
 

@@ -1,10 +1,13 @@
 const gameConfig = require('../config/game-config');
 
+const PLATFORM_Y_POSITION = 100; // Match the client-side constant (Increased height)
+
 class Player {
   constructor(socketId, name = 'Player') { // Add name parameter with default
     this.id = socketId;
     this.name = name; // Store the name
-    this.position = { x: 0, y: 0, z: 0 };
+    // Set initial position slightly above the platform at the new location
+    this.position = { x: 0, y: PLATFORM_Y_POSITION + 2, z: -250 }; // Updated Z, kept +2 offset
     this.rotation = { x: 0, y: 0, z: 0, w: 1 };
     this.primaryColor = '#00ffff'; // Default primary color (cyan)
     // this.secondaryColor = '#ff00ff'; // Removed secondary color
@@ -24,6 +27,7 @@ class Player {
     this.isDead = false;
     this.lastSpawnTime = Date.now();
     this.respawnTime = null;
+    this.justTeleported = false; // Flag to bypass movement validation after teleport
   }
 
   updatePosition(positionData, inputId) {
@@ -124,6 +128,8 @@ class Player {
   respawn() {
     this.health = gameConfig.PLAYER_CONFIG.maxHealth;
     this.isDead = false;
+    // Reset position slightly above the platform at the new location on respawn
+    this.position = { x: 0, y: PLATFORM_Y_POSITION + 2, z: -250 }; // Updated Z, kept +2 offset
     this.lastSpawnTime = Date.now();
     this.respawnTime = null;
   }

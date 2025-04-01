@@ -1,5 +1,5 @@
 import { Game } from '../game.js';
-import { weaponSystem } from '../weapons/index.js';
+// import { weaponSystem } from '../weapons/index.js'; // weaponSystem not directly used here
 import { elements } from './elements.js';
 import { config } from './config.js';
 import { status } from './status.js';
@@ -7,7 +7,7 @@ import { initializeScaleManager, updateScale } from './scaleManager.js';
 import { createHealthSystem, updateHealth } from './healthSystem.js';
 import { createWeaponSystem, updateWeaponStatus, updateWeaponDisplay } from './weaponSystemUI.js';
 import { createScannerSystem, updateScanner } from './scannerSystem.js';
-import { createReticle } from './reticle.js';
+import { createReticle, setReticleStyle } from './reticle.js'; // Import setReticleStyle
 import { createAlertSystem, showAlert } from './alertSystem.js'; // Import showAlert
 import { createMessageLogs, addMessage } from './messageLog.js';
 import { showDamageIndicator, showDeathScreen, showKillFeed, showDamageNumber, showAmmoWarning } from './eventHandlers.js';
@@ -40,6 +40,21 @@ export const HUD = {
     createAlertSystem();
     createMessageLogs();
 
+    // Create Interaction Prompt Element
+    elements.interactionPrompt = document.createElement('div');
+    elements.interactionPrompt.id = 'interaction-prompt';
+    elements.interactionPrompt.style.position = 'absolute';
+    elements.interactionPrompt.style.bottom = '25%'; // Position above center vertically
+    elements.interactionPrompt.style.left = '50%';
+    elements.interactionPrompt.style.transform = 'translateX(-50%)';
+    elements.interactionPrompt.style.color = 'var(--hud-primary-color)'; // Use HUD primary color variable
+    elements.interactionPrompt.style.fontSize = '1.8vh'; // Responsive font size
+    elements.interactionPrompt.style.fontFamily = 'inherit'; // Inherit from #mech-hud container
+    elements.interactionPrompt.style.textShadow = 'var(--hud-glow)'; // Use HUD glow variable
+    elements.interactionPrompt.style.display = 'none'; // Hidden by default
+    elements.container.appendChild(elements.interactionPrompt);
+
+
     // Add CSS styles
     // addStyles();
 
@@ -60,8 +75,12 @@ export const HUD = {
     window.HUD.getSelectedMountFromContextMenu = getSelectedMountFromContextMenu;
     window.HUD.showAlert = showAlert;
     window.HUD.addMessage = addMessage;
-    window.HUD.showItemBadge = showItemBadge; // Expose item badge function
-    window.HUD.hideItemBadge = hideItemBadge; // Expose item badge function
+    window.HUD.showItemBadge = showItemBadge;
+    window.HUD.hideItemBadge = hideItemBadge;
+    window.HUD.showInteractionPrompt = this.showInteractionPrompt; // Expose new function
+    window.HUD.hideInteractionPrompt = this.hideInteractionPrompt; // Expose new function
+    window.HUD.showTurretReticle = this.showTurretReticle; // Expose new function
+    window.HUD.hideTurretReticle = this.hideTurretReticle; // Expose new function
 
 
     // Update health display initially
@@ -105,4 +124,33 @@ export const HUD = {
   // Expose item badge functions
   showItemBadge: showItemBadge,
   hideItemBadge: hideItemBadge,
+
+  // --- Interaction Prompt ---
+  showInteractionPrompt(text) {
+    if (elements.interactionPrompt) {
+      elements.interactionPrompt.textContent = text;
+      elements.interactionPrompt.style.display = 'block';
+    }
+  },
+
+  hideInteractionPrompt() {
+    if (elements.interactionPrompt) {
+      elements.interactionPrompt.style.display = 'none';
+    }
+  },
+
+  // --- Turret Reticle Control ---
+  showTurretReticle() {
+    console.log("[HUD] Switching to Turret Reticle");
+    setReticleStyle('turret'); // Assumes 'turret' style exists in reticle.js
+    // Optionally hide weapon UI elements if needed
+    // if (elements.weaponInfo) elements.weaponInfo.style.display = 'none';
+  },
+
+  hideTurretReticle() {
+    console.log("[HUD] Switching back to Default Reticle");
+    setReticleStyle('default'); // Switch back to the default style
+    // Optionally show weapon UI elements again
+    // if (elements.weaponInfo) elements.weaponInfo.style.display = 'block';
+  },
 };

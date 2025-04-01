@@ -146,6 +146,11 @@ export class ParticleEffectSystem {
       opacity: 1,
       blending: THREE.AdditiveBlending // Additive blending for impact sparks
     });
+    this.dirtMaterial = new THREE.MeshBasicMaterial({ // New material for dirt
+        color: 0x5d4037, // Dark brown color
+        transparent: true,
+        opacity: 0.8 // Slightly less opaque than smoke initially
+    });
 
     // Particle pools - Adjusted sizes
     this.pools = {
@@ -153,7 +158,8 @@ export class ParticleEffectSystem {
       fire: new ParticlePool(this.mediumSphereGeometry, this.fireMaterial, 100),
       smoke: new ParticlePool(this.largeSphereGeometry, this.smokeMaterial, 75), // Increased pool size
       smallFire: new ParticlePool(this.smallSphereGeometry, this.fireMaterial, 150), // For explosions, increased pool size
-      muzzleFlash: new ParticlePool(this.planeGeometry, this.fireMaterial.clone(), 75) // Use plane geometry, clone material, increased pool size
+      muzzleFlash: new ParticlePool(this.planeGeometry, this.fireMaterial.clone(), 75), // Use plane geometry, clone material, increased pool size
+      dirt: new ParticlePool(this.largeSphereGeometry, this.dirtMaterial, 100) // New pool for dirt impacts
     };
 
     // Flash effect - Brighter color
@@ -304,6 +310,27 @@ export class ParticleEffectSystem {
     if (!this.initialized) return;
     const velocity = new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.3 + Math.random() * 0.4, (Math.random() - 0.5) * 0.8); // Slightly faster drift
     this.pools.smoke.acquire(position, velocity, 200); // Shorter duration
+  }
+
+  // New method for dirt impact effect
+  createDirtImpact(position) {
+    if (!this.initialized) return;
+    const particleCount = 25; // Number of dirt particles
+    const duration = 2000; // How long particles last (ms)
+    const upwardVelocity = 9; // Base upward speed
+    const spread = 6; // Horizontal spread speed
+
+    for (let i = 0; i < particleCount; i++) {
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * spread,
+        Math.random() * upwardVelocity, // Random upward velocity
+        (Math.random() - 0.5) * spread
+      );
+      // Start slightly above the impact point to avoid z-fighting
+      const startPos = position.clone().add(new THREE.Vector3(0, 0.1, 0));
+      const particle = this.pools.dirt.acquire(startPos, velocity, duration * (0.8 + Math.random() * 0.4)); // Randomize duration slightly
+      // Dirt particles will use the default gravity in the pool update logic
+    }
   }
 
   update(camera) { // Accept camera directly

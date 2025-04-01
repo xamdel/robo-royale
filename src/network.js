@@ -138,9 +138,17 @@ export const Network = {
 
     // Handle new projectile creation
     this.socket.on('projectileCreated', (data) => {
-      // Only spawn projectiles for other players - our own are created when we shoot
-      if (data.ownerId !== this.socket.id) {
-        // Use weapon system to handle the remote shot
+      // Special handling for turret projectiles (visible to everyone, including shooter)
+      if (data.weaponType === 'turretCannon') {
+        console.log(`[Network] Received turretCannon created event: ID=${data.id}`);
+        if (weaponSystem?.handleTurretShot) {
+           weaponSystem.handleTurretShot(data); // Pass all data (id, ownerId, position, direction, radius, speed)
+        } else {
+           console.warn('[Network] weaponSystem.handleTurretShot not found!');
+        }
+      // Handle standard weapon projectiles (only for other players)
+      } else if (data.ownerId !== this.socket.id) {
+        // Use weapon system to handle the remote shot for standard weapons
         const projectile = weaponSystem.handleRemoteShot({
           weaponType: data.weaponType,
           position: data.position,
@@ -172,32 +180,74 @@ export const Network = {
 
     // Handle projectile destruction
     this.socket.on('projectileDestroyed', async (data) => {
-      // First, find and remove the projectile from all weapons
-      if (data.id) {
-        // Try to find and remove the projectile from any active weapon that has it
-        for (const weapon of weaponSystem.activeWeapons.values()) {
-          // Find projectile in this weapon's projectiles
-          for (const projectile of weapon.projectiles) {
-            if (projectile.userData && projectile.userData.serverId === data.id) {
-              // Remove this projectile
-              weapon.removeProjectile(projectile);
-              break;
-            }
-          }
-        }
+      if (!data.id) return; // Exit if no ID provided
 
-        // Also check template weapons (for remote projectiles)
-        for (const weapon of weaponSystem.weaponTemplates.values()) {
-          // Find projectile in this weapon's projectiles
-          for (const projectile of weapon.projectiles) {
+      let projectileFoundAndRemoved = false;
+
+      // 1. Check active weapons (local player's weapons)
+      for (const weapon of weaponSystem.activeWeapons.values()) {
+        // Assuming weapon.projectiles is iterable (e.g., a Set or Map)
+        if (weapon.projectiles && typeof weapon.projectiles[Symbol.iterator] === 'function') {
+          for (const projectile of weapon.projectiles) { // Iterate directly if Set, or use .values() if Map
             if (projectile.userData && projectile.userData.serverId === data.id) {
-              // Remove this projectile
-              weapon.removeProjectile(projectile);
-              break;
+              weapon.removeProjectile(projectile); // Call remove method on the weapon instance
+              projectileFoundAndRemoved = true;
+              // console.log(`[Network] Removed active weapon projectile ${data.id}`);
+              break; // Stop searching this weapon
             }
           }
         }
+        if (projectileFoundAndRemoved) break; // Stop searching other weapons
       }
+
+      // 2. Check template weapons (remote player projectiles)
+      // Templates manage their own projectiles visually, but we might need to clean up if server confirms destruction early
+      if (!projectileFoundAndRemoved) {
+          for (const weaponTemplate of weaponSystem.weaponTemplates.values()) {
+              // Assuming weaponTemplate.projectiles is iterable
+              if (weaponTemplate.projectiles && typeof weaponTemplate.projectiles[Symbol.iterator] === 'function') {
+                  for (const projectile of weaponTemplate.projectiles) { // Iterate directly if Set, or use .values() if Map
+                      if (projectile.userData && projectile.userData.serverId === data.id) {
+                          // Templates don't have a public removeProjectile method tied to network events
+                          // Instead, remove the mesh directly from the scene
+                          if (projectile.parent) { // Check if it's added to the scene
+                              projectile.parent.remove(projectile);
+                          }
+                          // And remove from the template's internal tracking
+                          weaponTemplate.projectiles.delete(projectile); // Assuming it's a Set, adjust if Map
+                          projectileFoundAndRemoved = true;
+                          // console.log(`[Network] Removed template weapon projectile ${data.id}`);
+                          break; // Stop searching this template
+                      }
+                  }
+              }
+              if (projectileFoundAndRemoved) break; // Stop searching other templates
+          }
+      }
+
+
+      // 3. Check turret projectiles
+      if (!projectileFoundAndRemoved && weaponSystem.turretProjectiles?.has(data.id)) {
+        const turretProjectileData = weaponSystem.turretProjectiles.get(data.id);
+        if (turretProjectileData?.mesh && SceneManager) {
+          SceneManager.remove(turretProjectileData.mesh); // Remove mesh from scene
+        }
+        weaponSystem.turretProjectiles.delete(data.id); // Remove from tracking map
+        projectileFoundAndRemoved = true;
+        console.log(`[Network] Removed turret projectile ${data.id} based on server destruction.`);
+
+        // --- Stop Following Camera ---
+        if (SceneManager?.isFollowingProjectile && SceneManager.followingProjectileData?.serverId === data.id) {
+          console.log(`[Network] Projectile ${data.id} destroyed, stopping follow cam.`);
+          SceneManager.stopFollowingProjectile();
+        }
+        // --- End Stop Following Camera ---
+      }
+
+      // If not found anywhere, log a warning (optional)
+      // if (!projectileFoundAndRemoved) {
+      //    console.warn(`[Network] projectileDestroyed event received for unknown/already removed projectile ID: ${data.id}`);
+      // }
 
       // Show hit effect if projectile was destroyed due to hit
       if (data.reason === 'hit' && data.position) {
@@ -634,6 +684,22 @@ export const Network = {
          console.warn('[Network] Missing data for kill notification.');
       }
     });
+
+    // Handle confirmation that turret teleport is complete
+    this.socket.on('turretTeleportComplete', (data) => {
+      console.log('[Network] Received turretTeleportComplete:', data);
+      if (data.position && Game?.handleTurretTeleportComplete) {
+        // Convert position data to THREE.Vector3
+        const finalPosition = new THREE.Vector3(
+          data.position.x,
+          data.position.y,
+          data.position.z
+        );
+        Game.handleTurretTeleportComplete(finalPosition);
+      } else {
+        console.warn('[Network] Invalid data or Game.handleTurretTeleportComplete not found.');
+      }
+    });
   },
 
   sendMove(moveData) {
@@ -712,6 +778,16 @@ export const Network = {
       this.socket.emit('pickupCollected', data);
     } else {
       console.warn('Cannot send pickup collected notification, socket not connected.');
+    }
+  },
+
+  // Send request to teleport player after turret shot hits terrain
+  sendTurretTeleportRequest(targetPosition) {
+    if (this.socket?.connected) {
+      console.log('[Network] Sending turret teleport request to:', targetPosition);
+      this.socket.emit('turretTeleportRequest', { position: targetPosition });
+    } else {
+      console.warn('[Network] Cannot send turret teleport request, socket not connected.');
     }
   },
 

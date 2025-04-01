@@ -9,6 +9,7 @@ class ProjectileController {
     this.weaponController = weaponController;
     this.gameLoop = gameLoop; // Store gameLoop reference
     this.projectileManager = new ProjectileManager();
+    this.lastTurretFireTime = 0; // Timestamp of the last turret shot
   }
 
   setupSocketHandlers(socket) {
@@ -22,6 +23,53 @@ class ProjectileController {
   }
 
   handleShootProjectile(socket, data) {
+    // --- Turret Firing Logic ---
+    if (data.weaponType === 'turretCannon') {
+      const now = Date.now();
+      const cooldown = gameConfig.WEAPON_COOLDOWN.turretCannon;
+
+      if (now - this.lastTurretFireTime < cooldown) {
+        // Turret is on cooldown, ignore the shot request silently for now
+        // console.log(`Turret shot ignored (cooldown). Last fired: ${this.lastTurretFireTime}, Now: ${now}`);
+        return;
+      }
+
+      // Validate basic shoot data (position, direction)
+      if (!ValidationService.isValidShootData(data)) {
+         console.warn(`Invalid shoot data (turret) from ${socket.id}`);
+         return;
+      }
+
+      console.log(`[ProjectileController] Handling TURRET shot from ${socket.id}`);
+      this.lastTurretFireTime = now; // Update last fire time
+
+      // Create projectile using the specified type
+      const projectile = this.projectileManager.createProjectile({
+        ownerId: socket.id, // Still track who fired it
+        position: data.position,
+        direction: data.direction,
+        weaponType: 'turretCannon' // Use the type directly
+      });
+
+      console.log(`Created turret projectile ${projectile.id} from player ${socket.id}`);
+
+      // Broadcast projectile creation
+      this.io.emit('projectileCreated', {
+        id: projectile.id,
+        ownerId: socket.id,
+        position: projectile.position,
+        direction: projectile.direction,
+        weaponType: projectile.weaponType,
+        speed: projectile.speed,
+        radius: projectile.radius // Ensure radius is included
+      });
+
+      // Turret logic finished, exit the function
+      return;
+    }
+
+    // --- Standard Weapon Firing Logic ---
+    console.log(`[ProjectileController] Handling standard weapon shot from ${socket.id}`);
     // Validate projectile data
     if (!ValidationService.isValidShootData(data)) {
       console.warn(`Invalid shoot data from ${socket.id}`);
@@ -68,10 +116,10 @@ class ProjectileController {
       ownerId: socket.id,
       position: projectile.position,
       direction: projectile.direction,
-      weaponType: projectile.weaponType,
-      speed: projectile.speed,
-      radius: projectile.radius
-    });
+        weaponType: projectile.weaponType,
+        speed: projectile.speed,
+        radius: projectile.radius // Ensure radius is included
+      });
   }
 
   update(deltaTime) {
