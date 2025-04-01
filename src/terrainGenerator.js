@@ -112,6 +112,22 @@ export const TerrainGenerator = {
     const colors = []; // Array to store vertex colors
     const color = new THREE.Color(); // Reusable color object
 
+    // Define height-based color gradient stops
+    const colorStops = [
+      { height: 0.0, color: new THREE.Color('#808080') }, // Grey (Concrete Base)
+      { height: 2.0, color: new THREE.Color('#228B22') }, // Dark Green (Start of Hills/Grass)
+      { height: 5.0, color: new THREE.Color('#55AE3A') }, // Lighter Green
+      { height: 15.0, color: new THREE.Color('#8B4513') }, // Brown (Lower Mountains/Hills)
+      { height: 30.0, color: new THREE.Color('#A0A0A0') }, // Grey (Higher Mountains)
+      { height: snowCapThreshold, color: new THREE.Color('#CCCCCC') }, // Just below snow
+      { height: snowCapThreshold + 0.1, color: new THREE.Color('#FFFFFF') } // Snow Cap Start
+    ];
+    // Find min/max possible height for normalization (approximate)
+    // Note: This is a simplification; true min/max depends on noise seed.
+    // Using amplitude gives a reasonable range.
+    const maxHeight = zones.MOUNTAINS.amplitude; // Max possible height approx
+    const minHeight = 0; // Assuming min height is around 0
+
     // --- Mesh Generation Logic (using initialized parameters) ---
     const vertices = geometry.attributes.position.array;
     for (let i = 0; i <= segments; i++) {
@@ -125,17 +141,45 @@ export const TerrainGenerator = {
 
         vertices[index + 2] = quantizedHeight; // Apply height to vertex Z (becomes Y)
 
-        // Determine Color based on Zone and Height (Normal Mode)
-        if (quantizedHeight >= snowCapThreshold && currentZone === zones.MOUNTAINS) {
-          color.set('#FFFFFF'); // Snow caps only in mountain zone
+        // --- Enhanced Color Calculation based on Zone and Height ---
+        if (currentZone === zones.FLAT) {
+            // Force flat zones to be grey
+            color.set('#808080'); // Concrete Grey
         } else {
-          color.set(currentZone.baseColor);
+            // Apply height gradient for Hills and Mountains
+            let calculatedColor = colorStops[1].color; // Default to lowest non-flat color (Dark Green)
+            for (let k = 1; k < colorStops.length - 1; k++) { // Start loop from index 1 (green)
+              const lowerStop = colorStops[k];
+              const upperStop = colorStops[k + 1];
+              // Adjust height check to be relative to the start of non-flat terrain if needed,
+              // but using absolute height should be fine here as flat zones are handled separately.
+              if (quantizedHeight >= lowerStop.height && quantizedHeight < upperStop.height) {
+                // Ensure denominator is not zero
+                const heightRange = upperStop.height - lowerStop.height;
+                const t = heightRange > 0 ? (quantizedHeight - lowerStop.height) / heightRange : 0;
+                calculatedColor = lowerStop.color.clone().lerp(upperStop.color, t);
+                break; // Found the correct range
+              }
+            }
+            // Handle heights above the last stop (snow) - applies only to non-flat zones now
+            if (quantizedHeight >= colorStops[colorStops.length - 1].height) {
+              calculatedColor = colorStops[colorStops.length - 1].color; // Snow color
+            }
+             // Ensure hills start green even if low
+            if (currentZone === zones.HILLS && quantizedHeight < colorStops[1].height) {
+                 calculatedColor = colorStops[1].color; // Use dark green if below the first green stop in hills
+            }
+
+            color.copy(calculatedColor);
         }
+        // --- End Enhanced Color Calculation ---
+
         colors.push(color.r, color.g, color.b);
       }
     }
 
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals(); // Recompute normals after height changes for better lighting
 
     const material = new THREE.MeshPhongMaterial({
       vertexColors: true,

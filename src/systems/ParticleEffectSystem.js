@@ -97,9 +97,13 @@ class ParticlePool {
       }
 
       // Physics/Movement Logic
-      if (particle.material.color.equals(new THREE.Color(0x555555))) { // Smoke check
+      // Check specific material instance for ground mist
+      if (particle.material === this.material && this.material.color.equals(new THREE.Color(0xaaaaaa))) { // Ground Mist check (using color as identifier for now)
+         // Very minimal downward drift for mist, mostly rely on initial velocity
+         particle.userData.velocity.y -= 0.001;
+      } else if (particle.material.color.equals(new THREE.Color(0x555555))) { // Smoke check
         particle.userData.velocity.y += 0.03; // Slower upward drift for smoke
-      } else if (!particle.userData.isMuzzleFlash) { // Reduced Gravity for non-muzzle-flash, non-smoke
+      } else if (!particle.userData.isMuzzleFlash) { // Reduced Gravity for other non-muzzle-flash particles
         particle.userData.velocity.y -= 0.02; // Much less gravity
       }
       // Muzzle flash particles (planes or spheres) continue without gravity if isMuzzleFlash is true
@@ -126,6 +130,7 @@ export class ParticleEffectSystem {
     this.mediumSphereGeometry = new THREE.SphereGeometry(0.15, 6, 6); // Smaller fire
     this.largeSphereGeometry = new THREE.SphereGeometry(0.25, 8, 8); // Smaller smoke
     this.planeGeometry = new THREE.PlaneGeometry(0.3, 0.3); // Smaller muzzle flash
+    this.groundMistPlaneGeometry = new THREE.PlaneGeometry(0.8, 0.8); // Larger plane for ground mist
 
     // Shared materials - Ensured AdditiveBlending for brightness
     this.fireMaterial = new THREE.MeshBasicMaterial({
@@ -151,6 +156,13 @@ export class ParticleEffectSystem {
         transparent: true,
         opacity: 0.8 // Slightly less opaque than smoke initially
     });
+    this.groundMistMaterial = new THREE.MeshBasicMaterial({ // New material for ground mist
+        color: 0xaaaaaa, // Light grey/white color
+        transparent: true,
+        opacity: 0.15, // Very subtle
+        depthWrite: false, // Don't obscure things behind it as much
+        // blending: THREE.AdditiveBlending // Optional: make overlapping mist brighter
+    });
 
     // Particle pools - Adjusted sizes
     this.pools = {
@@ -159,7 +171,8 @@ export class ParticleEffectSystem {
       smoke: new ParticlePool(this.largeSphereGeometry, this.smokeMaterial, 75), // Increased pool size
       smallFire: new ParticlePool(this.smallSphereGeometry, this.fireMaterial, 150), // For explosions, increased pool size
       muzzleFlash: new ParticlePool(this.planeGeometry, this.fireMaterial.clone(), 75), // Use plane geometry, clone material, increased pool size
-      dirt: new ParticlePool(this.largeSphereGeometry, this.dirtMaterial, 100) // New pool for dirt impacts
+      dirt: new ParticlePool(this.largeSphereGeometry, this.dirtMaterial, 100), // New pool for dirt impacts
+      groundMist: new ParticlePool(this.groundMistPlaneGeometry, this.groundMistMaterial, 200) // New pool for ground mist (plane geometry)
     };
 
     // Flash effect - Brighter color
@@ -330,6 +343,37 @@ export class ParticleEffectSystem {
       const startPos = position.clone().add(new THREE.Vector3(0, 0.1, 0));
       const particle = this.pools.dirt.acquire(startPos, velocity, duration * (0.8 + Math.random() * 0.4)); // Randomize duration slightly
       // Dirt particles will use the default gravity in the pool update logic
+    }
+  }
+
+  // New method for ground mist effect
+  createGroundMist(center = new THREE.Vector3(0, 0.5, 0), areaSize = 600, count = 150, duration = 15000) {
+    if (!this.initialized) return;
+    const halfSize = areaSize / 2;
+
+    for (let i = 0; i < count; i++) {
+      // Spawn particles randomly within the area, slightly above ground
+      const x = center.x + (Math.random() - 0.5) * areaSize;
+      const z = center.z + (Math.random() - 0.5) * areaSize;
+      const y = center.y + (Math.random() - 0.5) * 0.5; // Small vertical variation
+      const startPos = new THREE.Vector3(x, y, z);
+
+      // Slow, swirling, slightly upward velocity
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 0.1, // Very slow horizontal drift
+        0.01 + Math.random() * 0.02, // Slow upward drift
+        (Math.random() - 0.5) * 0.1
+      );
+
+      // Use the groundMist pool (planes)
+      const particle = this.pools.groundMist.acquire(startPos, velocity, duration * (0.8 + Math.random() * 0.4)); // Long, randomized duration
+      if (particle) {
+        // Optional: Add slight initial random rotation if desired
+        particle.rotation.z = Math.random() * Math.PI * 2;
+        // Mist particles use standard update logic (billboarding, fade out)
+        // Ensure gravity doesn't affect mist too much (handled in update logic check)
+        // We might need to add a specific check in update() for groundMist if default gravity is too strong
+      }
     }
   }
 

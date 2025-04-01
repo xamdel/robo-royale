@@ -62,8 +62,7 @@ export const SceneManager = {
     // Setup input controls (mouse and touch)
     this.setupInputControls();
 
-    // Set scene background color to sky blue
-    this.scene.background = new THREE.Color('#87CEEB');
+    // Background color removed, will be handled by fog and skydome
 
     // Add lights
     // const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Can reduce or remove if HemisphereLight is strong enough
@@ -93,6 +92,60 @@ export const SceneManager = {
     this.scene.add(this.debugHelpers.shadowCamera);
     this.debugHelpers.shadowCamera.visible = false; // Keep hidden by default
 
+    // --- Add Fog ---
+    const fogColor = 0xADD8E6; // Light blue, similar to hemisphere sky
+    const fogNear = 100; // Start distance
+    const fogFar = 450;  // End distance (adjust based on map size/view distance)
+    this.scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+    // Optional: Match fog color to hemisphere sky color for consistency
+    // this.scene.fog = new THREE.Fog(hemisphereLight.color.getHex(), fogNear, fogFar);
+
+    // --- Add Gradient Skydome ---
+    const skyGeo = new THREE.SphereGeometry(500, 32, 15); // Radius matches shadow camera far plane
+    const skyTopColor = new THREE.Color(0x87CEEB); // Sky Blue
+    const skyBottomColor = new THREE.Color(0xFFFFFF); // White/Light horizon
+
+    const vertexShader = `
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+      }
+    `;
+
+    const fragmentShader = `
+      uniform vec3 topColor;
+      uniform vec3 bottomColor;
+      uniform float offset;
+      uniform float exponent;
+      varying vec3 vWorldPosition;
+      void main() {
+        float h = normalize( vWorldPosition + offset ).y;
+        gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 );
+      }
+    `;
+
+    const uniforms = {
+      topColor: { value: skyTopColor },
+      bottomColor: { value: skyBottomColor },
+      offset: { value: 0 }, // Adjust if horizon is not at y=0
+      exponent: { value: 0.6 } // Controls gradient steepness
+    };
+
+    const skyMat = new THREE.ShaderMaterial({
+      uniforms: uniforms,
+      vertexShader: vertexShader,
+      fragmentShader: fragmentShader,
+      side: THREE.BackSide // Render on the inside of the sphere
+    });
+
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    sky.renderOrder = -1; // Ensure it renders behind everything else
+    this.scene.add(sky);
+    // --- End Skydome ---
+
+
     // Initialize TerrainGenerator first with the seed
     TerrainGenerator.initialize(mapSeed); // Use the provided seed
 
@@ -101,6 +154,26 @@ export const SceneManager = {
     if (this.terrainMesh) {
         this.scene.add(this.terrainMesh);
         console.log(`[SceneManager] Terrain mesh added to scene.`); // Removed debug message part
+
+        // --- Add Ground Mist Particle Effect ---
+        // Ensure particle system is initialized before calling this
+        // This might need adjustment depending on where particleEffectSystem is initialized
+        if (particleEffectSystem && particleEffectSystem.initialized) {
+            // Spawn mist across the central area of the terrain
+            const terrainWidth = TerrainGenerator.generationParams.width || 600;
+            const terrainHeight = TerrainGenerator.generationParams.height || 600;
+            particleEffectSystem.createGroundMist(
+                new THREE.Vector3(0, 0.5, 0), // Center position, slightly above ground
+                Math.min(terrainWidth, terrainHeight), // Area size based on terrain dimensions
+                150, // Number of particles
+                20000 // Duration (ms) - long lasting
+            );
+            console.log("[SceneManager] Ground mist effect created.");
+        } else {
+            console.warn("[SceneManager] ParticleEffectSystem not ready, skipping ground mist creation.");
+        }
+        // --- End Ground Mist ---
+
     } else {
         console.error("[SceneManager] Failed to generate terrain mesh.");
     }
