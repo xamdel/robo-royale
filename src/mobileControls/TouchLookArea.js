@@ -29,6 +29,7 @@ export class TouchLookArea {
         this.touchId = touch.identifier;
         this.lastPos.x = touch.clientX;
         this.lastPos.y = touch.clientY;
+        console.log(`[TouchLookArea] Touch Start: ID ${this.touchId} at (${this.lastPos.x}, ${this.lastPos.y})`); // DEBUG
         this.onTouchStart(); // Notify manager
     }
 
@@ -50,6 +51,7 @@ export class TouchLookArea {
         this.lastPos.y = currentY;
 
         // Trigger callback with delta values
+        console.log(`[TouchLookArea] Touch Move: ID ${this.touchId} Delta (${deltaX}, ${deltaY})`); // DEBUG
         this.onLook({ deltaX, deltaY });
     }
 
@@ -62,6 +64,7 @@ export class TouchLookArea {
 
         this.active = false;
         this.touchId = null;
+        console.log(`[TouchLookArea] Touch End: ID ${touch.identifier}`); // DEBUG
         this.onTouchEnd(); // Notify manager
     }
 

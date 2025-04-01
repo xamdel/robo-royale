@@ -38,6 +38,7 @@ export const MobileControlsManager = {
             this.createDOM();
             this.setupControls();
             this.addStyles(); // Add basic styles
+            this.checkAndSuggestOrientation(); // Suggest landscape/fullscreen
             this.show(); // Show controls by default on touch devices
         } else {
             document.body.classList.add('desktop-device');
@@ -141,6 +142,16 @@ export const MobileControlsManager = {
         leaderboardButton.dataset.action = 'toggleLeaderboard';
         this.buttonStates['toggleLeaderboard'] = false; // For single press detection
 
+        // --- Fullscreen Toggle Button (Near Leaderboard - Top Right) ---
+        const fullscreenButton = document.createElement('button');
+        fullscreenButton.id = 'fullscreen-toggle-button';
+        fullscreenButton.className = 'mobile-touch-button fullscreen-toggle';
+        fullscreenButton.innerHTML = '&#x26F6;'; // Fullscreen symbol (may need adjustment)
+        fullscreenButton.title = 'Toggle Fullscreen'; // Tooltip for clarity
+        fullscreenButton.dataset.action = 'toggleFullscreen';
+        this.buttonStates['toggleFullscreen'] = false; // For single press detection
+
+
         // Append elements to container
         this.controlsContainer.appendChild(joystickZone);
         this.controlsContainer.appendChild(lookZone); // Aiming joystick base
@@ -150,6 +161,7 @@ export const MobileControlsManager = {
         this.controlsContainer.appendChild(secondaryWidget);
         this.controlsContainer.appendChild(pickupButton);
         this.controlsContainer.appendChild(leaderboardButton);
+        this.controlsContainer.appendChild(fullscreenButton); // Add fullscreen button
 
         document.body.appendChild(this.controlsContainer);
     },
@@ -245,7 +257,21 @@ export const MobileControlsManager = {
                         // State is reset in getInputState
                     }
                 });
-            } else {
+            } else if (action === 'toggleFullscreen') {
+                 // Fullscreen toggle button
+                 this.buttons[action] = new TouchButton({
+                     element: element,
+                     action: action,
+                     onPress: (act) => {
+                         this.buttonStates[act] = true; // Set state for one frame detection
+                         this.toggleFullscreen(); // Call the fullscreen handler
+                     },
+                     onRelease: (act) => {
+                         // State is reset in getInputState
+                     }
+                 });
+            }
+             else {
                 // Standard press/hold buttons (like fire)
                 this.buttons[action] = new TouchButton({
                     element: element,
@@ -359,6 +385,9 @@ export const MobileControlsManager = {
         }
         if (this.buttonStates['swapSecondary']) {
             this.buttonStates['swapSecondary'] = false;
+        }
+        if (this.buttonStates['toggleFullscreen']) {
+             this.buttonStates['toggleFullscreen'] = false; // Reset after read
         }
         // --- End Reset ---
 
@@ -544,9 +573,161 @@ export const MobileControlsManager = {
                 padding: 0;
                 border-radius: 5px; /* Match widget */
             }
+
+            /* --- Orientation Suggestion Overlay --- */
+            .orientation-suggestion {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%; /* Cover screen initially */
+                background-color: rgba(0, 10, 20, 0.95); /* Darker, more opaque */
+                color: #eee;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                text-align: center;
+                z-index: 1500; /* Above everything else */
+                font-family: 'Roboto', sans-serif;
+                font-size: 18px; /* Slightly larger */
+                padding: 30px;
+                box-sizing: border-box;
+                pointer-events: auto; /* Allow interaction */
+                backdrop-filter: blur(5px); /* Optional blur effect */
+            }
+            .orientation-suggestion p {
+                margin: 0 0 25px 0;
+                line-height: 1.5;
+                max-width: 400px;
+            }
+            .orientation-suggestion b {
+                color: var(--hud-primary-color);
+                font-weight: bold;
+            }
+            .orientation-suggestion button {
+                background-color: var(--hud-primary-color);
+                color: #000;
+                border: none;
+                padding: 12px 25px;
+                font-size: 16px;
+                font-weight: bold;
+                border-radius: 5px;
+                cursor: pointer;
+                transition: background-color 0.2s ease;
+            }
+            .orientation-suggestion button:hover {
+                background-color: #aef; /* Lighter shade on hover */
+            }
+
+            /* Fullscreen Button (Near Leaderboard) */
+            .fullscreen-toggle {
+                top: 100px; /* Align with leaderboard */
+                right: 100px; /* Position left of leaderboard */
+                width: 50px; /* Slightly smaller */
+                height: 40px;
+                font-size: 20px; /* Icon size */
+                border-radius: 5px; /* Rectangular */
+                padding: 0; /* Remove padding for icon */
+            }
         `;
         document.head.appendChild(style);
     },
+
+    // --- Orientation/Fullscreen Suggestion ---
+    createOrientationSuggestionOverlay() {
+        const overlayId = 'orientation-suggestion-overlay';
+        if (document.getElementById(overlayId)) return; // Already exists
+
+        const overlay = document.createElement('div');
+        overlay.id = overlayId;
+        overlay.className = 'orientation-suggestion'; // For styling
+
+        const message = document.createElement('p');
+        message.innerHTML = 'For the best experience, please rotate your device to <b>landscape</b> and use the <b>fullscreen button</b> (near the top right).'; // Updated text
+        overlay.appendChild(message);
+
+        const dismissButton = document.createElement('button');
+        dismissButton.textContent = 'Got it!';
+        dismissButton.onclick = () => {
+            overlay.remove();
+            // Optional: Store preference in localStorage
+            // localStorage.setItem('hideOrientationSuggestion', 'true');
+        };
+        overlay.appendChild(dismissButton);
+
+        document.body.appendChild(overlay);
+
+        // Add listeners to auto-hide if conditions change
+        const hideOverlay = () => {
+            const currentOverlay = document.getElementById(overlayId); // Re-fetch in case it was removed
+            if (currentOverlay) {
+                 // Check if now landscape OR fullscreen
+                 const isLandscape = window.matchMedia("(orientation: landscape)").matches;
+                 const isFullscreen = !!document.fullscreenElement;
+                 if (isLandscape || isFullscreen) {
+                     currentOverlay.remove();
+                     window.removeEventListener('orientationchange', hideOverlay);
+                     document.removeEventListener('fullscreenchange', hideOverlay);
+                 }
+            } else {
+                 // Overlay already removed, clean up listeners
+                 window.removeEventListener('orientationchange', hideOverlay);
+                 document.removeEventListener('fullscreenchange', hideOverlay);
+            }
+        };
+
+        window.addEventListener('orientationchange', hideOverlay);
+        document.addEventListener('fullscreenchange', hideOverlay);
+    },
+
+    checkAndSuggestOrientation() {
+        // Optional: Check localStorage preference
+        // if (localStorage.getItem('hideOrientationSuggestion') === 'true') return;
+
+        if (!this.isTouchDevice) return;
+
+        const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+        const isFullscreen = !!document.fullscreenElement;
+
+        // Only show if in portrait AND not fullscreen
+        if (isPortrait && !isFullscreen) {
+            console.log("[MobileControls] Suggesting landscape and fullscreen.");
+            this.createOrientationSuggestionOverlay();
+        }
+    },
+
+    // --- Fullscreen Toggle Handler ---
+    toggleFullscreen() {
+        console.log("[MobileControls] Toggling fullscreen...");
+        if (!document.fullscreenElement &&    // Standard
+            !document.mozFullScreenElement && // Firefox
+            !document.webkitFullscreenElement && // Chrome, Safari, Opera
+            !document.msFullscreenElement) {  // IE/Edge
+            // Enter fullscreen
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen();
+            } else if (document.documentElement.mozRequestFullScreen) { /* Firefox */
+                document.documentElement.mozRequestFullScreen();
+            } else if (document.documentElement.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
+                document.documentElement.webkitRequestFullscreen();
+            } else if (document.documentElement.msRequestFullscreen) { /* IE/Edge */
+                document.documentElement.msRequestFullscreen();
+            }
+        } else {
+            // Exit fullscreen
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.mozCancelFullScreen) { /* Firefox */
+                document.mozCancelFullScreen();
+            } else if (document.webkitExitFullscreen) { /* Chrome, Safari and Opera */
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) { /* IE/Edge */
+                document.msExitFullscreen();
+            }
+        }
+    },
+
 
     // Helper function to trigger context menu (called by hold timer)
     triggerPickupContextMenu() {
