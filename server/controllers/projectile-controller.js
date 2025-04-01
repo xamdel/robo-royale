@@ -17,7 +17,7 @@ class ProjectileController {
     
     // Only keep the shooting event handler
     socket.on('shootProjectile', (data) => {
-      console.log(`Received shootProjectile from ${socket.id}`);
+      // console.log(`Received shootProjectile from ${socket.id}`);
       this.handleShootProjectile(socket, data);
     });
   }

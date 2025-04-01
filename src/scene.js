@@ -23,6 +23,7 @@ export const SceneManager = {
   cameraHeight: 4, // Height offset
   freeLookActive: false, // Free look mode toggle
   mouseSensitivity: 0.002, // Mouse sensitivity
+  mobileSensitivity: 0.006, // Mobile touch sensitivity (Adjust as needed)
   yaw: Math.PI, // Horizontal camera rotation (Set to face opposite direction initially)
   pitch: -0.3, // Vertical camera rotation (slightly looking down)
   minPitch: -0.8, // Limit looking down
@@ -379,6 +380,12 @@ export const SceneManager = {
     // Switch HUD elements
     if (window.HUD?.showTurretReticle) window.HUD.showTurretReticle();
     // Interaction prompt is hidden by game.js when entering control
+
+    // Add instructional message using the alert system
+    if (window.HUD?.showAlert) {
+        const fireAction = window.MobileControlsManager?.isTouchDevice ? "Tap Fire Button" : "Left-Click";
+        window.HUD.showAlert(`Shoot to travel`, "info", 5000); // Show for 5 seconds
+    }
   },
 
   exitTurretControl(playerModel) {
@@ -603,39 +610,7 @@ export const SceneManager = {
       // Handle turret firing if controlling the turret, pointer is locked, AND not currently following a projectile
       else if (this.isControllingTurret && !this.isFollowingProjectile) {
         console.log("[SceneManager] Click detected while controlling turret (and not following)."); // Debug log
-        const hitTerrain = this.checkTurretTerrainTarget();
-        if (hitTerrain) {
-          console.log("[SceneManager] Turret raycast hit terrain.");
-          if (window.HUD?.addMessage) {
-            window.HUD.addMessage("Turret Target Acquired!", "success"); // Success message
-          }
-          // --- Fire Projectile ---
-          // Use the imported Network object directly
-          if (Network?.sendShot) {
-            const position = new THREE.Vector3();
-            const direction = new THREE.Vector3();
-            this.camera.getWorldPosition(position); // Get world position of camera
-            this.camera.getWorldDirection(direction); // Get world direction camera is facing
-
-            console.log(`[SceneManager] Sending turret shot. Pos: ${position.toArray().join(',')}, Dir: ${direction.toArray().join(',')}`);
-
-            Network.sendShot({ // Use imported Network
-              weaponId: 'turret', // Placeholder ID for the turret
-              weaponType: 'turretCannon', // Specific type for the server to handle
-              position: { x: position.x, y: position.y, z: position.z },
-              direction: { x: direction.x, y: direction.y, z: direction.z }
-            });
-            // TODO: Add client-side firing effect (muzzle flash, sound)?
-          } else {
-            console.warn("[SceneManager] Network.sendShot is not available.");
-          }
-          // --- End Fire Projectile ---
-        } else {
-          console.log("[SceneManager] Turret raycast missed terrain.");
-          if (window.HUD?.addMessage) {
-            window.HUD.addMessage("Turret Missed.", "warning"); // Failure message
-          }
-        }
+        this.fireTurret(); // Call the new centralized firing method
       }
       // Note: Regular weapon firing is handled by WeaponSystem based on mouse state, not this click event.
     });
@@ -682,6 +657,50 @@ export const SceneManager = {
     canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
     canvas.addEventListener('touchcancel', this.handleTouchEnd.bind(this), { passive: false }); // Treat cancel like end
   },
+
+  // --- NEW: Centralized Turret Firing Logic ---
+  fireTurret() {
+    // Check if controlling turret and not following projectile
+    if (!this.isControllingTurret || this.isFollowingProjectile) {
+      return; // Don't fire if not in correct state
+    }
+
+    console.log("[SceneManager] fireTurret called."); // Debug log
+
+    const hitTerrain = this.checkTurretTerrainTarget();
+    if (hitTerrain) {
+      console.log("[SceneManager] Turret raycast hit terrain.");
+      if (window.HUD?.addMessage) {
+        window.HUD.addMessage("Turret Target Acquired!", "success"); // Success message
+      }
+      // --- Fire Projectile ---
+      if (Network?.sendShot) {
+        const position = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        this.camera.getWorldPosition(position); // Get world position of camera
+        this.camera.getWorldDirection(direction); // Get world direction camera is facing
+
+        console.log(`[SceneManager] Sending turret shot. Pos: ${position.toArray().join(',')}, Dir: ${direction.toArray().join(',')}`);
+
+        Network.sendShot({
+          weaponId: 'turret', // Placeholder ID for the turret
+          weaponType: 'turretCannon', // Specific type for the server to handle
+          position: { x: position.x, y: position.y, z: position.z },
+          direction: { x: direction.x, y: direction.y, z: direction.z }
+        });
+        // TODO: Add client-side firing effect (muzzle flash, sound)?
+      } else {
+        console.warn("[SceneManager] Network.sendShot is not available.");
+      }
+      // --- End Fire Projectile ---
+    } else {
+      console.log("[SceneManager] Turret raycast missed terrain.");
+      if (window.HUD?.addMessage) {
+        window.HUD.addMessage("Turret Missed.", "warning"); // Failure message
+      }
+    }
+  },
+  // --- END NEW ---
 
   handleTouchStart(event) {
     // Prevent default browser actions like scrolling/zooming on the canvas
@@ -741,12 +760,14 @@ export const SceneManager = {
            // console.log("[SceneManager] Touch moved, hold cancelled."); // Debug
        }
 
-
-      // Accumulate touch delta for look
-       if (!window.Game?.isContextMenuActive) { // Only rotate if context menu isn't up
-           this.lookDelta.x -= deltaX * 1.5; // Apply sensitivity adjustment for touch
-           this.lookDelta.y -= deltaY * 1.5;
-       }
+       // --- DISABLED Camera rotation from general canvas touch move ---
+       // This logic is now handled by prioritizing mobileLookDelta in updateCamera
+       // const mobileControls = window.MobileControlsManager; // Cache for safety
+       // if (!mobileControls?.isTouchDevice && !window.Game?.isContextMenuActive) {
+       //     this.lookDelta.x -= deltaX * 1.5; // Apply sensitivity adjustment for touch
+       //     this.lookDelta.y -= deltaY * 1.5;
+       // }
+       // --- END DISABLED ---
     }
   },
 
@@ -840,7 +861,8 @@ export const SceneManager = {
 
   // Removed addWeaponPickups method as it's now handled by WeaponSpawnManager
 
-  updateCamera(playerPosition, playerModel) {
+  // Modified to accept mobileLookDelta
+  updateCamera(playerPosition, playerModel, mobileLookDelta = null) {
     // --- Projectile Follow-Cam Logic ---
     if (this.isFollowingProjectile && this.followingProjectileData?.mesh) {
       const projectileMesh = this.followingProjectileData.mesh;
@@ -863,20 +885,39 @@ export const SceneManager = {
     // --- Turret Control Logic (Not Following Projectile) ---
     } else if (this.isControllingTurret) {
       // Delegate all camera and turret model updates to the specific function
-      return this.updateTurretCameraLogic(); // Return the result (turret's forward/right)
+      // Pass mobileLookDelta to the turret logic
+      return this.updateTurretCameraLogic(mobileLookDelta); // Return the result (turret's forward/right)
 
     // --- Player Camera Logic ---
     } else {
-      // Apply accumulated look delta from mouse or touch (only for player control)
-      if (this.lookDelta.x !== 0 || this.lookDelta.y !== 0) {
+      // --- Apply Look Delta ---
+      let appliedLookDelta = false;
+      // Prioritize mobile look delta if provided and non-zero
+      // console.log('[SceneManager.updateCamera] Received mobileLookDelta:', JSON.stringify(mobileLookDelta), typeof mobileLookDelta); // DEBUG REMOVED
+      if (mobileLookDelta && (mobileLookDelta.deltaX !== 0 || mobileLookDelta.deltaY !== 0)) {
+          // console.log(`[SceneManager.updateCamera] Applying mobile look delta: dX=${mobileLookDelta.deltaX}, dY=${mobileLookDelta.deltaY}`); // DEBUG REMOVED
+          // Apply mobile delta using separate sensitivity. Invert signs to match mouse behavior.
+          this.yaw -= mobileLookDelta.deltaX * this.mobileSensitivity; // Use mobileSensitivity
+          this.pitch -= mobileLookDelta.deltaY * this.mobileSensitivity; // Use mobileSensitivity
+          appliedLookDelta = true;
+          // console.log(`[SceneManager.updateCamera] Yaw/Pitch after mobile delta: ${this.yaw.toFixed(3)}, ${this.pitch.toFixed(3)}`); // DEBUG REMOVED
+      }
+      // Fallback to mouse/canvas delta if mobile delta wasn't used
+      else if (!appliedLookDelta && (this.lookDelta.x !== 0 || this.lookDelta.y !== 0)) {
+          // Apply mouse/canvas delta (already inverted in handler)
           this.yaw += this.lookDelta.x * this.mouseSensitivity;
           this.pitch += this.lookDelta.y * this.mouseSensitivity;
-          this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.pitch)); // Clamp pitch
-
-          // Reset delta for the next frame
-          this.lookDelta.x = 0;
-          this.lookDelta.y = 0;
+          appliedLookDelta = true;
+          // console.log(`Applied mouse/canvas look delta: ${this.lookDelta.x}, ${this.lookDelta.y}`); // Debug
       }
+
+      // Clamp pitch regardless of input source
+      this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.pitch));
+
+      // Reset SceneManager's internal delta (used by mouse/canvas touch) after applying it
+      this.lookDelta.x = 0;
+      this.lookDelta.y = 0;
+      // --- End Apply Look Delta ---
 
       // Calculate camera rotation based on updated yaw and pitch
       const cameraRotation = new THREE.Quaternion()
@@ -890,10 +931,13 @@ export const SceneManager = {
       const offset = new THREE.Vector3(0, this.cameraHeight, this.normalDistance) // Use normalDistance
         .applyQuaternion(cameraRotation);
       const targetCameraPosition = playerPosition.clone().add(offset);
+      // console.log(`[SceneManager.updateCamera] Target Pos: ${targetCameraPosition.x.toFixed(2)},${targetCameraPosition.y.toFixed(2)},${targetCameraPosition.z.toFixed(2)} | Target Quat: ${cameraRotation.x.toFixed(2)},${cameraRotation.y.toFixed(2)},${cameraRotation.z.toFixed(2)},${cameraRotation.w.toFixed(2)}`); // DEBUG REMOVED
 
       // Apply position and rotation to the camera
       this.camera.position.copy(targetCameraPosition);
       this.camera.quaternion.copy(cameraRotation); // Set camera rotation directly
+      // console.log(`[SceneManager.updateCamera] Final Cam Pos: ${this.camera.position.x.toFixed(2)},${this.camera.position.y.toFixed(2)},${this.camera.position.z.toFixed(2)} | Final Cam Quat: ${this.camera.quaternion.x.toFixed(2)},${this.camera.quaternion.y.toFixed(2)},${this.camera.quaternion.z.toFixed(2)},${this.camera.quaternion.w.toFixed(2)}`); // DEBUG REMOVED
+
 
       // Calculate forward and right vectors based on camera rotation
       const forward = new THREE.Vector3(0, 0, -1)
@@ -920,7 +964,8 @@ export const SceneManager = {
     }
   }, // End of updateCamera method
 
-  updateTurretCameraLogic() { // Define as a method within SceneManager
+  // Modified to accept and use mobileLookDelta
+  updateTurretCameraLogic(mobileLookDelta = null) { // Define as a method within SceneManager
     // Only require the base turret mesh for camera logic, as cannon rotation is disabled for now.
     if (!this.turretMesh) {
         // console.warn("[SceneManager] updateTurretCameraLogic called but turretMesh is missing."); // Reduce console noise
@@ -929,16 +974,28 @@ export const SceneManager = {
     }
 
     // Apply accumulated look delta to turret aim ONLY if not following a projectile
-    if (!this.isFollowingProjectile && (this.lookDelta.x !== 0 || this.lookDelta.y !== 0)) {
-        // Note: Adjust sensitivity if needed, separate from player sensitivity?
-        this.turretYaw += this.lookDelta.x * this.mouseSensitivity; // Add delta for non-inverted horizontal movement
-        this.turretPitch -= this.lookDelta.y * this.mouseSensitivity; // Negate to invert vertical movement
+    let appliedLookDelta = false;
+    if (!this.isFollowingProjectile) {
+        // Prioritize mobile look delta if provided and non-zero
+        if (mobileLookDelta && (mobileLookDelta.deltaX !== 0 || mobileLookDelta.deltaY !== 0)) {
+            // Apply mobile delta using separate sensitivity. Invert signs to match mouse behavior.
+            this.turretYaw -= mobileLookDelta.deltaX * this.mobileSensitivity; // Use mobileSensitivity
+            this.turretPitch -= mobileLookDelta.deltaY * this.mobileSensitivity; // Use mobileSensitivity
+            appliedLookDelta = true;
+        }
+        // Fallback to mouse/canvas delta if mobile delta wasn't used
+        else if (!appliedLookDelta && (this.lookDelta.x !== 0 || this.lookDelta.y !== 0)) {
+            // Apply mouse/canvas delta (already inverted in handler)
+            this.turretYaw += this.lookDelta.x * this.mouseSensitivity;
+            this.turretPitch -= this.lookDelta.y * this.mouseSensitivity; // Negate to invert vertical movement
+            appliedLookDelta = true;
+        }
 
-        // Clamp turret pitch and yaw
+        // Clamp turret pitch and yaw regardless of input source
         this.turretPitch = Math.max(this.turretMinPitch, Math.min(this.turretMaxPitch, this.turretPitch));
         this.turretYaw = Math.max(this.turretMinYaw, Math.min(this.turretMaxYaw, this.turretYaw));
 
-        // Reset delta for the next frame
+        // Reset SceneManager's internal delta (used by mouse/canvas touch) after applying it
         this.lookDelta.x = 0;
         this.lookDelta.y = 0;
     }

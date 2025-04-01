@@ -596,11 +596,19 @@ export const Game = {
 
 
     // Update camera and process input
-    // Pass player position and model. If controlling turret, player position might not be relevant for camera logic itself,
-    // but SceneManager handles the switch internally.
-    const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
+    // Pass player position, model, and mobile look delta. If controlling turret, player position might not be relevant for camera logic itself,
+     // but SceneManager handles the switch internally.
+     // --- DEBUG LOG REMOVED ---
+     // if (mobileInput.lookDelta.deltaX !== 0 || mobileInput.lookDelta.deltaY !== 0) {
+     //     console.log(`[Game.update] Passing mobileLookDelta to SceneManager: dX=${mobileInput.lookDelta.deltaX}, dY=${mobileInput.lookDelta.deltaY}`);
+     // }
+      // --- END DEBUG LOG ---
+      const cameraDirections = SceneManager.updateCamera(this.player.position, this.player, mobileInput.lookDelta); // Pass mobile look delta
 
-    // Process movement input ONLY if not controlling the turret
+      // Reset the mobile look delta *after* it has been consumed by SceneManager
+     MobileControlsManager.resetLookDelta();
+
+     // Process movement input ONLY if not controlling the turret
     // --- Portal Collision Check ---
     this.checkPortalCollisions();
     // --- End Portal Collision Check ---
@@ -613,6 +621,18 @@ export const Game = {
         // If controlling turret, don't process player movement input.
         // Still need to update animations? Maybe force idle?
         PlayerAnimations.updateAnimation(this, false); // Force idle animation
+
+        // --- NEW: Check for mobile turret firing ---
+        // Use the mobileInput state obtained earlier in the update function
+        if (mobileInput.buttonStates.firePrimary) { // Assuming firePrimary is the main fire button
+            // console.log("[GAME] Mobile fire button pressed while controlling turret."); // Reduce console noise
+            SceneManager.fireTurret();
+            // Note: The TouchButton class handles continuous state if held.
+            // If single-shot behavior per tap is desired, we would need to add
+            // state tracking here or in MobileControlsManager to reset the button state after firing.
+        }
+        // --- END NEW ---
+
         // Send minimal network update? Or none? Let's send none for now.
         return null; // Indicate no movement data to send
     }

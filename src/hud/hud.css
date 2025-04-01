@@ -418,35 +418,55 @@
   border-radius: 50%;
   background-color: transparent;
   border: calc(1px * var(--hud-scale)) solid rgba(0, 170, 255, 0.7);
+  /* Default reticle parts are visible by default */
+  display: block;
 }
 
-/* --- Turret Reticle Style --- */
-.reticle-style-turret .reticle-top {
-  top: 25%; /* Move inwards */
-  height: calc(6px * var(--hud-scale));
-  background-color: var(--hud-warning-color); /* Change color */
+/* --- Turret Reticle Style (Red Bullseye) --- */
+.reticle-style-turret {
+  /* Override default size if needed, or keep the same */
+  /* width: calc(40px * var(--hud-scale)); */
+  /* height: calc(40px * var(--hud-scale)); */
+
+  /* Use borders to create concentric circles */
+  border: calc(2px * var(--hud-scale)) solid var(--hud-danger-color); /* Outer red ring */
+  border-radius: 50%;
+  background-color: transparent; /* Ensure no background interferes */
+  box-sizing: border-box; /* Include border in size */
+  position: relative; /* For pseudo-element positioning */
 }
-.reticle-style-turret .reticle-right {
-  right: 25%; /* Move inwards */
-  width: calc(6px * var(--hud-scale));
-  background-color: var(--hud-warning-color);
+
+/* Hide the default reticle parts when turret style is active */
+.reticle-style-turret .reticle-part {
+  display: none;
 }
-.reticle-style-turret .reticle-bottom {
-  bottom: 25%; /* Move inwards */
-  height: calc(6px * var(--hud-scale));
-  background-color: var(--hud-warning-color);
+
+/* Add inner ring using a pseudo-element */
+.reticle-style-turret::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Size relative to parent */
+  width: 50%;
+  height: 50%;
+  transform: translate(-50%, -50%);
+  border: calc(1px * var(--hud-scale)) solid var(--hud-danger-color); /* Inner red ring */
+  border-radius: 50%;
+  box-sizing: border-box;
 }
-.reticle-style-turret .reticle-left {
-  left: 25%; /* Move inwards */
-  width: calc(6px * var(--hud-scale));
-  background-color: var(--hud-warning-color);
-}
-.reticle-style-turret .reticle-center {
-  /* Keep center dot or hide it */
-   background-color: var(--hud-warning-color);
-   border: none;
-   width: calc(3px * var(--hud-scale));
-   height: calc(3px * var(--hud-scale));
+
+/* Add center dot using another pseudo-element */
+.reticle-style-turret::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(4px * var(--hud-scale)); /* Center dot size */
+  height: calc(4px * var(--hud-scale));
+  transform: translate(-50%, -50%);
+  background-color: var(--hud-danger-color); /* Center red dot */
+  border-radius: 50%;
 }
 
 
@@ -1056,8 +1076,8 @@ body.desktop-device #mobile-controls-container {
   display: none !important;
 }
 
-/* Hide standard HUD elements on touch devices, except health/scanner */
-body.touch-device #mech-hud > *:not(#mobile-controls-container):not(.health-container):not(.scanner-container) {
+/* Hide standard HUD elements on touch devices, except health, scanner, reticle, and alerts */
+body.touch-device #mech-hud > *:not(#mobile-controls-container):not(.health-container):not(.scanner-container):not(.target-reticle):not(.alert-container) {
   display: none !important;
 }
 

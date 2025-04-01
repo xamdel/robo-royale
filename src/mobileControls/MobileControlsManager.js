@@ -18,9 +18,8 @@ export const MobileControlsManager = {
     moveVector: new THREE.Vector2(0, 0),
     lookDelta: { deltaX: 0, deltaY: 0 },
     buttonStates: {}, // e.g., { firePrimary: true, jump: false }
-    pickupButtonHoldTimeout: null,
-    pickupButtonHoldDuration: 500, // ms hold time for context menu trigger - Increased slightly
-    isPickupButtonDown: false, // Track if pickup button is physically down
+    // Removed pickup button hold/tap specific state
+    // isPickupButtonDown: false, // Track if pickup button is physically down
 
     // Removed obsolete context menu touch handling properties
 
@@ -109,15 +108,19 @@ export const MobileControlsManager = {
                 <div class="widget-ammo">-/-</div>
                 <div class="widget-cooldown"><div class="widget-cooldown-bar"></div></div>
             `;
+            // Add "tap to swap" text
+            const swapText = document.createElement('div');
+            swapText.className = 'widget-swap-text';
+            swapText.textContent = 'TAP TO SWAP';
+            infoDiv.appendChild(swapText); // Add it inside the info div
+
             widget.appendChild(infoDiv);
 
-            const swapButton = document.createElement('button');
-            swapButton.id = `swap-${type}-widget-button`;
-            swapButton.className = 'mobile-touch-button swap-widget-button';
-            swapButton.innerHTML = '&#x21BB;'; // Reload/Swap icon
-            swapButton.dataset.action = `swap${type.charAt(0).toUpperCase() + type.slice(1)}`; // e.g., swapPrimary
-            this.buttonStates[swapButton.dataset.action] = false; // For single press detection
-            widget.appendChild(swapButton);
+            // Make the widget itself the button
+            widget.classList.add('mobile-touch-button'); // Make it behave like a button
+            widget.dataset.action = `swap${type.charAt(0).toUpperCase() + type.slice(1)}`; // e.g., swapPrimary
+            this.buttonStates[widget.dataset.action] = false; // For single press detection
+            // Removed the separate swapButton element
 
             return widget;
         };
@@ -129,10 +132,9 @@ export const MobileControlsManager = {
         const pickupButton = document.createElement('button');
         pickupButton.id = 'pickup-button';
         pickupButton.className = 'mobile-touch-button pickup-button';
-        pickupButton.textContent = 'PICK UP';
-        pickupButton.dataset.action = 'pickup'; // Action for tap/hold logic
-        this.buttonStates['pickup'] = false; // State for tap detection
-        this.buttonStates['pickupHold'] = false; // State for hold detection
+        pickupButton.textContent = 'INTERACT (E)'; // Changed text for clarity
+        pickupButton.dataset.action = 'interact'; // Changed action name to reflect 'E' key
+        // Removed pickup/pickupHold states, now directly simulates 'E'
 
         // --- Leaderboard Toggle Button (Under Radar - Top Right) ---
         const leaderboardButton = document.createElement('button');
@@ -207,40 +209,50 @@ export const MobileControlsManager = {
             console.error("[MobileControls] Look area element not found!");
         }
 
-        // --- Setup Buttons (Fire, Swap, Leaderboard, Pickup) ---
+        // --- Setup Buttons (Fire, Swap Widgets, Leaderboard, Pickup, Fullscreen) ---
+        // Select all elements intended to be buttons, including the widgets themselves now
         const buttonElements = this.controlsContainer.querySelectorAll('.mobile-touch-button');
         buttonElements.forEach(element => {
             const action = element.dataset.action;
-            if (!action) return;
+            if (!action) {
+                // console.warn("Element found with class 'mobile-touch-button' but no data-action:", element);
+                return;
+            }
 
-            if (action === 'pickup') {
-                // Special handling for pickup button (tap/hold)
-                this.buttons[action] = new TouchButton({
-                    element: element,
-                    action: action,
-                    onPress: (act) => {
-                        this.isPickupButtonDown = true;
-                        this.buttonStates[act] = true; // Indicate potential tap start
-                        clearTimeout(this.pickupButtonHoldTimeout); // Clear previous timer
-
-                        this.pickupButtonHoldTimeout = setTimeout(() => {
-                            if (this.isPickupButtonDown) { // Check if still held
-                                console.log("[MobileControls] Pickup button hold detected.");
-                                this.buttonStates['pickupHold'] = true; // Set hold state
-                                this.triggerPickupContextMenu();
-                                this.buttonStates[act] = false; // Reset tap state after hold triggers
-                                // Optionally add visual feedback for hold activation
-                            }
-                        }, this.pickupButtonHoldDuration);
-                    },
-                    onRelease: (act) => {
-                        this.isPickupButtonDown = false;
-                        clearTimeout(this.pickupButtonHoldTimeout); // Clear timer on release
-                        // Tap state (this.buttonStates['pickup']) is reset in getInputState
-                        // Hold state (this.buttonStates['pickupHold']) is reset in getInputState
-                        // console.log("[MobileControls] Pickup button released.");
-                    }
-                });
+            // --- NEW: Handle Interact ('E' key simulation) ---
+            if (action === 'interact') {
+                 this.buttons[action] = new TouchButton({
+                     element: element,
+                     action: action,
+                     onPress: (act) => {
+                         // Simulate 'E' key down
+                         console.log("[MobileControls] Interact (E) button pressed.");
+                         const event = new KeyboardEvent('keydown', {
+                             key: 'e',
+                             code: 'KeyE',
+                             keyCode: 69, // Deprecated but sometimes needed
+                             which: 69,   // Deprecated but sometimes needed
+                             bubbles: true,
+                             cancelable: true
+                         });
+                         document.dispatchEvent(event);
+                         // No internal state needed for this button anymore
+                     },
+                     onRelease: (act) => {
+                         // Simulate 'E' key up
+                         console.log("[MobileControls] Interact (E) button released.");
+                         const event = new KeyboardEvent('keyup', {
+                             key: 'e',
+                             code: 'KeyE',
+                             keyCode: 69,
+                             which: 69,
+                             bubbles: true,
+                             cancelable: true
+                         });
+                         document.dispatchEvent(event);
+                     }
+                 });
+            // --- END NEW ---
             } else if (action === 'toggleLeaderboard' || action === 'swapPrimary' || action === 'swapSecondary') {
                 // Buttons that trigger once on press (like toggles or swaps)
                 this.buttons[action] = new TouchButton({
@@ -296,45 +308,7 @@ export const MobileControlsManager = {
         }
     },
 
-    async handleQuickPickup() { // Ensure async keyword is present
-        // Logic for quick pickup (tap action) - Replicates basic desktop pickup
-        console.log("[MobileControls] Quick Pickup triggered (Tap).");
-        if (!window.Game || !window.Game.player || !window.Game.weaponSpawnManager || !weaponSystem) {
-             console.warn("[MobileControls] Cannot perform quick pickup, Game state or systems not available.");
-             return;
-        }
-        try {
-            const playerWorldPos = new THREE.Vector3();
-            window.Game.player.getWorldPosition(playerWorldPos);
-            const pickupRange = 4.0; // Use game's pickup range
-            const nearestPickup = window.Game.weaponSpawnManager.findNearestPickup(playerWorldPos, pickupRange);
-
-            if (nearestPickup && nearestPickup.type === 'weapon') {
-                 // Find the first available mount point (primary preferred, then secondary)
-                 const primaryMounts = weaponSystem.mountManager.getMountsByType('primary');
-                 const secondaryMounts = weaponSystem.mountManager.getMountsByType('secondary');
-                 let targetMount = primaryMounts.find(m => !m.getWeapon()) || secondaryMounts.find(m => !m.getWeapon());
-
-                 // If no empty mounts, maybe replace the currently *selected* weapon's mount?
-                 // For simplicity now, let's just equip if a slot is free.
-                 // Use weaponSystem.tryPickupAndAttach which handles finding a slot
-                 console.log(`[MobileControls] Attempting quick attach for ${nearestPickup.config?.displayName || nearestPickup.type}`);
-                 const success = await weaponSystem.tryPickupAndAttach(nearestPickup); // Use await if it's async
-                 if (success) {
-                     console.log(`[MobileControls] Quick attach successful.`);
-                     // Hide item badge if shown
-                     if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
-                 } else {
-                     console.log("[MobileControls] Quick pickup failed: No available mount points.");
-                     // Optionally provide feedback like "All slots full"
-                 }
-            } else {
-                 console.log("[MobileControls] Quick pickup failed: No weapon in range.");
-            }
-        } catch (error) {
-            console.error("[MobileControls] Error during quick pickup:", error);
-        }
-    },
+    // REMOVED handleQuickPickup - Now handled by standard 'E' key logic in Game.js
 
     // Method to be called in the game loop to get current input state
     getInputState() {
@@ -350,11 +324,17 @@ export const MobileControlsManager = {
         const currentMoveVector = this.joystick ? this.joystick.value.clone() : new THREE.Vector2(0, 0);
 
         // Get accumulated look delta and reset for next frame
-        const currentLookDelta = { ...this.lookDelta };
-        this.lookDelta.deltaX = 0;
-        this.lookDelta.deltaY = 0;
+         const currentLookDelta = { ...this.lookDelta };
+         // --- DEBUG LOG REMOVED ---
+         // if (currentLookDelta.deltaX !== 0 || currentLookDelta.deltaY !== 0) {
+         //     console.log(`[MobileControlsManager.getInputState] Returning lookDelta: dX=${currentLookDelta.deltaX}, dY=${currentLookDelta.deltaY}`);
+         // }
+          // --- END DEBUG LOG ---
+          // Reset is now handled externally after consumption
+          // this.lookDelta.deltaX = 0;
+         // this.lookDelta.deltaY = 0;
 
-        // Get current button states, combining left/right fire if needed
+         // Get current button states, combining left/right fire if needed
         const currentButtonStates = { ...this.buttonStates };
 
         // Combine fire states if separate buttons exist (adjust if needed)
@@ -362,20 +342,8 @@ export const MobileControlsManager = {
         // currentButtonStates['fireSecondary'] = this.buttonStates['fireSecondary'] || this.buttonStates['fireSecondaryLeft'];
 
         // --- Reset single-frame states ---
-        // Reset tap state for pickup button after it's been read once, ONLY if hold didn't trigger
-        if (this.buttonStates['pickup'] && !this.buttonStates['pickupHold']) {
-             // If tap state was true AND hold state is false, trigger the quick pickup action
-             this.handleQuickPickup(); // This is now async, but we don't need to await it here
-             this.buttonStates['pickup'] = false; // Reset tap state after handling
-        } else if (this.buttonStates['pickup']) {
-             // If tap was true but hold was also true (or became true), just reset tap state without action
-             this.buttonStates['pickup'] = false;
-        }
+        // REMOVED pickup/pickupHold state resetting logic
 
-        // Reset hold state for pickup button after it's been read
-        if (this.buttonStates['pickupHold']) {
-            this.buttonStates['pickupHold'] = false;
-        }
         // Reset toggle/swap states
         if (this.buttonStates['toggleLeaderboard']) {
             this.buttonStates['toggleLeaderboard'] = false;
@@ -387,7 +355,7 @@ export const MobileControlsManager = {
             this.buttonStates['swapSecondary'] = false;
         }
         if (this.buttonStates['toggleFullscreen']) {
-             this.buttonStates['toggleFullscreen'] = false; // Reset after read
+            this.buttonStates['toggleFullscreen'] = false; // Reset after read
         }
         // --- End Reset ---
 
@@ -395,11 +363,17 @@ export const MobileControlsManager = {
             moveVector: currentMoveVector, // Use the vector directly
             lookDelta: currentLookDelta,
             buttonStates: currentButtonStates
-        };
-    },
+         };
+     },
 
-    show() {
-        if (this.isTouchDevice && this.controlsContainer) {
+     // New method to reset the look delta externally
+     resetLookDelta() {
+        this.lookDelta.deltaX = 0;
+        this.lookDelta.deltaY = 0;
+     },
+
+     show() {
+         if (this.isTouchDevice && this.controlsContainer) {
             this.controlsContainer.style.display = 'block';
             this.isVisible = true;
         }
@@ -475,16 +449,22 @@ export const MobileControlsManager = {
                 transform: scale(0.95);
             }
 
-            /* Fire Buttons (Above Movement Joystick) */
+            /* Fire Buttons (Above Movement Joystick - Side by Side) */
             .fire-button {
-                width: 75px;
-                height: 75px;
-                font-size: 12px;
-                left: 72.5px; /* Centered above joystick */
-                transform: translateX(-50%);
+                width: 70px; /* Slightly smaller */
+                height: 70px;
+                font-size: 11px;
+                bottom: 200px; /* Position above joystick */
+                /* transform: translateX(-50%); Removed */
             }
-            #fire-primary-left-button { bottom: 210px; }
-            #fire-secondary-left-button { bottom: 125px; } /* Spaced out */
+            #fire-primary-left-button {
+                left: 30px; /* Left side */
+            }
+            #fire-secondary-left-button {
+                 left: 110px; /* Closer to primary (30px left + 70px width + 10px gap) */
+                 /* Ensure bottom is the same */
+                 bottom: 200px;
+            }
 
             /* Pickup Button (Lower Left of Aiming Joystick) */
             .pickup-button {
@@ -500,34 +480,50 @@ export const MobileControlsManager = {
                  background-color: rgba(0, 200, 100, 0.8);
             }
 
-            /* Leaderboard Button (Under Radar - Top Right) */
-            .leaderboard-toggle {
-                top: 100px; /* Position below typical radar */
-                right: 30px;
-                width: 60px;
+            /* Leaderboard & Fullscreen Buttons (Top Right) */
+            .leaderboard-toggle, .fullscreen-toggle {
+                top: 15px; /* Position near top */
                 height: 40px;
                 font-size: 14px;
                 border-radius: 5px; /* Rectangular */
             }
+            .leaderboard-toggle {
+                right: 80px; /* Rightmost */
+                width: 50px;
+                padding: 0 5px; /* Adjust padding */
+            }
+            .fullscreen-toggle {
+                right: 140px; /* Left of leaderboard */
+                width: 45px;
+                font-size: 20px; /* Icon size */
+                padding: 0; /* Remove padding for icon */
+            }
 
-            /* --- Weapon Widgets (Above Aiming Joystick) --- */
+
+            /* --- Weapon Widgets (Right Side - Now act as buttons) --- */
             .mobile-weapon-widget {
                 position: absolute;
-                right: 30px; /* Align with aiming joystick */
-                width: 180px; /* Wider */
-                height: 55px;
+                right: 5px; /* Position flush with right edge (small margin) */
+                width: 160px; /* Slightly wider again */
+                height: 55px; /* Taller for easier tapping */
                 background-color: rgba(0, 20, 40, 0.5);
                 border: 2px solid var(--hud-primary-color);
                 border-radius: 8px;
                 padding: 5px 8px;
                 box-shadow: var(--hud-glow);
                 display: flex;
-                justify-content: space-between;
                 align-items: center;
-                gap: 8px;
+                pointer-events: auto; /* Make widget interactive */
+                /* Inherits .mobile-touch-button styles for :active state */
             }
-            #primary-swap-widget { bottom: 260px; } /* Positioned higher */
-            #secondary-swap-widget { bottom: 195px; }
+             /* Apply active state directly to widget */
+            .mobile-weapon-widget:active {
+                 background-color: rgba(0, 170, 255, 0.7);
+                 transform: scale(0.97); /* Slightly less scale */
+            }
+
+            #primary-swap-widget { bottom: 250px; }
+            #secondary-swap-widget { bottom: 185px; } /* Space them out a bit */
 
             .widget-info {
                 flex-grow: 1;
@@ -536,25 +532,26 @@ export const MobileControlsManager = {
                 justify-content: center;
                 color: #eee;
                 overflow: hidden;
-                pointer-events: none;
+                pointer-events: none; /* Info text doesn't block widget touch */
+                position: relative; /* Needed for absolute positioning of swap text */
             }
             .widget-name {
-                font-size: 13px;
+                font-size: 12px; /* Slightly smaller */
                 color: var(--hud-primary-color);
-                margin-bottom: 2px;
+                margin-bottom: 1px; /* Reduced margin */
                 font-weight: bold;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
             .widget-ammo {
-                font-size: 11px;
+                font-size: 10px; /* Slightly smaller */
                 font-family: 'Roboto Mono', monospace;
             }
             .widget-cooldown {
-                height: 5px;
+                height: 4px; /* Slightly thinner */
                 background-color: rgba(0, 0, 0, 0.5);
-                margin-top: 3px;
+                margin-top: 2px;
                 border-radius: 2px;
                 overflow: hidden;
             }
@@ -565,14 +562,18 @@ export const MobileControlsManager = {
                 transition: width 0.1s linear, background-color 0.1s linear;
             }
 
-            .swap-widget-button {
-                width: 45px;
-                height: 45px;
-                flex-shrink: 0;
-                font-size: 22px; /* Larger icon */
-                padding: 0;
-                border-radius: 5px; /* Match widget */
+            .widget-swap-text {
+                position: absolute;
+                bottom: 2px;
+                left: 4px;
+                font-size: 9px;
+                color: rgba(200, 220, 255, 0.6); /* Dimmed color */
+                text-transform: uppercase;
+                pointer-events: none; /* Doesn't interfere with touch */
             }
+
+            /* Removed .swap-widget-button styles */
+
 
             /* --- Orientation Suggestion Overlay --- */
             .orientation-suggestion {
@@ -620,16 +621,7 @@ export const MobileControlsManager = {
                 background-color: #aef; /* Lighter shade on hover */
             }
 
-            /* Fullscreen Button (Near Leaderboard) */
-            .fullscreen-toggle {
-                top: 100px; /* Align with leaderboard */
-                right: 100px; /* Position left of leaderboard */
-                width: 50px; /* Slightly smaller */
-                height: 40px;
-                font-size: 20px; /* Icon size */
-                border-radius: 5px; /* Rectangular */
-                padding: 0; /* Remove padding for icon */
-            }
+            /* Fullscreen Button styles moved and combined with Leaderboard above */
         `;
         document.head.appendChild(style);
     },
@@ -729,38 +721,7 @@ export const MobileControlsManager = {
     },
 
 
-    // Helper function to trigger context menu (called by hold timer)
-    triggerPickupContextMenu() {
-        // This function needs access to Game state and weaponSystem
-        if (!window.Game || !window.Game.player || !window.Game.weaponSpawnManager || !weaponSystem) {
-            console.warn("[MobileControls] Cannot trigger context menu, Game state or weaponSystem not available.");
-            return;
-        }
-
-        // Find nearest weapon pickup
-        const playerWorldPos = new THREE.Vector3();
-        window.Game.player.getWorldPosition(playerWorldPos);
-        const pickupRange = 4.0; // Use game's pickup range
-        const nearestPickup = window.Game.weaponSpawnManager.findNearestPickup(playerWorldPos, pickupRange);
-
-        if (nearestPickup && nearestPickup.type === 'weapon') {
-            console.log("[MobileControls] Triggering weapon context menu via pickup button hold.");
-            window.Game.isContextMenuActive = true; // Disable camera controls in Game
-
-            // Hide item badge if it was shown
-            if (window.HUD?.hideItemBadge) window.HUD.hideItemBadge();
-
-            const allMounts = weaponSystem.mountManager.getAllMounts();
-            // Show context menu centered on screen for mobile
-            // Pass 'mobile' flag or check isTouchDevice within showWeaponContextMenu
-            window.HUD.showWeaponContextMenu(null, allMounts, nearestPickup, true); // Pass true for isMobile
-            // Grid interaction is handled by click listeners within contextMenu.js now
-
-        } else {
-            console.log("[MobileControls] Pickup button hold did not target a weapon pickup.");
-            // Optionally provide feedback if hold didn't do anything
-        }
-    },
+    // REMOVED triggerPickupContextMenu - Now handled by standard 'E' key logic in Game.js
 
     // Removed obsolete context menu touch handling functions
     // addContextMenuTouchListeners, removeContextMenuTouchListeners,
