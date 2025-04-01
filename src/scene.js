@@ -1254,10 +1254,10 @@ export const SceneManager = {
 
     // --- Create Exit Portal ---
     // Place towards the back edge (Z approx -270)
-    const exitPortalXOffset = -15; // Further increased offset to the left
+    const exitPortalXOffset = -6; // Reduced offset to the left
     const portalZ = platformPosition.z - platformRadius * 0.8; // Z position near -270
     const exitPortalPosition = new THREE.Vector3(
-        platformPosition.x + exitPortalXOffset, // Use further increased offset
+        platformPosition.x + exitPortalXOffset, // Use reduced offset
         PLATFORM_Y_POSITION + 0.1, // Slightly above platform surface
         portalZ
     );
@@ -1270,9 +1270,9 @@ export const SceneManager = {
     // Place next to the exit portal, also near Z = -270
     if (cameFromPortal && refUrl) {
         console.log(`[SceneManager] Player arrived from portal: ${refUrl}. Creating return portal.`);
-        const returnPortalXOffset = 15; // Further increased offset to the right
+        const returnPortalXOffset = 6; // Reduced offset to the right
         const returnPortalPosition = new THREE.Vector3(
-            platformPosition.x + returnPortalXOffset, // Use further increased offset
+            platformPosition.x + returnPortalXOffset, // Use reduced offset
             PLATFORM_Y_POSITION + 0.1, // Slightly above platform surface
             portalZ // Same Z as the exit portal
         );
