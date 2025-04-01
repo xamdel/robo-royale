@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { audioManager } from '../../audio/AudioManager.js'; // Import AudioManager
+import { SceneManager } from '../../scene.js'; // Import SceneManager
 
 export class MountPoint {
   constructor(config, bone) {
@@ -251,14 +252,16 @@ export class MountPoint {
     }
     
     const worldPosition = this.getWorldPosition();
-    const worldDirection = this.getWorldDirection();
+    // Use the camera's direction for aiming, not the mount's direction
+    const aimDirection = SceneManager.getCameraDirection(); 
     
     console.log(`[WEAPON] Firing weapon ${this.weapon.type} from position`, 
                 worldPosition.toArray(), 
-                "in direction", 
-                worldDirection.toArray());
+                "in direction (camera aim)", 
+                aimDirection.toArray());
     
-    const success = this.weapon.fire(worldPosition, worldDirection);
+    // Pass the aimDirection to the weapon's fire method
+    const success = this.weapon.fire(worldPosition, aimDirection); 
     if (success) {
       console.log(`[WEAPON] Fire successful for ${this.weapon.type}`);
       this.lastFireTime = Date.now();

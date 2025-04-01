@@ -886,4 +886,11 @@ export const SceneManager = {
     // console.warn(`No terrain intersection found at (${x}, ${z}). Returning default height 0.`);
     return 0; // Default height if no intersection (e.g., outside terrain bounds)
   },
+
+  // Get the current direction the camera is facing
+  getCameraDirection() {
+    const direction = new THREE.Vector3();
+    this.camera.getWorldDirection(direction);
+    return direction;
+  },
 };
