@@ -21,6 +21,7 @@ export const MobileControlsManager = {
     pickupButtonHoldTimeout: null,
     pickupButtonHoldDuration: 500, // ms hold time for context menu trigger - Increased slightly
     isPickupButtonDown: false, // Track if pickup button is physically down
+    isInteractButtonDown: false, // Track if interact button is physically down
 
     // Removed obsolete context menu touch handling properties
 
@@ -133,6 +134,14 @@ export const MobileControlsManager = {
         this.buttonStates['pickup'] = false; // State for tap detection
         this.buttonStates['pickupHold'] = false; // State for hold detection
 
+        // --- Interact Button (Near Pickup Button) ---
+        const interactButton = document.createElement('button');
+        interactButton.id = 'interact-button';
+        interactButton.className = 'mobile-touch-button interact-button';
+        interactButton.innerHTML = '&#x1F50D;'; // Magnifying glass icon (or use text 'Interact')
+        interactButton.dataset.action = 'interact';
+        this.buttonStates['interact'] = false; // State for tap detection
+
         // --- Leaderboard Toggle Button (Under Radar - Top Right) ---
         const leaderboardButton = document.createElement('button');
         leaderboardButton.id = 'leaderboard-toggle-button';
@@ -149,6 +158,7 @@ export const MobileControlsManager = {
         this.controlsContainer.appendChild(primaryWidget);
         this.controlsContainer.appendChild(secondaryWidget);
         this.controlsContainer.appendChild(pickupButton);
+        this.controlsContainer.appendChild(interactButton); // Add interact button
         this.controlsContainer.appendChild(leaderboardButton);
 
         document.body.appendChild(this.controlsContainer);
@@ -229,19 +239,26 @@ export const MobileControlsManager = {
                         // console.log("[MobileControls] Pickup button released.");
                     }
                 });
-            } else if (action === 'toggleLeaderboard' || action === 'swapPrimary' || action === 'swapSecondary') {
-                // Buttons that trigger once on press (like toggles or swaps)
+            } else if (action === 'toggleLeaderboard' || action === 'swapPrimary' || action === 'swapSecondary' || action === 'interact') {
+                // Buttons that trigger once on press (like toggles, swaps, or interact)
                 this.buttons[action] = new TouchButton({
                     element: element,
                     action: action,
                     onPress: (act) => {
                         this.buttonStates[act] = true; // Set state for one frame detection
+                        this.buttonStates[act] = true; // Set state for one frame detection
                         if (act === 'toggleLeaderboard') {
                             this.handleLeaderboardToggle();
+                        } else if (act === 'interact') {
+                            this.isInteractButtonDown = true; // Track physical press
+                            // Interact action is handled in Game.js by checking the state
                         }
                         // Swap actions are handled in Game.js by checking the state
                     },
                     onRelease: (act) => {
+                        if (act === 'interact') {
+                            this.isInteractButtonDown = false; // Track physical release
+                        }
                         // State is reset in getInputState
                     }
                 });
@@ -360,6 +377,9 @@ export const MobileControlsManager = {
         if (this.buttonStates['swapSecondary']) {
             this.buttonStates['swapSecondary'] = false;
         }
+        if (this.buttonStates['interact']) {
+            this.buttonStates['interact'] = false;
+        }
         // --- End Reset ---
 
         return {
@@ -463,13 +483,28 @@ export const MobileControlsManager = {
                 height: 70px;
                 font-size: 11px;
                 bottom: 30px; /* Align with joystick bottom */
-                right: 200px; /* Left of aiming joystick */
+                right: 280px; /* Shifted left to make space */
                 background-color: rgba(0, 80, 40, 0.6); /* Greenish tint */
                 border-color: rgba(0, 200, 100, 0.8);
             }
             .pickup-button:active {
                  background-color: rgba(0, 200, 100, 0.8);
             }
+
+            /* Interact Button (Between Pickup and Aiming Joystick) */
+            .interact-button {
+                width: 70px;
+                height: 70px;
+                font-size: 24px; /* Icon size */
+                bottom: 30px; /* Align with joystick bottom */
+                right: 200px; /* Position between pickup and look */
+                background-color: rgba(40, 40, 100, 0.6); /* Bluish tint */
+                border-color: rgba(100, 100, 255, 0.8);
+            }
+            .interact-button:active {
+                 background-color: rgba(100, 100, 255, 0.8);
+            }
+
 
             /* Leaderboard Button (Under Radar - Top Right) */
             .leaderboard-toggle {

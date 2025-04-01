@@ -542,6 +542,23 @@ export const Game = {
     }
     // --- End Handle Mobile Pickup Button Tap ---
 
+    // --- Handle Mobile Interact Button Tap ---
+    if (mobileInput.buttonStates.interact && this.isNearTurret) {
+        console.log("[GAME] Mobile 'Interact' button tapped near turret.");
+        if (SceneManager.isControllingTurret) {
+            SceneManager.exitTurretControl(this.player);
+            // Interaction prompt will be shown again by the proximity check next frame if still in range
+        } else {
+            SceneManager.enterTurretControl(this.player);
+            // Hide interaction prompt immediately when entering
+            if (window.HUD?.hideInteractionPrompt) window.HUD.hideInteractionPrompt();
+        }
+        // Reset the interact button state immediately after processing
+        MobileControlsManager.buttonStates.interact = false;
+    }
+    // --- End Handle Mobile Interact Button Tap ---
+
+
     // --- Automatic Ammo Pickup on Collision ---
     if (this.weaponSpawnManager && !this.isDead) {
         const playerPos = this.player.position;

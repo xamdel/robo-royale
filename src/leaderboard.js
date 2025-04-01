@@ -21,6 +21,23 @@ export const Leaderboard = {
     title.textContent = 'Match Kills';
     this.elements.container.appendChild(title);
 
+    // Create close button
+    const closeButton = document.createElement('button');
+    closeButton.textContent = 'X';
+    closeButton.className = 'leaderboard-close-button'; // Add class for styling
+    closeButton.style.position = 'absolute'; // Position absolutely within the container
+    closeButton.style.top = '10px'; // Adjust as needed
+    closeButton.style.left = '10px'; // Adjust as needed
+    closeButton.style.cursor = 'pointer'; // Indicate it's clickable
+    closeButton.style.background = 'none'; // Optional: remove default button background
+    closeButton.style.border = 'none'; // Optional: remove default button border
+    closeButton.style.fontSize = '1.5em'; // Make it larger
+    closeButton.style.color = 'white'; // Set color (adjust if needed)
+    closeButton.style.zIndex = '10'; // Ensure it's above other elements if necessary
+    closeButton.addEventListener('click', () => this.hide());
+    this.elements.container.appendChild(closeButton);
+
+
     // Create and populate header row for the list
     this.elements.headerRow = document.createElement('div');
     this.elements.headerRow.className = 'leaderboard-header';
