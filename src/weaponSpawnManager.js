@@ -4,8 +4,10 @@ import { modelManager } from './ModelManager'; // Import modelManager for ammo b
 
 // Constants
 const PICKUP_RADIUS = 2.5;
+const GLOW_CIRCLE_RADIUS = 1.5; // Radius of the glowing circle
 const ROTATION_SPEED = 0.5;
 const VERTICAL_OFFSET = 1.0; // How high above terrain to spawn
+const GLOW_CIRCLE_OFFSET_Y = -VERTICAL_OFFSET + 0.05; // Slightly above terrain, below weapon
 
 export class WeaponSpawnManager {
   constructor(sceneManager, terrainGenerator) {
@@ -14,7 +16,15 @@ export class WeaponSpawnManager {
 
     this.sceneManager = sceneManager;
     this.terrainGenerator = terrainGenerator;
-    this.activePickups = new Map(); // Map<string, { model: THREE.Object3D, collider: THREE.Sphere, type: string, weaponType?: string, id: string }>
+    this.activePickups = new Map(); // Map<string, { model: THREE.Object3D, glowCircle?: THREE.Mesh, collider: THREE.Sphere, type: string, weaponType?: string, id: string }>
+    this.glowCircleGeometry = new THREE.CircleGeometry(GLOW_CIRCLE_RADIUS, 32);
+    this.glowCircleMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00aaff, // Blue color
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+      depthWrite: false, // Don't obscure things behind it
+    });
   }
 
   // Spawns all pickups based on data received from the server
@@ -69,10 +79,20 @@ export class WeaponSpawnManager {
 
       this.sceneManager.add(pickupModel);
 
+      // --- Create and add the glowing circle ---
+      const glowCircle = new THREE.Mesh(this.glowCircleGeometry, this.glowCircleMaterial);
+      glowCircle.position.copy(spawnPosition);
+      glowCircle.position.y += GLOW_CIRCLE_OFFSET_Y; // Position it below the weapon
+      glowCircle.rotation.x = -Math.PI / 2; // Rotate to lie flat on the ground
+      glowCircle.renderOrder = -1; // Render before other transparent objects if needed
+      this.sceneManager.add(glowCircle);
+      // --- End glowing circle ---
+
       const collider = new THREE.Sphere(spawnPosition.clone(), PICKUP_RADIUS);
 
       this.activePickups.set(id, {
         model: pickupModel,
+        glowCircle: glowCircle, // Store the circle reference
         collider: collider,
         type: 'weapon',
         weaponType: weaponType,
@@ -135,16 +155,23 @@ export class WeaponSpawnManager {
   removePickup(pickupId) {
     const pickup = this.activePickups.get(pickupId);
     if (pickup) {
+      // Remove weapon model
       this.sceneManager.remove(pickup.model);
-      // Dispose geometry/material if necessary
-      if (pickup.model.geometry) pickup.model.geometry.dispose();
-      if (pickup.model.material) {
+      if (pickup.model.geometry) pickup.model.geometry.dispose(); // Only if geometry is unique
+      if (pickup.model.material) { // Only if material is unique
           if (Array.isArray(pickup.model.material)) {
               pickup.model.material.forEach(m => m.dispose());
           } else {
               pickup.model.material.dispose();
           }
       }
+
+      // Remove glow circle if it exists (only for weapons currently)
+      if (pickup.glowCircle) {
+        this.sceneManager.remove(pickup.glowCircle);
+        // Geometry and Material are shared, no need to dispose here unless it's the last one
+      }
+
       this.activePickups.delete(pickupId);
       console.log(`[SpawnManager] Removed pickup: ${pickupId}`);
     } else {
@@ -156,15 +183,23 @@ export class WeaponSpawnManager {
   clearExistingPickups() {
     console.log('[SpawnManager] Clearing existing pickups...');
     this.activePickups.forEach(pickup => {
+      // Remove weapon/ammo model
       this.sceneManager.remove(pickup.model);
-      // Dispose geometry/material
-      if (pickup.model.geometry) pickup.model.geometry.dispose();
-      if (pickup.model.material) {
-          if (Array.isArray(pickup.model.material)) {
-              pickup.model.material.forEach(m => m.dispose());
-          } else {
-              pickup.model.material.dispose();
-          }
+      // Dispose geometry/material if necessary (assuming they might be unique clones)
+      // Note: Be careful disposing shared resources like weapon templates
+      // if (pickup.model.geometry) pickup.model.geometry.dispose();
+      // if (pickup.model.material) {
+      //     if (Array.isArray(pickup.model.material)) {
+      //         pickup.model.material.forEach(m => m.dispose());
+      //     } else {
+      //         pickup.model.material.dispose();
+      //     }
+      // }
+
+      // Remove glow circle if it exists
+      if (pickup.glowCircle) {
+        this.sceneManager.remove(pickup.glowCircle);
+        // Geometry and Material are shared, no need to dispose here
       }
     });
     this.activePickups.clear();
@@ -175,6 +210,7 @@ export class WeaponSpawnManager {
   update(deltaTime) {
     this.activePickups.forEach(pickup => {
       pickup.model.rotation.y += ROTATION_SPEED * deltaTime;
+      // Glow circle rotation/position is static relative to ground
       // Collider position is static based on spawn data, no need to update
     });
   }

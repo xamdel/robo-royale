@@ -23,7 +23,7 @@ export const SceneManager = {
   cameraHeight: 4, // Height offset
   freeLookActive: false, // Free look mode toggle
   mouseSensitivity: 0.002, // Mouse sensitivity
-  yaw: 0, // Horizontal camera rotation
+  yaw: Math.PI, // Horizontal camera rotation (Set to face opposite direction initially)
   pitch: -0.3, // Vertical camera rotation (slightly looking down)
   minPitch: -0.8, // Limit looking down
   maxPitch: 0.8, // Limit looking up
@@ -200,6 +200,62 @@ export const SceneManager = {
 
       this.scene.add(this.turretMesh);
       console.log('[SceneManager] Turret model loaded, referenced, and added to scene.');
+
+      // --- Add JOIN BATTLE Billboard ---
+      try {
+        const billboardCanvas = document.createElement('canvas');
+        const billboardContext = billboardCanvas.getContext('2d');
+        const billboardWidth = 512; // Texture resolution
+        const billboardHeight = 64;
+        billboardCanvas.width = billboardWidth;
+        billboardCanvas.height = billboardHeight;
+
+        // Style the text (using HUD styles)
+        billboardContext.fillStyle = 'rgba(0, 20, 40, 0.7)'; // Dark semi-transparent background (similar to HUD bg)
+        billboardContext.fillRect(0, 0, billboardWidth, billboardHeight);
+        billboardContext.font = 'bold 48px Orbitron, Roboto Mono, monospace'; // HUD font, adjusted size
+        billboardContext.fillStyle = '#00aaff'; // HUD primary color
+        billboardContext.textAlign = 'center';
+        billboardContext.textBaseline = 'middle';
+        billboardContext.fillText('JOIN BATTLE', billboardWidth / 2, billboardHeight / 2);
+
+        const billboardTexture = new THREE.CanvasTexture(billboardCanvas);
+        billboardTexture.needsUpdate = true;
+
+        // Adjust plane size based on aspect ratio of text/canvas - Made much smaller
+        const billboardAspect = billboardWidth / billboardHeight; // 4:1
+        const billboardPlaneHeight = 0.5; // Drastically reduced height
+        const billboardPlaneWidth = billboardPlaneHeight * billboardAspect; // Drastically reduced width (2)
+
+        const billboardGeometry = new THREE.PlaneGeometry(billboardPlaneWidth, billboardPlaneHeight);
+        const billboardMaterial = new THREE.MeshBasicMaterial({
+          map: billboardTexture,
+          transparent: true, // Needed because of the rgba background
+          side: THREE.DoubleSide, // Visible from both sides
+          depthTest: false, // Optional: Render on top of other objects slightly easier
+        });
+
+        const billboardMesh = new THREE.Mesh(billboardGeometry, billboardMaterial);
+
+        // Counteract parent scale
+        const turretScaleFactor = 11;
+        billboardMesh.scale.set(1 / turretScaleFactor, 1 / turretScaleFactor, 1 / turretScaleFactor);
+
+        // Position the billboard above the turret's local origin - Lowered
+        // The turret scale is 11, so offsets are relative to the unscaled model unless applied after scaling.
+        // Adding as a child means the position is relative to the parent's origin.
+        const billboardYOffset = 0.75; // Further reduced Y offset
+        billboardMesh.position.set(0, billboardYOffset, 0); // Centered above the turret base origin
+        billboardMesh.rotation.y = Math.PI; // Rotate 180 degrees to face forward
+
+        // Add billboard as a child of the turret mesh so it moves/rotates with the base
+        this.turretMesh.add(billboardMesh);
+        console.log('[SceneManager] Added JOIN BATTLE billboard to turret.');
+
+      } catch (billboardError) {
+          console.error('[SceneManager] Failed to create billboard:', billboardError);
+      }
+      // --- End Billboard ---
 
     } catch (error) {
       console.error('[SceneManager] Failed to load turret model:', error);

@@ -755,8 +755,10 @@ export class WeaponSystem {
       const moveDistance = speed * deltaTime;
       mesh.position.addScaledVector(direction, moveDistance);
 
-      // --- Client-side Terrain Collision Check for Follow-Cam ---
-      // Only check if currently following this specific projectile
+      // --- Client-side Collision Checks ---
+      let hitDetected = false; // Flag to track if any hit occurred this frame
+
+      // 1. Terrain Collision Check (Primarily for Follow-Cam Teleport)
       if (SceneManager?.isFollowingProjectile && SceneManager.followingProjectileData?.serverId === id) {
         if (SceneManager.terrainMesh) {
           const raycaster = new THREE.Raycaster(mesh.position, new THREE.Vector3(0, -1, 0)); // Raycast down
@@ -774,23 +776,79 @@ export class WeaponSystem {
               }
               // --- End Trigger Dirt Impact Effect ---
 
+              hitDetected = true; // Mark terrain hit
+
               // Stop following immediately
               SceneManager.stopFollowingProjectile();
 
-            // Send teleport request to server
-            if (Network?.sendTurretTeleportRequest) {
-               console.log(`[WeaponSystem] Sending turret teleport request to: ${hitPoint.toArray().join(',')}`);
-               Network.sendTurretTeleportRequest({ x: hitPoint.x, y: hitPoint.y, z: hitPoint.z });
-            } else {
-               console.warn("[WeaponSystem] Network.sendTurretTeleportRequest not available.");
-            }
+              // Send teleport request to server
+              if (Network?.sendTurretTeleportRequest) {
+                 console.log(`[WeaponSystem] Sending turret teleport request to: ${hitPoint.toArray().join(',')}`);
+                 Network.sendTurretTeleportRequest({ x: hitPoint.x, y: hitPoint.y, z: hitPoint.z });
+              } else {
+                 console.warn("[WeaponSystem] Network.sendTurretTeleportRequest not available.");
+              }
 
-            // Note: We don't remove the projectile mesh here, let the server's 'projectileDestroyed' handle that
-            // to keep things synchronized. The camera just stops following.
-          }
+              // Note: We don't remove the projectile mesh here, let the server's 'projectileDestroyed' handle that
+              // to keep things synchronized. The camera just stops following.
+            }
         }
       }
-      // --- End Collision Check ---
+
+      // 2. Player Collision Prediction (Only if no terrain hit and not already predicted)
+      if (!hitDetected && !projectileData.predictedHit && window.Game?.players) {
+          const projectileRadius = projectileData.mesh.geometry.parameters.radius || 2.0; // Use actual or default
+          const projectilePosition = projectileData.mesh.position;
+
+          for (const [playerId, playerData] of window.Game.players.entries()) {
+              // Skip self (owner), dead players, or players without a visible model
+              // Note: Turret projectiles don't have an ownerId stored in projectileData currently,
+              // so we can't easily skip the shooter unless we add ownerId to handleTurretShot storage.
+              // For now, we'll check against all players including potentially self if close enough.
+              if (!playerData.model || !playerData.model.visible || !playerData.isAlive) { // Check isAlive status
+                  continue;
+              }
+
+              // Simple Bounding Sphere Check
+              // Ensure the player model has a bounding sphere computed
+              if (!playerData.model.geometry.boundingSphere) {
+                  playerData.model.geometry.computeBoundingSphere();
+              }
+              const playerBoundingSphere = playerData.model.geometry.boundingSphere;
+              if (!playerBoundingSphere) continue; // Skip if still no bounding sphere
+
+              const playerWorldPosition = new THREE.Vector3();
+              playerData.model.getWorldPosition(playerWorldPosition); // Get world position of player model
+
+              // Adjust player radius based on model scale (assuming uniform scale)
+              const playerRadius = playerBoundingSphere.radius * playerData.model.scale.x;
+              const combinedRadius = projectileRadius + playerRadius;
+              const distanceSq = projectilePosition.distanceToSquared(playerWorldPosition);
+
+              // Check for intersection
+              if (distanceSq <= combinedRadius * combinedRadius) {
+                  console.log(`[WeaponSystem] Client predicted hit: Turret projectile ${id} hit player ${playerId}`);
+                  projectileData.predictedHit = true; // Mark as hit predicted to prevent repeated effects
+                  hitDetected = true; // Mark hit for this frame
+
+                  // Trigger visual effect at hit location (projectile's current position)
+                  // Use a specific player impact effect if available, otherwise fallback
+                  if (window.particleEffectSystem?.createPlayerImpact) {
+                       window.particleEffectSystem.createPlayerImpact(projectilePosition);
+                  } else if (window.particleEffectSystem?.createDefaultImpact) {
+                       window.particleEffectSystem.createDefaultImpact(projectilePosition);
+                       console.warn("[WeaponSystem] createPlayerImpact not found, using createDefaultImpact for predicted hit.");
+                  } else {
+                       console.warn("[WeaponSystem] No suitable particle effect found for predicted player hit.");
+                  }
+
+                  // IMPORTANT: Do NOT remove the mesh here. Wait for server confirmation ('projectileDestroyed').
+                  // This ensures synchronization and correct damage application based on server state.
+                  break; // Stop checking other players for this projectile this frame
+              }
+          }
+      }
+      // --- End Client-side Collision Checks ---
     }
 
 
