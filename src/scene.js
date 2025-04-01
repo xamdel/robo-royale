@@ -50,6 +50,7 @@ export const SceneManager = {
   turretMaxYaw: Math.PI / 2.5, // Limit turret rotation right (radians)
   isFollowingProjectile: false, // State flag for follow-cam
   followingProjectileData: null, // Reference to the projectile being followed { mesh, direction, serverId }
+  portals: [], // To store portal data { mesh, labelMesh, destinationUrl, triggerZone }
 
   init(mapSeed = 'default_seed_from_scene') { // Accept mapSeed, provide default for safety
     console.log(`[SceneManager] Initializing with map seed: ${mapSeed}`);
@@ -206,7 +207,10 @@ export const SceneManager = {
     });
 
     // Load the platform and turret models after other initializations
-    this.loadPlatformModel();
+    this.loadPlatformModel().then(() => {
+        // Place portals *after* the platform is loaded and positioned
+        this.setupPortals();
+    }); // Ensure platform is loaded before placing portals on it
     this.loadTurretModel(); // Call the new function
   },
 
@@ -241,6 +245,9 @@ export const SceneManager = {
     } catch (error) {
       console.error('[SceneManager] Failed to load platform model:', error);
     }
+    // Return the promise so we can chain .then() in init
+    // Although loadAsync already returns a promise, wrapping it ensures consistency
+    return Promise.resolve();
   },
 
   // Function to load the turret model
@@ -531,6 +538,21 @@ export const SceneManager = {
     if (window.Game && window.Game.weaponSpawnManager) {
         window.Game.weaponSpawnManager.update(deltaTime);
     }
+
+    // Update portal shader time uniforms for animation
+    this.portals.forEach((portalData, index) => {
+        const timeValue = now * 0.0005; // Adjust speed as needed
+        // Update Ring
+        if (portalData.visualMeshRing?.material instanceof THREE.ShaderMaterial) {
+            portalData.visualMeshRing.material.uniforms.time.value = timeValue;
+            // if (index === 1) console.log(`Updating ring ${index} time: ${timeValue}`); // Debug log for second portal
+        }
+        // Update Face - Explicitly target the face material's uniforms
+        if (portalData.visualMeshFace?.material instanceof THREE.ShaderMaterial) {
+            portalData.visualMeshFace.material.uniforms.time.value = timeValue; // Use same time for now
+            // if (index === 1) console.log(`Updating face ${index} time: ${timeValue}`); // Debug log for second portal
+        }
+    });
 
     // Collision check for weapon pickups (handled by 'E' key interaction in game.js)
     // const collidedPickup = this.weaponSpawnManager?.checkCollisions(playerPosition);
@@ -1022,4 +1044,252 @@ export const SceneManager = {
     this.camera.getWorldDirection(direction);
     return direction;
   },
+
+  // --- Portal Creation ---
+  createPortal(position, rotationY, labelText, destinationUrl) {
+    console.log(`[SceneManager] Creating portal at ${position.toArray().join(',')} with label "${labelText}" leading to ${destinationUrl}`);
+    const portalGroup = new THREE.Group(); // Group portal elements
+    portalGroup.position.copy(position);
+    portalGroup.rotation.y = rotationY;
+
+    // --- Portal Visual (Swirling Shader) ---
+    const sizeMultiplier = 1.4; // Increase size by another 40%
+    const portalRadius = 1.5 * 1.3 * sizeMultiplier; // Further increased radius
+    const portalHeight = 4 * 1.3 * sizeMultiplier;   // Further increased height
+    const portalThickness = 0.2 * 1.3 * sizeMultiplier; // Further increase thickness
+    const portalGeometry = new THREE.CylinderGeometry(portalRadius, portalRadius, portalThickness, 64, 1, true); // Increased segments for smoother look
+
+    // --- Swirling Shader Material (Green/Purple) ---
+    const portalVertexShader = `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+
+    const portalFragmentShader = `
+        uniform float time;
+        uniform vec3 baseColor; // Renamed from 'color'
+        varying vec2 vUv;
+
+        // Simple noise function
+        float random(vec2 st) {
+            return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+        }
+
+        // Value noise function
+        float noise(vec2 st) {
+            vec2 i = floor(st);
+            vec2 f = fract(st);
+            float a = random(i);
+            float b = random(i + vec2(1.0, 0.0));
+            float c = random(i + vec2(0.0, 1.0));
+            float d = random(i + vec2(1.0, 1.0));
+            vec2 u = f * f * (3.0 - 2.0 * f); // Smoothstep
+            return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+        }
+
+        void main() {
+            vec2 uv = vUv;
+            // Create a swirling effect by rotating UVs based on distance from center and time
+            vec2 center = vec2(0.5, 0.5);
+            float dist = distance(uv, center);
+            float angle = atan(uv.y - center.y, uv.x - center.x);
+            float swirlIntensity = 0.5 + sin(dist * 10.0 + time * 2.0) * 0.5; // Pulsating swirl
+            angle += swirlIntensity * 0.5; // Rotate based on intensity
+
+            // Map back to UV coordinates
+            uv = center + vec2(cos(angle), sin(angle)) * dist;
+
+            // Use noise for texture/variation
+            // float n = noise(uv * 5.0 + time * 0.5); // Removed duplicate declaration
+            float n = noise(uv * 4.0 + time * 0.6); // Adjusted noise scale/speed
+
+            // Define colors
+            vec3 purple = baseColor; // Use the uniform base color (purple)
+            vec3 green = vec3(0.1, 1.0, 0.2); // Vibrant green
+
+            // Mix colors based on noise
+            vec3 mixedColor = mix(purple, green, smoothstep(0.3, 0.7, n)); // Mix based on noise value
+
+            // Combine noise and swirl for alpha mask (make edges softer)
+            float edgeFade = smoothstep(0.0, 0.15, uv.y) * smoothstep(1.0, 0.85, uv.y); // Slightly softer fade
+            float alpha = (n * 0.6 + 0.4) * edgeFade; // Ensure minimum opacity, apply edge fade
+
+            gl_FragColor = vec4(mixedColor, alpha);
+        }
+    `;
+
+    const portalMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0.0 },
+            baseColor: { value: new THREE.Color(0xcc00ff) } // Purple base color
+        },
+        vertexShader: portalVertexShader,
+        fragmentShader: portalFragmentShader,
+        side: THREE.DoubleSide,
+        transparent: true,
+        depthWrite: false, // Important for transparency
+        blending: THREE.AdditiveBlending // Make it glowy
+    });
+
+    const portalRingMesh = new THREE.Mesh(portalGeometry, portalMaterial);
+    portalRingMesh.rotation.x = Math.PI / 2; // Rotate to stand upright
+    portalRingMesh.position.y = portalHeight / 2; // Center vertically (using the *new* height)
+    portalGroup.add(portalRingMesh);
+    // Add userData to easily identify portal meshes later if needed
+    portalRingMesh.userData.isPortalVisual = true; // Mark as part of the visual
+    portalRingMesh.userData.destinationUrl = destinationUrl; // Keep URL reference if needed
+
+    // --- Portal Face Visual (Filled Circle) ---
+    const portalFaceGeometry = new THREE.CircleGeometry(portalRadius, 64); // Same radius, more segments
+    // Use a slightly modified shader or different uniforms if desired, but start with the same
+    const portalFaceMaterial = portalMaterial.clone(); // Clone the ring material initially
+    // Optional: Modify face material uniforms (e.g., different color or time offset)
+    // portalFaceMaterial.uniforms.color.value = new THREE.Color(0x80ffff); // Lighter cyan?
+
+    const portalFaceMesh = new THREE.Mesh(portalFaceGeometry, portalFaceMaterial);
+    // Position it at the same vertical center as the ring
+    portalFaceMesh.position.y = portalHeight / 2;
+    // No X rotation needed for CircleGeometry facing Z+ by default. It will align with the group's Y rotation.
+    portalGroup.add(portalFaceMesh);
+    portalFaceMesh.userData.isPortalVisual = true; // Mark as part of the visual
+
+    // --- Portal Label Billboard ---
+    let labelMesh = null;
+    try {
+        const billboardCanvas = document.createElement('canvas');
+        const billboardContext = billboardCanvas.getContext('2d');
+        const billboardWidth = 512; // Texture resolution
+        const billboardHeight = 64;
+        billboardCanvas.width = billboardWidth;
+        billboardCanvas.height = billboardHeight;
+
+        // Style the text
+        billboardContext.fillStyle = 'rgba(20, 0, 40, 0.7)'; // Dark purple background
+        billboardContext.fillRect(0, 0, billboardWidth, billboardHeight);
+        billboardContext.font = 'bold 40px Orbitron, Roboto Mono, monospace'; // Slightly smaller font
+        billboardContext.fillStyle = '#cc00ff'; // Purple text
+        billboardContext.textAlign = 'center';
+        billboardContext.textBaseline = 'middle';
+        billboardContext.fillText(labelText.toUpperCase(), billboardWidth / 2, billboardHeight / 2);
+
+        const billboardTexture = new THREE.CanvasTexture(billboardCanvas);
+        billboardTexture.needsUpdate = true;
+
+        const billboardAspect = billboardWidth / billboardHeight;
+        const billboardPlaneHeight = 0.6; // Slightly larger than turret billboard
+        const billboardPlaneWidth = billboardPlaneHeight * billboardAspect;
+
+        const billboardGeometry = new THREE.PlaneGeometry(billboardPlaneWidth, billboardPlaneHeight);
+        const billboardMaterial = new THREE.MeshBasicMaterial({
+          map: billboardTexture,
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthTest: false, // Render on top
+        });
+
+        labelMesh = new THREE.Mesh(billboardGeometry, billboardMaterial);
+        // Position above the portal visual
+        const billboardYOffset = portalHeight + 0.5; // Place above the cylinder visual
+        labelMesh.position.set(0, billboardYOffset, 0);
+        // Billboard doesn't need parent rotation applied if it always faces camera (standard billboard)
+        // If it should be fixed relative to the portal group, no extra rotation needed here.
+        portalGroup.add(labelMesh);
+        console.log(`[SceneManager] Added portal label: "${labelText}"`);
+
+    } catch (billboardError) {
+        console.error('[SceneManager] Failed to create portal label:', billboardError);
+    }
+
+    // --- Trigger Zone (Adjusted for new size) ---
+    // Make it slightly larger than the new visual size
+    const triggerSize = new THREE.Vector3(portalRadius * 2.5, portalHeight * 1.2, portalRadius * 2.5); // Uses further updated radius/height
+    const triggerZone = new THREE.Box3();
+    // Box3 is axis-aligned, so we set it based on the group's world position and the desired size
+    // We need to calculate the world position of the portal center first
+    const worldPosition = new THREE.Vector3();
+    portalGroup.getWorldPosition(worldPosition);
+    // Adjust center Y based on portal height
+    const triggerCenter = worldPosition.clone().add(new THREE.Vector3(0, portalHeight / 2, 0));
+    triggerZone.setFromCenterAndSize(triggerCenter, triggerSize); // Use calculated center
+    // Optional: Visualize the trigger zone
+    // const helper = new THREE.Box3Helper(triggerZone, 0xff00ff); // Magenta helper
+    // this.scene.add(helper);
+    // Store the helper on the portal data if created, so it can be updated/removed
+    // portalData.triggerHelper = helper;
+
+    // Add the complete portal group to the scene
+    this.scene.add(portalGroup);
+
+    // Store portal data for collision checks later
+    // Add references to both visual meshes if needed for separate control
+    this.portals.push({
+        mesh: portalGroup, // Store the group
+        visualMeshRing: portalRingMesh,
+        visualMeshFace: portalFaceMesh,
+        labelMesh: labelMesh, // Reference to the label
+        destinationUrl: destinationUrl,
+        triggerZone: triggerZone // Store the calculated Box3
+    });
+
+    return portalGroup; // Return the created group
+  },
+
+  // --- Setup Portals based on URL ---
+  setupPortals() {
+    if (!this.platformMesh) {
+        console.error("[SceneManager] Cannot setup portals: Platform mesh not loaded.");
+        return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const cameFromPortal = params.get('portal') === 'true';
+    const refUrl = params.get('ref');
+    const currentOrigin = window.location.origin + window.location.pathname; // URL of this game
+
+    const platformPosition = this.platformMesh.position;
+    const platformRadius = 25; // Approximate radius based on scale and model size
+
+    // --- Create Exit Portal ---
+    // Place towards the back edge (Z approx -270)
+    const exitPortalXOffset = -15; // Further increased offset to the left
+    const portalZ = platformPosition.z - platformRadius * 0.8; // Z position near -270
+    const exitPortalPosition = new THREE.Vector3(
+        platformPosition.x + exitPortalXOffset, // Use further increased offset
+        PLATFORM_Y_POSITION + 0.1, // Slightly above platform surface
+        portalZ
+    );
+    const exitPortalRotation = 0; // Face towards the center/front
+    const exitPortalLabel = "Vibeverse Portal";
+    const exitPortalDestination = "http://portal.pieter.com"; // The main portal hub
+    this.createPortal(exitPortalPosition, exitPortalRotation, exitPortalLabel, exitPortalDestination);
+
+    // --- Create Return Portal (if applicable) ---
+    // Place next to the exit portal, also near Z = -270
+    if (cameFromPortal && refUrl) {
+        console.log(`[SceneManager] Player arrived from portal: ${refUrl}. Creating return portal.`);
+        const returnPortalXOffset = 15; // Further increased offset to the right
+        const returnPortalPosition = new THREE.Vector3(
+            platformPosition.x + returnPortalXOffset, // Use further increased offset
+            PLATFORM_Y_POSITION + 0.1, // Slightly above platform surface
+            portalZ // Same Z as the exit portal
+        );
+        const returnPortalRotation = 0; // Also face towards the center/front
+        // Extract domain for label, handle potential errors
+        let returnLabel = "Return Portal";
+        try {
+            const refDomain = new URL(refUrl).hostname;
+            returnLabel = `Return to ${refDomain}`;
+        } catch (e) {
+            console.warn(`[SceneManager] Could not parse ref URL hostname: ${refUrl}`);
+            returnLabel = "Return"; // Fallback label
+        }
+
+        this.createPortal(returnPortalPosition, returnPortalRotation, returnLabel, refUrl); // Destination is the refUrl
+    } else {
+        console.log("[SceneManager] Player did not arrive from a portal or no ref URL provided. No return portal created.");
+    }
+  }
 };

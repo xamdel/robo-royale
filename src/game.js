@@ -55,6 +55,8 @@ export const Game = {
   eKeyHoldDuration: 500, // ms hold time (match mobile)
   contextMenuClickListener: null, // Store reference to the click listener
   isNearTurret: false, // Flag if player is close enough to interact
+  returnPortalUrl: null, // Store the URL for the return portal, if applicable
+  cameFromPortal: false, // Flag if the player arrived via a portal
 
   loadMechModel() {
     return new Promise((resolve) => {
@@ -87,6 +89,21 @@ export const Game = {
   },
 
   async init(socket, userData) { // Accept userData object { primary, name }
+    // --- Portal Parameter Handling ---
+    const params = new URLSearchParams(window.location.search);
+    this.cameFromPortal = params.get('portal') === 'true';
+    this.returnPortalUrl = params.get('ref'); // Will be null if not present
+
+    if (this.cameFromPortal) {
+        console.log(`[GAME] Player arrived via portal.`);
+        if (this.returnPortalUrl) {
+            console.log(`[GAME] Return portal target URL: ${this.returnPortalUrl}`);
+        }
+        // TODO: Potentially skip welcome screen or adjust spawn logic here
+        // For now, we just log and store the ref URL. SceneManager handles portal creation.
+    }
+    // --- End Portal Parameter Handling ---
+
     await this.loadMechModel();
 
     // Create player using the same system as remote players, but specify it's the local player
@@ -584,6 +601,12 @@ export const Game = {
     const cameraDirections = SceneManager.updateCamera(this.player.position, this.player);
 
     // Process movement input ONLY if not controlling the turret
+    // --- Portal Collision Check ---
+    this.checkPortalCollisions();
+    // --- End Portal Collision Check ---
+
+    // Process movement input ONLY if not controlling the turret
+    // Note: cameraDirections was already calculated earlier in this function
     if (!SceneManager.isControllingTurret) {
         return this.processInput(cameraDirections, deltaTime);
     } else {
@@ -1092,8 +1115,92 @@ export const Game = {
           if (document.pointerLockElement !== document.body) {
               document.body.requestPointerLock();
           }
-      }
+    }
   },
+
+  // --- Portal Logic ---
+  checkPortalCollisions() {
+    if (!this.player || this.isDead || !SceneManager.portals || SceneManager.portals.length === 0) {
+        return; // Don't check if player doesn't exist, is dead, or no portals exist
+    }
+
+    const playerPosition = this.player.position;
+
+    for (const portalData of SceneManager.portals) {
+        // Simple point-in-box check for now
+        if (portalData.triggerZone.containsPoint(playerPosition)) {
+            console.log(`[GAME] Player entered portal trigger zone for: ${portalData.destinationUrl}`);
+            this.triggerPortalRedirect(portalData);
+            break; // Only trigger one portal per frame
+        }
+    }
+  },
+
+  gatherPlayerDataForPortal() {
+    if (!this.player) return {};
+
+    const playerData = {
+        username: 'MechPilot', // Placeholder
+        color: this.localPlayerPrimaryColor || 'cyan', // Use stored color or default
+        ref: window.location.origin + window.location.pathname, // URL of this game
+        // --- Position ---
+        pos_x: this.player.position.x.toFixed(2),
+        pos_y: this.player.position.y.toFixed(2),
+        pos_z: this.player.position.z.toFixed(2),
+        // --- Rotation (Euler YXZ order) ---
+        // Note: Sending quaternion might be better, but Euler is requested
+        rotation_x: this.player.rotation.x.toFixed(3),
+        rotation_y: this.player.rotation.y.toFixed(3),
+        rotation_z: this.player.rotation.z.toFixed(3),
+        // --- Speed (Placeholder/Skipped for now) ---
+        // speed: 0,
+        // speed_x: 0,
+        // speed_y: 0,
+        // speed_z: 0,
+        // --- Avatar URL (Placeholder/Skipped) ---
+        // avatar_url: '',
+        // --- Team (Placeholder/Skipped) ---
+        // team: '',
+    };
+
+    return playerData;
+  },
+
+  triggerPortalRedirect(portalData) {
+    console.log(`[GAME] Triggering redirect to: ${portalData.destinationUrl}`);
+
+    // Prevent multiple redirects if called rapidly
+    if (this.isRedirecting) return;
+    this.isRedirecting = true;
+
+    const playerData = this.gatherPlayerDataForPortal();
+    const destinationUrl = new URL(portalData.destinationUrl);
+
+    // Append player data as query parameters
+    for (const key in playerData) {
+        if (playerData[key] !== undefined && playerData[key] !== null) {
+            destinationUrl.searchParams.append(key, playerData[key]);
+        }
+    }
+
+    // Add the mandatory portal=true parameter if redirecting *to* the hub
+    if (portalData.destinationUrl.includes("portal.pieter.com")) {
+        destinationUrl.searchParams.append('portal', 'true');
+    }
+
+    const finalUrl = destinationUrl.toString();
+    console.log(`[GAME] Final redirect URL: ${finalUrl}`);
+
+    // Perform the redirect
+    window.location.href = finalUrl;
+
+    // Optional: Show a "Redirecting..." message in the HUD
+    if (window.HUD?.showAlert) {
+        window.HUD.showAlert("ENTERING PORTAL...", "info", 5000); // Show for 5 seconds
+    }
+  },
+  // --- End Portal Logic ---
+
 
   // Called by Network handler when server confirms turret teleport
   handleTurretTeleportComplete(finalPosition) {
