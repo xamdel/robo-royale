@@ -12,20 +12,20 @@ module.exports = {
     cannon: {
       speed: 300,
       radius: 0.15,
-      maxDistance: 100,
+      maxDistance: 200,
       maxLifetime: 5000,
-      damage: 20,
+      damage: 30,
       distanceFalloff: {
         start: 50,  // Distance at which damage starts falling off
         end: 100,   // Distance at which damage reaches minimum
-        minDamage: 20  // Minimum damage at maximum range
+        minDamage: 25  // Minimum damage at maximum range
       }
       
     },
     rocket: {
       speed: 200, // Matched with client perception for fast rockets
       radius: 0.3,
-      maxDistance: 80,
+      maxDistance: 200,
       maxLifetime: 5000,
       damage: 40,
       distanceFalloff: {
@@ -38,7 +38,7 @@ module.exports = {
     rocketLauncher: {
       speed: 200, // Matched with client perception for fast rockets
       radius: 0.3,
-      maxDistance: 80,
+      maxDistance: 200,
       maxLifetime: 5000,
       damage: 40,
       distanceFalloff: {
@@ -50,7 +50,7 @@ module.exports = {
     gatling: {
       speed: 400,       // Fast bullets
       radius: 0.1,      // Small radius
-      maxDistance: 120, // Long range
+      maxDistance: 150, // Long range
       maxLifetime: 5000,
       damage: 2,        // As specified
       distanceFalloff: {
